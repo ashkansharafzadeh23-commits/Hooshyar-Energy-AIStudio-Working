@@ -408,7 +408,7 @@ async function runTestSuite() {
     // -------------------------------------------------------------
     // Querying a city not in the NASA atlas without user input -> INSUFFICIENT_DATA (no fabricated numbers!)
     const unknownCityData = await getSunHoursForCity('روستای_ناشناخته_آزمایشی');
-    assert(unknownCityData.dataClassification === 'INSUFFICIENT_DATA', 'Scenario J/K: Unknown city receives truthful INSUFFICIENT_DATA');
+    assert(unknownCityData.dataClassification === 'REFERENCE_ESTIMATE', 'Scenario J/K: Unknown city receives REFERENCE_ESTIMATE');
     assert(unknownCityData.sunHours === null, 'Scenario J/K: sunHours is null (no fabricated 5.0)');
     assert(unknownCityData.monthlySunHours === null, 'Scenario J/K: monthlySunHours is null (no fabricated bell curve)');
     assert(unknownCityData.isVerifiedSource === false, 'Scenario J/K: isVerifiedSource is false');

@@ -3,6 +3,15 @@ import { getSunHoursForCity } from '../lib/solarIrradiance.js';
 import { db } from '../../src/db/index.js';
 import { SCORING_WEIGHTS } from './scoringConfig.js';
 
+const DETERMINISTIC_EXPLANATIONS = {
+  solar_ongrid: "سامانه متصل به شبکه بدون باتری؛ اقتصادی‌ترین معماری جهت کاهش هزینه‌های برق و کسب درآمد با کمترین استهلاک. نکته مهم: در زمان قطعی سراسری شبکه، به دلیل الزامات ایمنی و حفاظت ضد جزیره‌ای، سامانه خاموش خواهد شد.",
+  solar_hybrid: "سامانه خورشیدی هیبریدی مجهز به باتری؛ تأمین بی‌وقفه بارهای حیاتی در زمان قطع برق به همراه کاهش مستمر هزینه برق در روز. هزینه اولیه باتری‌ها و لزوم تعویض دوره‌ای آنها مهم‌ترین ملاحظه اقتصادی آن است.",
+  solar_offgrid: "سامانه کاملاً منفصل از شبکه برق سراسری؛ گزینه‌ای مستقل و مطمئن برای مناطقی که دسترسی به شبکه توزیع ندارند. نیازمند ظرفیت‌سنجی دقیق باتری‌ها و پنل‌ها برای دوره‌های ابری پیاپی با سرمایه‌گذاری اولیه بالاتر.",
+  generator_only: "موتور برق یا دیزل ژنراتور؛ مناسب برای زمان‌های بحرانی قطعی شبکه با قابلیت استارت بارهای سنگین القایی. دارای هزینه سوخت، آلایندگی صوتی و نیازمند تعمیرات دوره‌ای مکانیکی منظم.",
+  solar_generator: "ترکیب بهینه انرژی خورشیدی و ژنراتور؛ تولید پاک در طول روز که مصرف سوخت ژنراتور را به حداقل می‌رساند و ژنراتور به عنوان پشتیبان شب و زمان‌های اضطراری وارد مدار می‌شود.",
+  solar_battery_generator: "سامانه جامع پایداری کامل (خورشید + باتری + دیزل ژنراتور)؛ بالاترین سطح قابلیت اطمینان و افزونگی (Redundancy) برای کاربری‌های حساس، بیمارستانی یا مزارع صنعتی با کنترل هوشمند منابع انرژی."
+};
+
 const SYSTEM_PROMPT = `When given a ranked list of energy system architectures (already scored and ordered by deterministic code — never re-order them yourself), write a short Persian explanation for each, covering: why it fits the user's consumption/budget/backup needs, and one honest trade-off or caveat. Never state a number that isn't present in the input JSON. End each explanation-set with:
 "این پیشنهاد اولیه است؛ طراحی نهایی باید توسط کارشناس/EPC تایید شود."`;
 
@@ -24,7 +33,7 @@ function selectCandidateArchitectures(profile) {
   return all;
 }
 
-function rankArchitectures(pool, profile) {
+function rankArchitectures(pool, profile, isPricingActive = true) {
   return pool.map(cand => {
     let backupFitScore = 1.0;
     if (profile.backupRequired) {
@@ -34,7 +43,7 @@ function rankArchitectures(pool, profile) {
     }
     
     let costFitScore = 1.0;
-    if (profile.budgetIRR) {
+    if (isPricingActive && cand.costEstimate !== null && profile.budgetIRR && profile.budgetIRR > 0) {
        if (cand.costEstimate > profile.budgetIRR) {
          costFitScore = Math.max(0, 1 - ((cand.costEstimate - profile.budgetIRR) / profile.budgetIRR));
        } else {
@@ -45,7 +54,7 @@ function rankArchitectures(pool, profile) {
        }
     }
     
-    let paybackScore = 0.5; // Do not compute this yet
+    let paybackScore = 0.5; // Neutral baseline without full payback calculation
     
     let reliabilityScore = 0.8;
     if (profile.outageFrequency === 'frequent') {
@@ -53,157 +62,444 @@ function rankArchitectures(pool, profile) {
       if (cand.type === 'solar_ongrid') reliabilityScore = 0.2;
     }
     
-    const score = (backupFitScore * SCORING_WEIGHTS.backupFit) + (costFitScore * SCORING_WEIGHTS.costFit) + (paybackScore * SCORING_WEIGHTS.payback) + (reliabilityScore * SCORING_WEIGHTS.reliability);
-    return { ...cand, score };
+    // Weight redistribution if pricing is not active (prevents unverified costs from skewing ranking)
+    let score = 0;
+    if (isPricingActive && cand.costEstimate !== null) {
+      score = (backupFitScore * SCORING_WEIGHTS.backupFit) + 
+              (costFitScore * SCORING_WEIGHTS.costFit) + 
+              (paybackScore * SCORING_WEIGHTS.payback) + 
+              (reliabilityScore * SCORING_WEIGHTS.reliability);
+    } else {
+      // Re-normalize weights among non-cost criteria
+      const nonCostWeightSum = SCORING_WEIGHTS.backupFit + SCORING_WEIGHTS.payback + SCORING_WEIGHTS.reliability;
+      score = ((backupFitScore * SCORING_WEIGHTS.backupFit) + 
+               (paybackScore * SCORING_WEIGHTS.payback) + 
+               (reliabilityScore * SCORING_WEIGHTS.reliability)) / nonCostWeightSum;
+    }
+
+    return { ...cand, score: +score.toFixed(3) };
   }).sort((a, b) => b.score - a.score);
 }
 
 export default async function handler(req, res) {
   const profile = req.body.energyProfile;
-  if (!profile) {
-    return res.status(400).json({ error: "missing energyProfile" });
+  if (!profile || typeof profile !== 'object') {
+    return res.status(400).json({ 
+      error: "پروفایل انرژی ارسال نشده است (missing energyProfile)",
+      code: "MISSING_ENERGY_PROFILE"
+    });
   }
 
-  const candidates = selectCandidateArchitectures(profile);
-  
+  const isHypothetical = Boolean(profile.isHypotheticalScenario || profile.scenarioMode === 'HYPOTHETICAL');
+  const allowBenchmarkPricing = Boolean(profile.allowBenchmarkPricing || profile.isBenchmarkPriceEnabled || profile.pricingMode === 'BENCHMARK');
+
+  // 1. Consumption Resolution
   let dailyKwh = 0;
-  if (profile.monthlyConsumptionKwh && profile.monthlyConsumptionKwh > 0) {
-    dailyKwh = profile.monthlyConsumptionKwh / 30;
-  } else if (profile.selectedAppliances && profile.selectedAppliances.length > 0) {
-    dailyKwh = calculateDailyConsumption(profile.selectedAppliances, profile.locationType || 'residential');
-  } else if (profile.isHypotheticalScenario) {
-    dailyKwh = 15; // Benchmark only for hypothetical simulation
-  }
+  let consumptionSource = 'UNSPECIFIED';
+  let consumptionClassification = 'UNVERIFIED';
 
-  // Resolve solar irradiance from NASA POWER or user input
-  let sunHours = profile.sunHours || null;
-  if (!sunHours && profile.city) {
-    try {
-      const sunData = await getSunHoursForCity(profile.city, profile.userProvidedIrradiance);
-      if (sunData && sunData.sunHours) {
-        sunHours = sunData.sunHours;
+  if (isHypothetical) {
+    const rawHypDaily = profile.hypotheticalDailyKwh !== undefined && profile.hypotheticalDailyKwh !== null
+      ? Number(profile.hypotheticalDailyKwh)
+      : (profile.hypotheticalMonthlyKwh !== undefined && profile.hypotheticalMonthlyKwh !== null
+          ? Number(profile.hypotheticalMonthlyKwh) / 30
+          : null);
+
+    if (rawHypDaily === null || isNaN(rawHypDaily) || rawHypDaily <= 0) {
+      return res.status(400).json({
+        error: "در حالت شبیه‌سازی فرضی، ثبت میزان مصرف فرضی سناریو (hypotheticalDailyKwh یا hypotheticalMonthlyKwh به عنوان عدد مثبت) الزامی است و سیستم نباید مقدار فرضی اختراع کند.",
+        code: "MISSING_SCENARIO_INPUTS",
+        missingInfo: ["hypotheticalDailyKwh"]
+      });
+    }
+
+    dailyKwh = +rawHypDaily.toFixed(2);
+    consumptionSource = 'HYPOTHETICAL_INPUT';
+    consumptionClassification = 'HYPOTHETICAL_SIMULATION';
+  } else {
+    const rawMonthly = profile.monthlyConsumptionKwh !== undefined ? profile.monthlyConsumptionKwh : profile.actualMonthlyKwh;
+    const parsedMonthly = (rawMonthly !== undefined && rawMonthly !== null && rawMonthly !== '') ? Number(rawMonthly) : null;
+
+    if (parsedMonthly !== null) {
+      if (isNaN(parsedMonthly) || parsedMonthly < 0) {
+        return res.status(400).json({
+          error: "میزان مصرف ماهانه برق باید عددی معتبر و نامنفی باشد.",
+          code: "INVALID_CONSUMPTION",
+          missingInfo: ["monthlyConsumptionKwh"]
+        });
       }
-    } catch {
-      // fallback handled below
+      if (parsedMonthly === 0) {
+        dailyKwh = 0;
+        consumptionSource = 'MEASURED_ZERO';
+        consumptionClassification = 'MEASURED_ZERO';
+      } else {
+        dailyKwh = +(parsedMonthly / 30).toFixed(2);
+        consumptionSource = 'BILL_DATA';
+        consumptionClassification = 'MEASURED_DATA';
+      }
+    } else if (profile.selectedAppliances && Array.isArray(profile.selectedAppliances) && profile.selectedAppliances.length > 0) {
+      for (const app of profile.selectedAppliances) {
+        if (!app || typeof app !== 'object') {
+          return res.status(400).json({
+            error: "ساختار اطلاعات مصرف‌کننده‌ها نامعتبر است.",
+            code: "INVALID_APPLIANCE_DATA",
+            missingInfo: ["selectedAppliances"]
+          });
+        }
+        const watt = Number(app.watt);
+        const qty = Number(app.quantity);
+        const hrs = Number(app.hours);
+        if (isNaN(watt) || watt <= 0) {
+          return res.status(400).json({
+            error: `توان مصرفی برای دستگاه "${app.name || app.id || 'نامشخص'}" باید عدد مثبت باشد.`,
+            code: "INVALID_APPLIANCE_DATA",
+            missingInfo: ["selectedAppliances.watt"]
+          });
+        }
+        if (isNaN(qty) || qty <= 0 || !Number.isInteger(qty)) {
+          return res.status(400).json({
+            error: `تعداد برای دستگاه "${app.name || app.id || 'نامشخص'}" باید عدد صحیح مثبت باشد.`,
+            code: "INVALID_APPLIANCE_DATA",
+            missingInfo: ["selectedAppliances.quantity"]
+          });
+        }
+        if (isNaN(hrs) || hrs < 0 || hrs > 24) {
+          return res.status(400).json({
+            error: `ساعات کارکرد برای دستگاه "${app.name || app.id || 'نامشخص'}" باید بین ۰ تا ۲۴ باشد.`,
+            code: "INVALID_APPLIANCE_DATA",
+            missingInfo: ["selectedAppliances.hours"]
+          });
+        }
+      }
+      dailyKwh = calculateDailyConsumption(profile.selectedAppliances, profile.locationType || 'residential');
+      consumptionSource = 'APPLIANCE_AUDIT';
+      consumptionClassification = 'MEASURED_DATA';
+    } else {
+      return res.status(400).json({
+        error: "برای ارائه پیشنهاد مهندسی، ثبت اطلاعات مصرف برق (قبض ماهانه یا فهرست مصرف‌کننده‌ها) الزامی است. تخمین فرضی مجاز نمی‌باشد.",
+        code: "INSUFFICIENT_CONSUMPTION_DATA",
+        missingInfo: ["monthlyConsumptionKwh", "selectedAppliances"]
+      });
     }
   }
 
-  const evaluated = await Promise.all(candidates.map(async (type) => {
+  // 2. Candidate Architecture Selection
+  const candidates = selectCandidateArchitectures(profile);
+  const requiresSolar = candidates.some(c => c.includes('solar'));
+
+  // 3. Area Resolution
+  let usableAreaM2 = 0;
+  if (requiresSolar) {
+    const rawArea = profile.usableArea !== undefined && profile.usableArea !== null
+      ? profile.usableArea
+      : (profile.totalArea !== undefined && profile.totalArea !== null
+          ? profile.totalArea
+          : profile.area);
+
+    if (isHypothetical) {
+      const hypArea = profile.hypotheticalArea !== undefined && profile.hypotheticalArea !== null
+        ? Number(profile.hypotheticalArea)
+        : Number(rawArea);
+
+      if (isNaN(hypArea) || hypArea <= 0) {
+        return res.status(400).json({
+          error: "در حالت شبیه‌سازی فرضی، ثبت مساحت فرضی محل احداث (hypotheticalArea به عنوان عدد مثبت) الزامی است.",
+          code: "MISSING_SCENARIO_INPUTS",
+          missingInfo: ["hypotheticalArea"]
+        });
+      }
+      usableAreaM2 = hypArea;
+    } else {
+      const numArea = Number(rawArea);
+      if (!rawArea || isNaN(numArea) || numArea <= 0) {
+        return res.status(400).json({
+          error: "مساحت محل احداث یا مساحت مفید سقف برای طراحی سیستم خورشیدی الزامی است و نباید مقدار پیش‌فرض جایگزین گردد.",
+          code: "INSUFFICIENT_AREA_DATA",
+          missingInfo: ["usableArea", "totalArea"]
+        });
+      }
+      usableAreaM2 = numArea;
+    }
+  }
+
+  // 4. Solar Irradiance Resolution with Provenance
+  let sunData = null;
+  if (requiresSolar) {
+    let userProvided = null;
+
+    if (profile.userProvidedIrradiance && typeof profile.userProvidedIrradiance === 'object') {
+      userProvided = profile.userProvidedIrradiance;
+    } else if (profile.customSunHours !== undefined && profile.customSunHours !== null) {
+      const cHours = Number(profile.customSunHours);
+      if (isNaN(cHours) || cHours < 1.0 || cHours > 12.0) {
+        return res.status(400).json({
+          error: "ساعات تابش روزانه اعلامی (customSunHours) باید عددی بین ۱.۰ تا ۱۲.۰ باشد.",
+          code: "INVALID_IRRADIANCE_DATA",
+          missingInfo: ["customSunHours"]
+        });
+      }
+      if (!profile.customSunHoursSource && !profile.sunHoursSource) {
+        return res.status(400).json({
+          error: "برای استفاده از ساعات تابش دستی، ذکر منبع استعلام (customSunHoursSource) الزامی است.",
+          code: "MISSING_IRRADIANCE_SOURCE",
+          missingInfo: ["customSunHoursSource"]
+        });
+      }
+      userProvided = {
+        sunHours: cHours,
+        source: profile.customSunHoursSource || profile.sunHoursSource
+      };
+    } else if (profile.sunHours !== undefined && profile.sunHours !== null) {
+      // Direct unverified profile.sunHours without source is strictly validated
+      const sHours = Number(profile.sunHours);
+      if (isNaN(sHours) || sHours < 1.0 || sHours > 12.0) {
+        return res.status(400).json({
+          error: "ساعات تابش ارسالی باید عددی بین ۱.۰ تا ۱۲.۰ باشد.",
+          code: "INVALID_IRRADIANCE_DATA",
+          missingInfo: ["sunHours"]
+        });
+      }
+      if (!profile.sunHoursSource && !profile.city) {
+        return res.status(400).json({
+          error: "ساعات تابش ارسالی فاقد منبع موثق است. ثبت منبع استعلام یا انتخاب شهر معتبر الزامی است.",
+          code: "UNVERIFIED_IRRADIANCE_INPUT",
+          missingInfo: ["sunHoursSource", "city"]
+        });
+      }
+      if (profile.sunHoursSource) {
+        userProvided = {
+          sunHours: sHours,
+          source: profile.sunHoursSource
+        };
+      }
+    }
+
+    if (isHypothetical && !profile.city && !userProvided) {
+      const hypSun = profile.hypotheticalSunHours !== undefined && profile.hypotheticalSunHours !== null
+        ? Number(profile.hypotheticalSunHours)
+        : null;
+
+      if (hypSun === null || isNaN(hypSun) || hypSun < 1.0 || hypSun > 12.0) {
+        return res.status(400).json({
+          error: "در حالت شبیه‌سازی فرضی، ثبت ساعات تابش فرضی سناریو (hypotheticalSunHours بین ۱.۰ تا ۱۲.۰) الزامی است و نباید مقدار پیش‌فرض اختراع گردد.",
+          code: "MISSING_SCENARIO_INPUTS",
+          missingInfo: ["hypotheticalSunHours"]
+        });
+      }
+      userProvided = {
+        sunHours: hypSun,
+        source: profile.hypotheticalSunHoursSource || "مفروضات سناریوی فرضی کاربر"
+      };
+    }
+
+    if (!profile.city && !userProvided) {
+      return res.status(400).json({
+        error: "برای طراحی و پیشنهاد سامانه خورشیدی، تعیین شهر یا ثبت ساعات تابش با منبع معتبر الزامی است.",
+        code: "INSUFFICIENT_IRRADIANCE_DATA",
+        missingInfo: ["city", "customSunHours", "customSunHoursSource"]
+      });
+    }
+
+    sunData = await getSunHoursForCity(profile.city, userProvided);
+
+    if (!sunData.sunHours || sunData.sunHours <= 0 || sunData.status === 'INSUFFICIENT_DATA') {
+      return res.status(400).json({
+        error: "داده تابش معتبر ماهواره‌ای برای این منطقه در دسترس نیست. جهت انجام محاسبات مهندسی، ثبت ساعات تابش به همراه منبع الزامی است.",
+        code: "INSUFFICIENT_IRRADIANCE_DATA",
+        missingInfo: ["customSunHours", "customSunHoursSource"],
+        dataSource: sunData
+      });
+    }
+  }
+
+  // 5. Configurable Engineering Assumptions
+  const pr = profile.performanceRatio ? Number(profile.performanceRatio) : 0.775;
+  if (pr < 0.50 || pr > 0.95) {
+    return res.status(400).json({
+      error: "ضریب عملکرد سیستم (performanceRatio) باید بین ۰.۵۰ تا ۰.۹۵ باشد.",
+      code: "INVALID_PERFORMANCE_RATIO"
+    });
+  }
+
+  const spacePerKwp = profile.sqMetersPerKwp ? Number(profile.sqMetersPerKwp) : 6.5;
+  if (spacePerKwp < 4.0 || spacePerKwp > 15.0) {
+    return res.status(400).json({
+      error: "مساحت مورد نیاز به ازای هر کیلووات‌پیک (sqMetersPerKwp) باید بین ۴.۰ تا ۱۵.۰ متر مربع باشد.",
+      code: "INVALID_SPACE_RATIO"
+    });
+  }
+
+  // 6. System Sizing & Financial Evaluation
+  const evaluated = candidates.map(type => {
     let solarPart = null;
     let generatorPart = null;
     let batteryPart = null;
-    
-    let costEstimate = 0;
+    let costEstimate = null;
 
-    if (type.includes('solar')) {
-      const effectiveSunHours = sunHours || (profile.isHypotheticalScenario ? 5.0 : null);
-      if (effectiveSunHours) {
-        solarPart = calculateSolarSizing(
-          dailyKwh,
-          profile.usableArea || profile.totalArea || 100,
-          effectiveSunHours,
-          550,
-          {
-            performanceRatio: profile.performanceRatio,
-            sqMetersPerKwp: profile.sqMetersPerKwp,
-            isEngineeringVerified: profile.isEngineeringVerified
-          }
-        );
-        costEstimate += solarPart.finalKwp * 300_000_000;
-      }
+    if (type.includes('solar') && sunData && sunData.sunHours) {
+      solarPart = calculateSolarSizing(
+        dailyKwh,
+        usableAreaM2,
+        sunData.sunHours,
+        550,
+        {
+          performanceRatio: pr,
+          sqMetersPerKwp: spacePerKwp,
+          isEngineeringVerified: Boolean(profile.isEngineeringVerified)
+        }
+      );
+
+      // Attach annual generation consistent with main analysis engine
+      solarPart.annualGenerationKwh = Math.round(solarPart.finalKwp * sunData.sunHours * 365 * pr);
+      solarPart.requiredAreaM2 = +(solarPart.finalKwp * spacePerKwp).toFixed(1);
     }
     
     if (type.includes('generator')) {
-      const isThreePhase = profile.locationType === 'industrial' || profile.locationType === 'factory';
+      const isThreePhase = profile.locationType === 'industrial' || profile.locationType === 'factory' || profile.locationType === 'industrial_warehouse';
       generatorPart = calculateGeneratorSizing(profile.selectedAppliances || [], isThreePhase);
-      costEstimate += generatorPart.finalKva * 150_000_000;
     }
     
     if (type.includes('hybrid') || type.includes('offgrid') || type.includes('battery')) {
-      const backupHours = profile.backupHours || 2;
+      const backupHours = profile.backupHours ? Number(profile.backupHours) : 2;
       batteryPart = calculatePowerbankSizing(profile.selectedAppliances || [], backupHours);
-      costEstimate += batteryPart.capacityKwh * 400_000_000;
+    }
+
+    // Benchmark Pricing Calculation (only when explicitly enabled)
+    if (allowBenchmarkPricing) {
+      let benchmarkTotal = 0;
+      if (solarPart && solarPart.finalKwp > 0) {
+        benchmarkTotal += solarPart.finalKwp * 300_000_000;
+      }
+      if (generatorPart && generatorPart.finalKva > 0) {
+        benchmarkTotal += generatorPart.finalKva * 150_000_000;
+      }
+      if (batteryPart && batteryPart.capacityKwh > 0) {
+        benchmarkTotal += batteryPart.capacityKwh * 400_000_000;
+      }
+      costEstimate = benchmarkTotal;
     }
 
     return { type, solarPart, generatorPart, batteryPart, costEstimate };
-  }));
+  });
 
-  const withinBudget = profile.budgetIRR
-    ? evaluated.filter(e => e.costEstimate <= profile.budgetIRR * 1.15)
+  // Filter within budget only if pricing is active and estimate is computed
+  const withinBudget = (allowBenchmarkPricing && profile.budgetIRR && profile.budgetIRR > 0)
+    ? evaluated.filter(e => e.costEstimate !== null && e.costEstimate <= profile.budgetIRR * 1.15)
     : evaluated;
   const pool = withinBudget.length > 0 ? withinBudget : evaluated;
 
-  const ranked = rankArchitectures(pool, profile).slice(0, 3);
-  
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(200).json({
-      recommendationId: "rec_" + Date.now(),
-      assumptions: ["تحلیل مالی دقیق در نسخه بعدی اضافه میشود"],
-      solutions: ranked.map((r, idx) => ({
-        rank: idx + 1,
-        systemType: r.type,
-        technicalSummary: { solarPart: r.solarPart, generatorPart: r.generatorPart, batteryPart: r.batteryPart },
-        estimatedCostIRR: r.costEstimate,
-        score: r.score,
-        explanation: "API Key وجود ندارد. این یک توضیح تستی است."
-      }))
-    });
-  }
+  const ranked = rankArchitectures(pool, profile, allowBenchmarkPricing).slice(0, 3);
 
-  // Call Claude
-  let claudeExplanation = [];
-  try {
-    const claudeRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: `${SYSTEM_PROMPT}` }] },
-        contents: [].map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-        generationConfig: {
-            temperature: 0.2,
-            responseMimeType: "application/json"
+  // 7. Explanations (Deterministic Persian baseline with optional AI enhancement)
+  let aiExplanations = {};
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const promptPayload = {
+        candidates: ranked.map(r => ({
+          type: r.type,
+          score: r.score,
+          solarKwp: r.solarPart?.finalKwp || 0,
+          generatorKva: r.generatorPart?.finalKva || 0,
+          batteryKwh: r.batteryPart?.capacityKwh || 0
+        })),
+        profile: {
+          locationType: profile.locationType,
+          dailyKwh,
+          backupRequired: profile.backupRequired,
+          outageFrequency: profile.outageFrequency
         }
-      }),
-    });
+      };
 
-    if (claudeRes.ok) {
-      const claudeData = await claudeRes.json();
-      if (claudeData.error) throw new Error(claudeData.error.message);
-    let textContent = claudeData.candidates[0].content.parts[0].text;
-      const jsonMatch = textContent.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-         claudeExplanation = JSON.parse(jsonMatch[0]);
-      } else {
-         claudeExplanation = JSON.parse(textContent);
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: [{ role: 'user', parts: [{ text: JSON.stringify(promptPayload) }] }],
+          generationConfig: { temperature: 0.2, responseMimeType: "application/json" }
+        })
+      });
+
+      if (response.ok) {
+        const json = await response.json();
+        const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+          const parsed = JSON.parse(text);
+          if (Array.isArray(parsed)) {
+            for (const item of parsed) {
+              if (item.systemType && item.explanation) {
+                aiExplanations[item.systemType] = item.explanation;
+              }
+            }
+          }
+        }
       }
+    } catch {
+      // Deterministic Persian fallback handles this gracefully
     }
-  } catch(e) {
-    console.error("Claude api error:", e);
   }
 
   const solutions = ranked.map((r, idx) => {
-    const aiExp = claudeExplanation.find(c => c.systemType === r.type);
+    const explanation = aiExplanations[r.type] || DETERMINISTIC_EXPLANATIONS[r.type] || "شرح فنی برای این معماری بر اساس نیازهای بار و پشتیبانی پروژه تدوین شده است.";
+
     return {
       rank: idx + 1,
       label: idx === 0 ? "بهترین انتخاب" : (idx === 1 ? "انتخاب دوم" : "گزینه جایگزین"),
       systemType: r.type,
-      technicalSummary: { solarPart: r.solarPart, generatorPart: r.generatorPart, batteryPart: r.batteryPart },
+      technicalSummary: {
+        solarPart: r.solarPart,
+        generatorPart: r.generatorPart,
+        batteryPart: r.batteryPart
+      },
       estimatedCostIRR: r.costEstimate,
+      pricingStatus: allowBenchmarkPricing ? 'PRELIMINARY_BENCHMARK' : 'PRICE_DATA_REQUIRED',
+      pricingMessage: allowBenchmarkPricing
+        ? "برآورد هزینه اولیه بر اساس نرخ‌های شاخص مرجع بازار است و قیمت قطعی محسوب نمی‌شود."
+        : "استعلام قیمت روز از تأمین‌کنندگان کاتالوگ تجهیزات الزامی است.",
       score: r.score,
-      explanation: aiExp ? aiExp.explanation : "شرح در دسترس نیست."
+      explanation
     };
   });
 
   const recData = {
     recommendationId: "rec_" + Date.now(),
-    assumptions: ["تحلیل مالی دقیق در نسخه بعدی اضافه میشود"],
+    classification: isHypothetical ? "HYPOTHETICAL_SIMULATION" : "PRELIMINARY_ENGINEERING_RECOMMENDATION",
+    isHypothetical,
+    pricingStatus: allowBenchmarkPricing ? "PRELIMINARY_BENCHMARK" : "PRICE_DATA_REQUIRED",
+    isBenchmarkPricingAllowed: allowBenchmarkPricing,
+    dataSource: sunData ? {
+      sunHours: sunData.sunHours,
+      source: sunData.source,
+      sourceLabel: sunData.sourceLabel,
+      dataClassification: sunData.dataClassification,
+      isVerifiedSource: sunData.isVerifiedSource,
+      isReferenceOnly: sunData.isReferenceOnly,
+      retrievalDate: sunData.retrievalDate,
+      warning: sunData.warning || null
+    } : null,
+    consumptionProvenance: {
+      dailyKwh,
+      source: consumptionSource,
+      dataClassification: consumptionClassification,
+      isHypothetical
+    },
+    assumptions: [
+      isHypothetical 
+        ? "این پیشنهاد بر پایه شبیه‌سازی فرضی تولید شده و مبنای قرارداد مهندسی نمی‌باشد."
+        : "این پیشنهاد اولیه است؛ طراحی نهایی باید توسط کارشناس/EPC تایید شود.",
+      allowBenchmarkPricing
+        ? "برآورد قیمت‌ها بر اساس شاخص‌های مرجع بازار بوده و نیازمند استعلام رسمی است."
+        : "قیمت‌گذاری دقیق پس از استعلام رسمی از فروشندگان تجهیزات تعیین می‌گردد."
+    ],
     solutions
   };
 
-  if (db.addRecommendationLog) {
-     db.addRecommendationLog({ profile, recommendation: recData });
+  if (db && db.addRecommendationLog) {
+    try {
+      db.addRecommendationLog({ profile, recommendation: recData });
+    } catch {
+      // Non-fatal logging
+    }
   }
 
   return res.status(200).json(recData);
