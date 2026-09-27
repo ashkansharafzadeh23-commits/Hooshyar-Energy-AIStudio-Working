@@ -46,8 +46,14 @@ export const verifyAuthToken = (req: Request, res: Response, next: NextFunction)
   try {
     const decoded = jwtService.verify(token);
     const uid = decoded.userId || decoded.id;
+    if (!uid) {
+      req.user = undefined;
+      return next();
+    }
     const foundUser = userRepository.getUserById(uid);
-    req.user = foundUser ? passwordService.sanitizeUser(foundUser) : (uid ? { id: uid, ...decoded } : undefined);
+    // Server-authoritative check: only users actively existing in the database are populated.
+    // Unsafe fallback to decoded JWT claims is strictly eliminated.
+    req.user = foundUser ? passwordService.sanitizeUser(foundUser) : undefined;
   } catch (error: any) {
     securityLogger.logSecurityEvent({
       type: 'INVALID_TOKEN',
