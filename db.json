@@ -1,0 +1,241 @@
+{
+  "solarAssets": [],
+  "assetDocuments": [],
+  "assetAuditLogs": [],
+  "users": [],
+  "otps": [],
+  "professionals": [],
+  "ads": [],
+  "analysisHistory": [],
+  "transactions": [],
+  "subscriptions": [],
+  "cityIrradianceCache": [
+    {
+      "city": "تهران",
+      "sunHours": 5.1895,
+      "fetchedAt": 1789118136508,
+      "coords": {
+        "lat": 35.6892,
+        "lon": 51.389
+      },
+      "monthlySunHours": {
+        "JAN": 2.7142,
+        "FEB": 3.5107,
+        "MAR": 4.6918,
+        "APR": 5.6738,
+        "MAY": 6.9542,
+        "JUN": 8.0153,
+        "JUL": 7.6253,
+        "AUG": 7.1381,
+        "SEP": 6.0204,
+        "OCT": 4.421,
+        "NOV": 2.9712,
+        "DEC": 2.4504
+      }
+    },
+    {
+      "city": "اصفهان",
+      "sunHours": 5.7751,
+      "fetchedAt": 1790414586874,
+      "coords": {
+        "lat": 32.6546,
+        "lon": 51.668
+      },
+      "monthlySunHours": {
+        "JAN": 3.3528,
+        "FEB": 4.369,
+        "MAR": 5.5618,
+        "APR": 6.2652,
+        "MAY": 7.3949,
+        "JUN": 8.3798,
+        "JUL": 7.9421,
+        "AUG": 7.561,
+        "SEP": 6.5378,
+        "OCT": 5.0474,
+        "NOV": 3.6931,
+        "DEC": 3.1284
+      }
+    }
+  ],
+  "subscriptionPlans": [
+    {
+      "id": "plan_free",
+      "name": "رایگان",
+      "priceIRR": 0,
+      "durationDays": null,
+      "features": [
+        "۳ تحلیل رایگان در ماه"
+      ]
+    },
+    {
+      "id": "plan_pro",
+      "name": "حرفه‌ای",
+      "priceIRR": 990000,
+      "durationDays": 30,
+      "features": [
+        "تحلیل نامحدود",
+        "دسترسی به تاریخچه کامل",
+        "اولویت در نمایش پیشنهاد فروشندگان"
+      ]
+    }
+  ],
+  "vendors": [
+    {
+      "id": "vendor_001",
+      "companyName": "انرژی نوین",
+      "logoUrl": "",
+      "aboutUs": "ارائه‌دهنده راهکارهای انرژی تجدیدپذیر",
+      "categories": [
+        "solar_panel",
+        "inverter",
+        "battery"
+      ],
+      "address": "خیابان ولیعصر",
+      "city": "تهران",
+      "phones": [
+        {
+          "label": "فروش",
+          "number": "021-12345678"
+        }
+      ],
+      "workingHours": "۸ الی ۱۷",
+      "website": "https://example.com",
+      "status": "approved",
+      "createdAt": "2026-08-07T15:53:16.204Z"
+    }
+  ],
+  "products": [
+    {
+      "id": "prod_001",
+      "vendorId": "vendor_001",
+      "category": "solar_panel",
+      "brand": "JA Solar",
+      "model": "JAM54S31-550/MR",
+      "specs": {
+        "powerWatt": 550,
+        "widthM": 1.13,
+        "heightM": 2.27,
+        "type": "monocrystalline"
+      },
+      "price": 4500000,
+      "currency": "IRR",
+      "images": [],
+      "description": "پنل خورشیدی 550 وات مونوکریستال هالف سل",
+      "inStock": true,
+      "warrantyYears": 12,
+      "createdAt": "2026-08-07T15:53:16.204Z"
+    },
+    {
+      "id": "prod_001b",
+      "vendorId": "vendor_001",
+      "category": "solar_panel",
+      "brand": "Yingli",
+      "model": "YL300P-29b",
+      "specs": {
+        "powerWatt": 300,
+        "widthM": 0.99,
+        "heightM": 1.64,
+        "type": "polycrystalline"
+      },
+      "price": 2000000,
+      "currency": "IRR",
+      "images": [],
+      "description": "پنل خورشیدی 300 وات پلی کریستال (اقتصادی)",
+      "inStock": true,
+      "warrantyYears": 10,
+      "createdAt": "2026-08-07T15:53:16.204Z"
+    },
+    {
+      "id": "prod_001c",
+      "vendorId": "vendor_001",
+      "category": "solar_panel",
+      "brand": "SunPower",
+      "model": "Maxeon 6",
+      "specs": {
+        "powerWatt": 475,
+        "widthM": 1.04,
+        "heightM": 1.81,
+        "type": "monocrystalline"
+      },
+      "price": 6500000,
+      "currency": "IRR",
+      "images": [],
+      "description": "پنل خورشیدی 475 وات راندمان بالا (کم‌فضا)",
+      "inStock": true,
+      "warrantyYears": 25,
+      "createdAt": "2026-08-07T15:53:16.204Z"
+    },
+    {
+      "id": "prod_002",
+      "vendorId": "vendor_001",
+      "category": "generator",
+      "brand": "Hyundai",
+      "model": "HG5355-PG",
+      "specs": {
+        "kva": 3,
+        "fuelType": "petrol",
+        "phase": 1
+      },
+      "price": 15000000,
+      "currency": "IRR",
+      "images": [],
+      "description": "موتور برق 3 کیلووات هیوندای",
+      "inStock": true,
+      "warrantyYears": 1,
+      "createdAt": "2026-08-07T15:53:16.204Z"
+    },
+    {
+      "id": "prod_003",
+      "vendorId": "vendor_001",
+      "category": "powerbank",
+      "brand": "EcoFlow",
+      "model": "DELTA Max",
+      "specs": {
+        "capacityKwh": 2,
+        "outputWatt": 2400
+      },
+      "price": 85000000,
+      "currency": "IRR",
+      "images": [],
+      "description": "پاوربانک خانگی 2 کیلووات ساعت با خروجی 2400 وات",
+      "inStock": true,
+      "warrantyYears": 2,
+      "createdAt": "2026-08-07T15:53:16.204Z"
+    },
+    {
+      "id": "prod_004",
+      "vendorId": "vendor_001",
+      "category": "inverter",
+      "brand": "Growatt",
+      "model": "MIN 5000TL-X",
+      "specs": {
+        "powerKw": 5,
+        "phase": 1,
+        "mode": "on-grid"
+      },
+      "price": 32000000,
+      "currency": "IRR",
+      "images": [],
+      "description": "اینورتر متصل به شبکه 5 کیلووات تک فاز",
+      "inStock": true,
+      "warrantyYears": 5,
+      "createdAt": "2026-08-07T15:53:16.204Z"
+    }
+  ],
+  "energyProjects": [],
+  "financialModels": [],
+  "financialAssumptionSets": [],
+  "investmentOpportunities": [],
+  "investorProfiles": [],
+  "projectRfqs": [],
+  "epcBids": [],
+  "projectContracts": [],
+  "contractParties": [],
+  "projectBaselines": [],
+  "projectMilestones": [],
+  "changeRequests": [],
+  "contractRevisions": [],
+  "energyAssets": [],
+  "telemetrySources": [],
+  "telemetryReadings": []
+}

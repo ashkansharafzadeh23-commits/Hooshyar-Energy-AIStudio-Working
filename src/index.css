@@ -1,0 +1,76 @@
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@layer base {
+  :root {
+    /* Sophisticated Light Theme Variables */
+    --color-base-bg: #F8F9FA;
+    --color-base-dark: #09090B;
+    --color-card-bg: #FFFFFF;
+    --color-text-primary: #09090B;
+    --color-text-secondary: #71717A;
+    --color-border: #E4E4E7;
+    
+    /* Sleek Solar Theme */
+    --solar-primary: #F59E0B; /* Amber 500 */
+    --solar-secondary: #FEF3C7; /* Amber 100 */
+    --solar-accent: #D97706; /* Amber 600 */
+    
+    /* Elegant Generator Theme */
+    --generator-primary: #059669; /* Emerald 600 */
+    --generator-secondary: #D1FAE5; /* Emerald 100 */
+    --generator-accent: #047857; /* Emerald 700 */
+    
+    /* Powerbank Theme */
+    --powerbank-primary: #6366F1; /* Indigo 500 */
+    --powerbank-secondary: #E0E7FF; /* Indigo 100 */
+    --powerbank-accent: #4338CA; /* Indigo 700 */
+    
+    /* Status Colors */
+    --status-success: #10B981;
+    --status-warning: #F59E0B;
+    --status-error: #EF4444;
+    --status-info: #3B82F6;
+  }
+
+  body {
+    background-color: var(--color-base-bg);
+    color: var(--color-text-primary);
+    font-family: 'Vazirmatn', sans-serif;
+    direction: rtl;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Custom premium scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D4D4D8;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #A1A1AA;
+}
+
+/* Glassmorphism utility */
+.glass-effect {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+/* Refined shadow utility */
+.shadow-premium {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 0 3px rgba(0,0,0,0.02);
+}
+
+@custom-variant dark (&:is(.dark *));

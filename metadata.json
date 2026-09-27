@@ -1,0 +1,6 @@
+{
+  "name": "سامانه مدیریت و تأمین مالی پروژه‌های خورشیدی",
+  "description": "پلتفرم جامع مهندسی، مدل‌سازی مالی، قراردادها، تدارکات، تحویل‌گیری و مارکت‌پلیس تأمین مالی پروژه‌های انرژی خورشیدی",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

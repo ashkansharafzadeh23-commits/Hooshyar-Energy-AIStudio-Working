@@ -1,0 +1,31 @@
+export interface IExecutionRepository {
+  getContractById(id: string): any;
+  getMilestoneById(id: string): any;
+  getProjectBaselineById(id: string): any;
+  getChangeRequestById(id: string): any;
+  getApprovalRequestById(id: string): any;
+  getProjectContracts(projectId?: string): any[];
+  getEnergyProjects(): any[];
+  createContract(contract: any): any;
+  getOrganizationById(orgId: string): any;
+  createContractParty(party: any): any;
+  createMilestone(milestone: any): any;
+  createProjectBaseline(baseline: any): any;
+  updateContract(id: string, updates: any): any;
+  getContractParties(contractId: string): any[];
+  updateContractParty(id: string, updates: any): any;
+  getContractRevisions(contractId?: string): any[];
+  getChangeRequestsByProjectId(projectId?: string): any[];
+  createChangeRequest(cr: any): any;
+  updateChangeRequest(id: string, updates: any): any;
+  createContractRevision(rev: any): any;
+  getProjectBaseline(projectId: string): any;
+  updateProjectBaseline(id: string, updates: any): any;
+  getProjectBaselines(projectId: string): any[];
+  getProjectMilestones(projectId: string): any[];
+  updateMilestone(id: string, updates: any): any;
+  deleteMilestone(id: string): any;
+  getApprovalRequests(projectId: string): any[];
+  createApprovalRequest(req: any): any;
+  updateApprovalRequest(id: string, updates: any): any;
+}
