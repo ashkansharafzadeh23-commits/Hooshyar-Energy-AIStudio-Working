@@ -1,21 +1,80 @@
 import React, { useState } from 'react';
-import { Camera, FileText, Zap, Loader2, Sparkles, Check, Trash2, Maximize } from 'lucide-react';
+import { Camera, FileText, Zap, Loader2, Sparkles, Check, Trash2, Maximize, AlertCircle, Info, ShieldCheck, MapPin } from 'lucide-react';
 import { motion } from 'framer-motion';
+
+const POPULAR_CITIES = [
+  'تهران', 'اصفهان', 'شیراز', 'مشهد', 'تبریز', 'یزد', 'کرمان', 'اهواز', 
+  'بندرعباس', 'رشت', 'کرج', 'قم', 'ارومیه', 'زاهدان', 'همدان', 'کاشان', 'بوشهر'
+];
+
+interface AnalysisResultData {
+  monthlyConsumptionKwh: number;
+  solarCapacityKwp: number;
+  recommendedDesign: string;
+  status?: 'SUCCESS' | 'INSUFFICIENT_DATA';
+  missingFields?: string[];
+  dataProvenance?: {
+    consumption?: {
+      value: number | null;
+      source: string;
+      classification: string;
+      confidence: string;
+    };
+    area?: {
+      value: number | null;
+      source: string;
+      isConstrained: boolean;
+    };
+    irradiance?: {
+      sunHours: number | null;
+      source: string;
+      classification: string;
+    };
+  };
+  extractionObservables?: {
+    bill?: {
+      extractedMonthlyKwh?: number | null;
+      periodConsumptionKwh?: number | null;
+      periodDays?: number | null;
+      tariffType?: string | null;
+      confidence?: string;
+      observableNotes?: string;
+    } | null;
+    site?: {
+      roofType?: string;
+      visibleObstacles?: string[];
+      roofSuitability?: string;
+      visualObservations?: string;
+    } | null;
+  };
+  engineeringSizing?: {
+    requiredKwp?: number;
+    finalKwp?: number;
+    spaceConstrained?: boolean;
+    numberOfPanels?: number;
+    inverterKw?: number;
+    performanceRatioUsed?: number;
+    sqMetersPerKwpUsed?: number;
+  } | null;
+  disclaimers?: string[];
+}
 
 interface Props {
   area: number;
+  city?: string;
   isSolar?: boolean;
   onAnalysisComplete: (consumption: number, recommendation: string, capacity: number) => void;
 }
 
-export default function SmartAnalyzer({ area: defaultArea, isSolar = true, onAnalysisComplete }: Props) {
+export default function SmartAnalyzer({ area: defaultArea, city: defaultCity, isSolar = true, onAnalysisComplete }: Props) {
   const [billImage, setBillImage] = useState<string | null>(null);
   const [siteImages, setSiteImages] = useState<string[]>([]);
   const [manualKwh, setManualKwh] = useState<string>('');
   const [manualArea, setManualArea] = useState<string>(defaultArea ? String(defaultArea) : '');
+  const [selectedCity, setSelectedCity] = useState<string>(defaultCity || 'تهران');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ rec: string, cap: number, kwh: number } | null>(null);
+  const [result, setResult] = useState<AnalysisResultData | null>(null);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'bill' | 'site') => {
     const files = e.target.files;
@@ -51,7 +110,7 @@ export default function SmartAnalyzer({ area: defaultArea, isSolar = true, onAna
 
   const handleAnalyze = async () => {
     if (!billImage && siteImages.length === 0 && !manualKwh) {
-      setError('لطفا حداقل یک تصویر آپلود کنید یا مصرف ماهانه را بنویسید.');
+      setError('لطفاً حداقل یک تصویر (قبض یا محل احداث) بارگذاری کنید یا مقدار مصرف ماهانه را وارد فرمایید.');
       return;
     }
     
@@ -69,7 +128,10 @@ export default function SmartAnalyzer({ area: defaultArea, isSolar = true, onAna
       };
 
       const finalArea = manualArea ? Number(manualArea) : defaultArea;
-      const payload: any = { area: finalArea };
+      const payload: any = { 
+        area: finalArea,
+        city: selectedCity || defaultCity || 'تهران'
+      };
       
       if (billImage) payload.billImage = extractBase64Data(billImage);
       if (siteImages.length > 0) payload.siteImages = siteImages.map(img => extractBase64Data(img));
@@ -81,20 +143,22 @@ export default function SmartAnalyzer({ area: defaultArea, isSolar = true, onAna
         body: JSON.stringify(payload)
       });
 
-      if (!res.ok) throw new Error('Failed to analyze');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'خطا در تحلیل تصویر');
+      }
 
-      const data = await res.json();
-      
-      setResult({
-        rec: data.recommendedDesign,
-        cap: data.solarCapacityKwp,
-        kwh: data.monthlyConsumptionKwh
-      });
+      const data: AnalysisResultData = await res.json();
+      setResult(data);
 
-      onAnalysisComplete(data.monthlyConsumptionKwh, data.recommendedDesign, data.solarCapacityKwp);
+      onAnalysisComplete(
+        data.monthlyConsumptionKwh || 0,
+        data.recommendedDesign || '',
+        data.solarCapacityKwp || 0
+      );
 
-    } catch (err) {
-      setError('خطا در تحلیل هوشمند. لطفا دوباره تلاش کنید.');
+    } catch (err: any) {
+      setError(err.message || 'خطا در تحلیل هوشمند تصویر. لطفاً مجدداً تلاش کنید.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -107,8 +171,10 @@ export default function SmartAnalyzer({ area: defaultArea, isSolar = true, onAna
           <Sparkles size={24} />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-gray-800">تحلیل هوشمند (Smart Analysis)</h2>
-          <p className="text-sm text-gray-500 mt-1">{isSolar ? 'آپلود عکس محل و قبض' : 'آپلود عکس قبض'} برای پیشنهاد خودکار هوش مصنوعی</p>
+          <h2 className="text-xl font-bold text-gray-800">تحلیل هوشمند تصویر و قبض (Smart Vision Analysis)</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            استخراج خودکار اطلاعات مصرف و مشخصات محل احداث با اتصال به موتور محاسباتی معین
+          </p>
         </div>
       </div>
 
@@ -117,7 +183,7 @@ export default function SmartAnalyzer({ area: defaultArea, isSolar = true, onAna
         {isSolar && (
         <div className="bg-white p-5 rounded-xl border border-indigo-50 shadow-sm relative group">
           <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center justify-between">
-            <span>عکس‌های محل احداث</span>
+            <span>عکس‌های محل احداث / پشت‌بام</span>
             <span className="text-xs text-indigo-500 bg-indigo-50 px-2 py-1 rounded-md">{siteImages.length} عکس</span>
           </h3>
           
@@ -136,18 +202,18 @@ export default function SmartAnalyzer({ area: defaultArea, isSolar = true, onAna
             <label className="cursor-pointer w-20 h-20 bg-gray-50 rounded-lg flex flex-col items-center justify-center border-2 border-dashed border-gray-200 hover:border-indigo-400 transition-colors">
               <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'site')} />
               <Camera size={20} className="text-indigo-300 mb-1" />
-              <span className="text-[10px] font-semibold text-gray-500">افزودن</span>
+              <span className="text-[10px] font-semibold text-gray-500">افزودن عکس</span>
             </label>
           </div>
           <p className="text-xs text-gray-500 leading-relaxed">
-            می‌توانید چندین عکس از زوایای مختلف پشت‌بام یا زمین بارگذاری کنید.
+            جهت شناسایی نوع سقف، موانع فیزیکی و سایه‌اندازی‌های مشهود توسط بینایی ماشین.
           </p>
         </div>
         )}
 
         {/* Bill Image Upload */}
         <div className="bg-white p-5 rounded-xl border border-indigo-50 shadow-sm relative overflow-hidden group">
-          <h3 className="text-sm font-bold text-gray-700 mb-3">عکس قبض برق</h3>
+          <h3 className="text-sm font-bold text-gray-700 mb-3">عکس قبض برق (استخراج مصرف)</h3>
           <label className="cursor-pointer block text-center">
             <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'bill')} />
             {billImage ? (
@@ -164,10 +230,13 @@ export default function SmartAnalyzer({ area: defaultArea, isSolar = true, onAna
               </div>
             )}
           </label>
+          <p className="text-xs text-gray-500 leading-relaxed mt-2">
+            رقم مصرف و دوره قرائت استخراج گردیده و در صورت ابهام، تأیید دستی شما درخواست خواهد شد.
+          </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white p-4 rounded-xl border border-indigo-50 flex items-center gap-3 shadow-sm">
           <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center shrink-0">
             <Maximize size={20} />
@@ -194,30 +263,53 @@ export default function SmartAnalyzer({ area: defaultArea, isSolar = true, onAna
               type="number"
               value={manualKwh}
               onChange={(e) => setManualKwh(e.target.value)}
-              placeholder="مثال: 350"
+              placeholder="اختیاری در صورت آپلود قبض"
               className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm"
             />
           </div>
         </div>
+
+        <div className="bg-white p-4 rounded-xl border border-indigo-50 flex items-center gap-3 shadow-sm">
+          <div className="w-10 h-10 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center shrink-0">
+            <MapPin size={20} />
+          </div>
+          <div className="flex-1">
+            <label className="text-sm font-bold text-gray-700 block mb-1">شهر (تابش اقلیمی)</label>
+            <select
+              value={selectedCity}
+              onChange={(e) => setSelectedCity(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm"
+            >
+              {POPULAR_CITIES.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
-      {error && <div className="text-red-500 text-sm font-bold mb-4 bg-red-50 p-3 rounded-lg border border-red-100">{error}</div>}
+      {error && (
+        <div className="text-red-700 text-sm font-bold mb-4 bg-red-50 p-3 rounded-lg border border-red-200 flex items-center gap-2">
+          <AlertCircle size={18} className="shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
 
       <div className="text-center">
         <button 
           onClick={handleAnalyze}
           disabled={isAnalyzing}
-          className="bg-indigo-600 text-white px-8 py-3.5 rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-md shadow-indigo-200 disabled:opacity-70 flex items-center justify-center gap-2 mx-auto min-w-[240px]"
+          className="bg-indigo-600 text-white px-8 py-3.5 rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-md shadow-indigo-200 disabled:opacity-70 flex items-center justify-center gap-2 mx-auto min-w-[260px] cursor-pointer"
         >
           {isAnalyzing ? (
             <>
               <Loader2 className="animate-spin" size={20} />
-              در حال تحلیل هوشمند...
+              در حال استخراج بینایی و محاسبات مهندسی...
             </>
           ) : (
             <>
               <Sparkles size={20} />
-              تحلیل با هوش مصنوعی و پیشنهاد طراحی
+              استخراج داده‌های تصویری و ظرفیت‌سنجی
             </>
           )}
         </button>
@@ -226,29 +318,95 @@ export default function SmartAnalyzer({ area: defaultArea, isSolar = true, onAna
       {result && (
         <motion.div 
           initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-          className="mt-6 bg-white p-6 rounded-xl border border-indigo-100 shadow-sm"
+          className="mt-6 bg-white p-6 rounded-xl border border-indigo-100 shadow-sm space-y-4"
         >
+          {/* Missing data alert if status is INSUFFICIENT_DATA */}
+          {result.status === 'INSUFFICIENT_DATA' && (
+            <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl text-amber-900 flex items-start gap-3">
+              <AlertCircle size={20} className="text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-bold text-sm">داده‌های ورودی جهت ظرفیت‌سنجی مهندسی ناکافی است</h4>
+                <p className="text-xs text-amber-800 mt-1 leading-relaxed">{result.recommendedDesign}</p>
+                {result.missingFields && result.missingFields.length > 0 && (
+                  <div className="mt-2 flex gap-2">
+                    {result.missingFields.map(f => (
+                      <span key={f} className="text-[11px] bg-white border border-amber-300 text-amber-800 px-2 py-0.5 rounded font-mono">
+                        {f === 'monthlyConsumptionKwh' ? 'مصرف ماهانه برق' : f === 'city_or_sunHours' ? 'شهر یا ساعات تابش' : f}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Success or Partial Result View */}
           <div className="flex items-start gap-4">
             <div className="w-12 h-12 bg-green-100 text-green-600 rounded-xl flex items-center justify-center shrink-0 mt-1">
               <Check size={24} />
             </div>
-            <div>
-              <h3 className="font-bold text-gray-800 text-lg mb-2">پیشنهاد هوشمند سیستم</h3>
-              <p className="text-gray-600 text-sm leading-relaxed mb-4">{result.rec}</p>
+            <div className="flex-1">
+              <h3 className="font-bold text-gray-800 text-lg mb-2">نتیجه استخراج تصویری و مدل مهندسی</h3>
+              <p className="text-gray-700 text-sm leading-relaxed mb-4">{result.recommendedDesign}</p>
               
-              <div className="flex flex-wrap gap-3">
-                {result.kwh > 0 && (
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-2">
-                    <span className="block text-xs text-gray-500 mb-1">مصرف تخمینی</span>
-                    <span className="font-black text-gray-800">{result.kwh} <span className="text-xs font-normal">کیلووات ساعت</span></span>
+              {/* Metrics Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <span className="block text-[11px] text-gray-500 mb-1">مصرف ماهانه مبنا</span>
+                  <span className="font-black text-gray-800 text-base">{result.monthlyConsumptionKwh} <span className="text-xs font-normal">kWh</span></span>
+                  <span className="block text-[10px] text-indigo-600 mt-1 font-medium">
+                    {result.dataProvenance?.consumption?.source === 'USER_MANUAL_INPUT' ? 'ورودی دستی کاربر' : 'استخراج از قبض'}
+                  </span>
+                </div>
+
+                <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
+                  <span className="block text-[11px] text-indigo-600 mb-1">ظرفیت مهندسی سامانه</span>
+                  <span className="font-black text-indigo-900 text-base">{result.solarCapacityKwp} <span className="text-xs font-normal">kWp</span></span>
+                  {result.engineeringSizing?.numberOfPanels ? (
+                    <span className="block text-[10px] text-indigo-700 mt-1">{result.engineeringSizing.numberOfPanels} پنل ۵۵۰ وات</span>
+                  ) : null}
+                </div>
+
+                <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
+                  <span className="block text-[11px] text-amber-700 mb-1">تابش روزانه اقلیمی</span>
+                  <span className="font-black text-amber-900 text-base">
+                    {result.dataProvenance?.irradiance?.sunHours || '—'} <span className="text-xs font-normal">ساعت/روز</span>
+                  </span>
+                  <span className="block text-[10px] text-amber-800 mt-1 truncate">
+                    {result.dataProvenance?.irradiance?.source || 'NASA POWER'}
+                  </span>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                  <span className="block text-[11px] text-blue-700 mb-1">مدل مهندسی</span>
+                  <span className="font-black text-blue-900 text-sm">PR: {result.engineeringSizing?.performanceRatioUsed || 0.775}</span>
+                  <span className="block text-[10px] text-blue-700 mt-1">{result.engineeringSizing?.sqMetersPerKwpUsed || 6.5} m²/kWp</span>
+                </div>
+              </div>
+
+              {/* Visual Observations from site/roof if available */}
+              {result.extractionObservables?.site && (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 mb-3 space-y-1">
+                  <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <Info size={14} className="text-slate-500" />
+                    <span>مشاهدات بینایی ماشین از محل احداث:</span>
                   </div>
-                )}
-                {result.cap > 0 && (
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-2">
-                    <span className="block text-xs text-indigo-500 mb-1">ظرفیت پیشنهادی پنل</span>
-                    <span className="font-black text-indigo-900">{result.cap} <span className="text-xs font-normal">کیلووات</span></span>
-                  </div>
-                )}
+                  {result.extractionObservables.site.roofType && (
+                    <div>نوع سقف مشهود: <span className="font-semibold">{result.extractionObservables.site.roofType}</span></div>
+                  )}
+                  {result.extractionObservables.site.visibleObstacles && result.extractionObservables.site.visibleObstacles.length > 0 && (
+                    <div>موانع مشهود: <span className="font-semibold">{result.extractionObservables.site.visibleObstacles.join('، ')}</span></div>
+                  )}
+                </div>
+              )}
+
+              {/* Formal Engineering Disclaimer */}
+              <div className="flex items-start gap-2 text-[11px] text-zinc-500 bg-zinc-50 p-2.5 rounded-lg border border-zinc-200/80">
+                <ShieldCheck size={16} className="text-zinc-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5 leading-relaxed">
+                  <p className="font-semibold text-zinc-600">عدم قطعیت و تعهد مهندسی:</p>
+                  <p>استخراج تصویری صرفاً ابزار کمکی اولیه است. ابعاد نهایی، ظرفیت کابل‌کشی، انشعاب شبکه و تحلیل سایه‌اندازی دقیق مستلزم بازدید و تاییدیه رسمی شرکت مهندسی EPC در محل احداث است.</p>
+                </div>
               </div>
             </div>
           </div>

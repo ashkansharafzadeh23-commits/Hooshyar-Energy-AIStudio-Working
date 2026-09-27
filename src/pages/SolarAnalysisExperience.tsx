@@ -358,6 +358,7 @@ export default function SolarAnalysisExperience() {
         <ConsumptionStep
           monthlyKwh={monthlyKwh}
           area={area || 0}
+          city={city}
           onChange={(kwh) => setMonthlyKwh(kwh)}
           onAnalysisExtracted={(extractedKwh) => {
             if (extractedKwh && extractedKwh > 0) {

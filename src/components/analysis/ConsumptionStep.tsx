@@ -6,6 +6,7 @@ import SmartAnalyzer from '../SmartAnalyzer';
 interface ConsumptionStepProps {
   monthlyKwh: number | null;
   area: number;
+  city?: string;
   onChange: (monthlyKwh: number) => void;
   onAnalysisExtracted?: (extractedKwh: number, capacityKwp?: number) => void;
 }
@@ -13,6 +14,7 @@ interface ConsumptionStepProps {
 export const ConsumptionStep: React.FC<ConsumptionStepProps> = ({
   monthlyKwh,
   area,
+  city,
   onChange,
   onAnalysisExtracted
 }) => {
@@ -93,6 +95,7 @@ export const ConsumptionStep: React.FC<ConsumptionStepProps> = ({
           <div className="mt-3 p-4 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
             <SmartAnalyzer
               area={area || 100}
+              city={city}
               isSolar={true}
               onAnalysisComplete={(extractedKwh, recommendation, capacityKwp) => {
                 if (extractedKwh && extractedKwh > 0) {

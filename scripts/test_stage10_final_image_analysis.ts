@@ -1,0 +1,177 @@
+/**
+ * HOOSHYAR ENERGY — STAGE 10 FINAL STEP
+ * IMAGE ANALYSIS INTEGRITY & SIZING PIPELINE VERIFICATION SUITE
+ */
+
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import analyzeImagesHandler from '../api/energy/analyze-images.js';
+import { calculateSolarSizing } from '../src/api/engine.js';
+import { getSunHoursForCity } from '../api/lib/solarIrradiance.js';
+
+const ROOT_DIR = process.cwd();
+const DB_PATH = path.join(ROOT_DIR, 'db.json');
+const BASELINE_DB_HASH = '52c7c5ec80711b1cb0f5db51c644fee109bf122184c391eef4bc826cb0b25918';
+
+let passed = 0;
+let failed = 0;
+
+function assert(condition: boolean, name: string, detail?: string) {
+  if (condition) {
+    passed++;
+    console.log(`  ✓ PASS: ${name}`);
+  } else {
+    failed++;
+    console.error(`  ✗ FAIL: ${name}${detail ? ` -> ${detail}` : ''}`);
+  }
+}
+
+function sha256(content: Buffer | string): string {
+  return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+// Mock HTTP helper for direct handler testing
+async function invokeHandler(body: any): Promise<{ status: number; body: any }> {
+  let statusCode = 200;
+  let responseData: any = null;
+
+  const req = {
+    method: 'POST',
+    body
+  };
+
+  const res = {
+    status(code: number) {
+      statusCode = code;
+      return this;
+    },
+    json(data: any) {
+      responseData = data;
+      return this;
+    }
+  };
+
+  await analyzeImagesHandler(req, res);
+  return { status: statusCode, body: responseData };
+}
+
+async function runSuite() {
+  console.log('========================================================================');
+  console.log('HOOSHYAR ENERGY — STAGE 10 FINAL STEP: IMAGE ANALYSIS INTEGRITY AUDIT');
+  console.log('========================================================================');
+
+  // 1. IMMUTABILITY GUARD
+  console.log('\n[Guard 1] Repository db.json Immutability:');
+  const currentDbHash = sha256(fs.readFileSync(DB_PATH));
+  assert(currentDbHash === BASELINE_DB_HASH, 'db.json byte-for-byte unmodified', `Expected ${BASELINE_DB_HASH}, got ${currentDbHash}`);
+
+  // 2. STATIC CODE AUDIT FOR UNVERIFIED ASSUMPTIONS
+  console.log('\n[Guard 2] Removal of Fixed Engineering Assumptions in analyze-images.js:');
+  const code = fs.readFileSync(path.join(ROOT_DIR, 'api/energy/analyze-images.js'), 'utf8');
+  assert(!code.includes('~4.5 kWh/day'), 'Eliminated fixed ~4.5 kWh/day assumption');
+  assert(!code.includes('135 kWh/month'), 'Eliminated fixed 135 kWh/month assumption');
+  assert(!code.includes('~5 sqm of area'), 'Eliminated fixed ~5 sqm per kWp assumption');
+  assert(code.includes('DO NOT calculate solar system capacity'), 'Instructs vision AI not to fabricate capacity');
+  assert(code.includes('calculateSolarSizing'), 'Routes sizing through deterministic engine');
+  assert(code.includes('getSunHoursForCity'), 'Routes irradiation through solarIrradiance service');
+
+  // 3. HANDLER INTEGRATION: MISSING DATA HANDLING
+  console.log('\n[Guard 3] Missing Consumption Handling:');
+  const missingConsumptionRes = await invokeHandler({
+    area: 100,
+    city: 'تهران'
+  });
+  assert(missingConsumptionRes.status === 200, 'Returns 200 with structured data-truth payload');
+  assert(missingConsumptionRes.body.status === 'INSUFFICIENT_DATA', 'Identifies status as INSUFFICIENT_DATA');
+  assert(missingConsumptionRes.body.missingFields.includes('monthlyConsumptionKwh'), 'Flags monthlyConsumptionKwh as missing');
+  assert(missingConsumptionRes.body.solarCapacityKwp === 0, 'Does not fabricate solar capacity without consumption');
+  assert(missingConsumptionRes.body.recommendedDesign.includes('مصرف'), 'Provides actionable Persian guidance for missing consumption');
+
+  console.log('\n[Guard 4] Missing Irradiance/City Handling:');
+  const missingCityRes = await invokeHandler({
+    manualConsumption: 450,
+    area: 100
+  });
+  assert(missingCityRes.body.status === 'INSUFFICIENT_DATA', 'Identifies missing city/sunHours');
+  assert(missingCityRes.body.missingFields.includes('city_or_sunHours'), 'Flags city_or_sunHours in missingFields');
+  assert(missingCityRes.body.solarCapacityKwp === 0, 'Does not fabricate solar capacity without attributed irradiance');
+
+  // 4. DETERMINISTIC SIZING WITH DATA PROVENANCE
+  console.log('\n[Guard 5] User-Provided Data Provenance & Deterministic Sizing:');
+  const tehranSun = await getSunHoursForCity('تهران');
+  const validRes = await invokeHandler({
+    manualConsumption: 600,
+    area: 150,
+    city: 'تهران'
+  });
+
+  assert(validRes.body.status === 'SUCCESS', 'Returns SUCCESS status for complete valid inputs');
+  assert(validRes.body.monthlyConsumptionKwh === 600, 'Preserves exact consumption');
+  assert(validRes.body.dataProvenance.consumption.source === 'USER_MANUAL_INPUT', 'Correctly attributes consumption source to USER_MANUAL_INPUT');
+  assert(validRes.body.dataProvenance.consumption.classification === 'USER_PROVIDED', 'Correctly classifies consumption as USER_PROVIDED');
+  assert(validRes.body.dataProvenance.irradiance.sunHours === tehranSun.sunHours, 'Uses real NASA/cached sun hours for Tehran');
+
+  // Calculate expected deterministic sizing
+  const expectedSizing = calculateSolarSizing(600 / 30, 150, tehranSun.sunHours, 550, { performanceRatio: 0.775, sqMetersPerKwp: 6.5 });
+  assert(validRes.body.solarCapacityKwp === expectedSizing.finalKwp, `Matches deterministic sizing (${expectedSizing.finalKwp} kWp)`, `Got ${validRes.body.solarCapacityKwp}`);
+  assert(validRes.body.engineeringSizing.numberOfPanels === expectedSizing.numberOfPanels, `Matches panel count (${expectedSizing.numberOfPanels})`);
+
+  // 5. SPACE CONSTRAINED SCENARIOS
+  console.log('\n[Guard 6] Space Constraint Detection:');
+  const constrainedRes = await invokeHandler({
+    manualConsumption: 3000, // Requires ~20+ kWp
+    area: 26,                // Max space for ~4 kWp
+    city: 'تهران'
+  });
+  assert(constrainedRes.body.engineeringSizing.spaceConstrained === true, 'Correctly flags space constraint');
+  const maxPossible = +(26 / 6.5).toFixed(2);
+  assert(constrainedRes.body.solarCapacityKwp === maxPossible, `Caps capacity to available area (${maxPossible} kWp)`, `Got ${constrainedRes.body.solarCapacityKwp}`);
+
+  // 6. ZERO CONSUMPTION DISTINCTION
+  console.log('\n[Guard 7] Legitimate Zero Consumption Handling:');
+  const zeroRes = await invokeHandler({
+    manualConsumption: 0,
+    area: 100,
+    city: 'تهران'
+  });
+  assert(zeroRes.body.monthlyConsumptionKwh === 0, 'Preserves legitimate 0 kWh');
+  assert(zeroRes.body.solarCapacityKwp === 0, 'Sizing is 0 for 0 consumption');
+  assert(zeroRes.body.recommendedDesign.includes('فروش کامل برق'), 'Suggests utility-scale sale model rather than fabricating residential consumption');
+
+  // 7. BACKWARD COMPATIBILITY ASSURANCE
+  console.log('\n[Guard 8] Backward Compatibility Contract:');
+  assert(typeof validRes.body.monthlyConsumptionKwh === 'number', 'Exposes top-level monthlyConsumptionKwh as number');
+  assert(typeof validRes.body.solarCapacityKwp === 'number', 'Exposes top-level solarCapacityKwp as number');
+  assert(typeof validRes.body.recommendedDesign === 'string', 'Exposes top-level recommendedDesign as string');
+  assert(Array.isArray(validRes.body.disclaimers) && validRes.body.disclaimers.length > 0, 'Includes engineering disclaimers');
+
+  // 8. FRONTEND CONSUMER INTEGRITY
+  console.log('\n[Guard 9] Frontend Consumer Integrity:');
+  const analyzerCode = fs.readFileSync(path.join(ROOT_DIR, 'src/components/SmartAnalyzer.tsx'), 'utf8');
+  assert(analyzerCode.includes('POPULAR_CITIES') || analyzerCode.includes('selectedCity'), 'SmartAnalyzer supports city selection');
+  assert(analyzerCode.includes('INSUFFICIENT_DATA'), 'SmartAnalyzer handles INSUFFICIENT_DATA status');
+  assert(analyzerCode.includes('disclaimers') || analyzerCode.includes('عدم قطعیت و تعهد مهندسی'), 'SmartAnalyzer renders engineering disclaimers');
+  assert(analyzerCode.includes('dataProvenance'), 'SmartAnalyzer renders data provenance');
+
+  const stepCode = fs.readFileSync(path.join(ROOT_DIR, 'src/components/analysis/ConsumptionStep.tsx'), 'utf8');
+  assert(stepCode.includes('city={city}'), 'ConsumptionStep forwards city to SmartAnalyzer');
+
+  const checklistCode = fs.readFileSync(path.join(ROOT_DIR, 'src/pages/Checklist.tsx'), 'utf8');
+  assert(checklistCode.includes('city={state.city}'), 'Checklist forwards city to SmartAnalyzer');
+
+  console.log('\n========================================================================');
+  console.log(`STAGE 10 FINAL AUDIT: ${passed} passed, ${failed} failed`);
+  console.log('========================================================================');
+
+  if (failed > 0) {
+    process.exit(1);
+  } else {
+    process.exit(0);
+  }
+}
+
+runSuite().catch(err => {
+  console.error('Fatal error during test suite:', err);
+  process.exit(1);
+});

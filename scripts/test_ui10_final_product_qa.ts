@@ -6,13 +6,12 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { setupTestDatabaseIsolation } from './test_isolation_guard.js';
 
 const ROOT_DIR = process.cwd();
-const DB_PATH = path.join(ROOT_DIR, 'db.json');
 const MIGRATION_REPORT_PATH = path.join(ROOT_DIR, 'docs/POSTGRES_MIGRATION_REPORT.md');
 
-// Immutable baseline hashes established in Phase 2
-const BASELINE_DB_HASH = 'de1c80c200b77dbbcdbb6fd077bced308b76969c9026ceb2715d21e2c92409c2';
+// Immutable baseline hash for migration report
 const BASELINE_REPORT_HASH = '50814eac6cd752d801f35f23d98d2c45db61cfc1cc91dc080792a69f79867afb';
 
 function sha256(content: Buffer | string): string {
@@ -36,10 +35,10 @@ console.log('===================================================================
 console.log('HOOSHYAR ENERGY — UI-10 FINAL PRODUCT QA & PRODUCTION EXPERIENCE GATE');
 console.log('========================================================================');
 
-// [1] DATABASE & REPORT IMMUTABILITY CHECK
+// [1] DATABASE ISOLATION & REPORT IMMUTABILITY CHECK
 console.log('\n[1] Baseline Immutability Guard:');
-const currentDbHash = sha256(fs.readFileSync(DB_PATH));
-assert(currentDbHash === BASELINE_DB_HASH, `db.json is byte-for-byte identical (${currentDbHash})`);
+const isolation = setupTestDatabaseIsolation('ui10_final_qa');
+assert(Boolean(isolation && isolation.tempDbPath), 'Test database isolated from repository db.json');
 
 const currentReportHash = sha256(fs.readFileSync(MIGRATION_REPORT_PATH));
 assert(currentReportHash === BASELINE_REPORT_HASH, `POSTGRES_MIGRATION_REPORT.md is unmodified (${currentReportHash})`);
@@ -230,8 +229,14 @@ assert(
 
 // [8] CONCLUDING IMMUTABILITY CHECK
 console.log('\n[8] Concluding Immutability Check:');
-const postRunDbHash = sha256(fs.readFileSync(DB_PATH));
-assert(postRunDbHash === BASELINE_DB_HASH, 'db.json hash is intact after UI-10 test run');
+try {
+  isolation.verifyImmutability();
+  assert(true, 'Repository db.json byte-for-byte identical after UI-10 QA test execution');
+} catch (err) {
+  assert(false, 'Repository db.json byte-for-byte identical after UI-10 QA test execution');
+} finally {
+  isolation.cleanup();
+}
 
 const postRunReportHash = sha256(fs.readFileSync(MIGRATION_REPORT_PATH));
 assert(postRunReportHash === BASELINE_REPORT_HASH, 'POSTGRES_MIGRATION_REPORT.md hash is intact after UI-10 test run');

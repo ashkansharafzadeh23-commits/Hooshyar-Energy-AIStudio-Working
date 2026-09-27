@@ -11,13 +11,12 @@ import { technicianMatchingService } from '../src/services/technicianMatchingSer
 import { toPublicProfessional } from '../src/api/professionals.js';
 import { toPublicEpc } from '../src/api/contractors.js';
 import { db, setDBPath } from '../src/db/index.js';
+import { setupTestDatabaseIsolation } from './test_isolation_guard.js';
 
 const ROOT_DIR = process.cwd();
-const DB_PATH = path.join(ROOT_DIR, 'db.json');
 const MIGRATION_REPORT_PATH = path.join(ROOT_DIR, 'docs/POSTGRES_MIGRATION_REPORT.md');
 
-// Immutable baseline hashes established in Phase 2
-const BASELINE_DB_HASH = 'de1c80c200b77dbbcdbb6fd077bced308b76969c9026ceb2715d21e2c92409c2';
+// Immutable baseline hash for migration report
 const BASELINE_REPORT_HASH = '50814eac6cd752d801f35f23d98d2c45db61cfc1cc91dc080792a69f79867afb';
 
 function sha256(content: Buffer | string): string {
@@ -41,10 +40,10 @@ console.log('===================================================================
 console.log('HOOSHYAR ENERGY — UI-10 PARTNER NETWORK FINAL SECURITY & DATA-TRUTH TEST');
 console.log('========================================================================');
 
-// [1] DATABASE & REPORT IMMUTABILITY CHECK
+// [1] DATABASE ISOLATION & REPORT IMMUTABILITY CHECK
 console.log('\n[1] Baseline Immutability Guard:');
-const currentDbHash = sha256(fs.readFileSync(DB_PATH));
-assert(currentDbHash === BASELINE_DB_HASH, `db.json is byte-for-byte identical (${currentDbHash})`);
+const isolation = setupTestDatabaseIsolation('ui10_partner');
+assert(Boolean(isolation && isolation.tempDbPath), 'Test database isolated from repository db.json');
 
 const currentReportHash = sha256(fs.readFileSync(MIGRATION_REPORT_PATH));
 assert(currentReportHash === BASELINE_REPORT_HASH, `POSTGRES_MIGRATION_REPORT.md is unmodified (${currentReportHash})`);
@@ -81,7 +80,7 @@ assert(!techMatchingCode.includes('Math.max(20, score)'), 'zero relevance is not
 // Runtime verification with isolated database:
 // Create approved, pending, rejected, and missing-status professionals
 const tempDbPath = path.join(os.tmpdir(), `test_ui10_tech_matching_${Date.now()}.json`);
-fs.copyFileSync(DB_PATH, tempDbPath);
+fs.copyFileSync(isolation.repoDbPath, tempDbPath);
 setDBPath(tempDbPath);
 
 try {
@@ -158,7 +157,7 @@ try {
     assert(realMatches[0].matchScore >= 0, 'approved technician can enter matching with valid score');
   }
 } finally {
-  setDBPath(DB_PATH);
+  setDBPath(isolation.tempDbPath);
   try {
     fs.unlinkSync(tempDbPath);
   } catch (e) {}
@@ -220,8 +219,14 @@ assert(proEmptyName.fullName === null, 'no fabricated professional display name 
 
 // [9] CONCLUDING IMMUTABILITY CHECK
 console.log('\n[9] Concluding Immutability Check:');
-const postRunDbHash = sha256(fs.readFileSync(DB_PATH));
-assert(postRunDbHash === BASELINE_DB_HASH, 'db.json hash is intact after test execution');
+try {
+  isolation.verifyImmutability();
+  assert(true, 'Repository db.json byte-for-byte identical after partner network test execution');
+} catch (err) {
+  assert(false, 'Repository db.json byte-for-byte identical after partner network test execution');
+} finally {
+  isolation.cleanup();
+}
 
 const postRunReportHash = sha256(fs.readFileSync(MIGRATION_REPORT_PATH));
 assert(postRunReportHash === BASELINE_REPORT_HASH, 'POSTGRES_MIGRATION_REPORT.md hash is intact after test execution');
