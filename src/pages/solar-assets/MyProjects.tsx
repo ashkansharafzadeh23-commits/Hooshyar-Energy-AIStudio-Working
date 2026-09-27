@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Upload, Play, Eye, Home } from 'lucide-react';
+import { Plus, Upload, Play, Eye, Home, ShieldAlert, LogIn, Clock, CheckCircle2 } from 'lucide-react';
 
 export default function MyProjects() {
   const [user, setUser] = useState<any>(null);
@@ -8,6 +8,8 @@ export default function MyProjects() {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [requestStatus, setRequestStatus] = useState<'idle' | 'submitting' | 'submitted' | 'error'>('idle');
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   
   // Form state
   const [showForm, setShowForm] = useState(false);
@@ -42,19 +44,23 @@ export default function MyProjects() {
     const fetchUser = async () => {
       try {
         const token = localStorage.getItem("token");
-        const headers: any = {};
-        if (token) headers.Authorization = `Bearer ${token}`;
-        
-        const res = await fetch("/api/auth/me", { headers });
+        if (!token) {
+          setUser(null);
+          setAuthLoading(false);
+          return;
+        }
+
+        const res = await fetch("/api/auth/me", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         if (res.ok) {
           const data = await res.json();
           setUser(data.user);
         } else {
-          // Fallback dev admin user if no auth is available during tests
-          setUser({ id: "dev_user", roles: ["PROJECT_OWNER", "ADMIN"] });
+          setUser(null);
         }
       } catch (e) {
-        setUser({ id: "dev_user", roles: ["PROJECT_OWNER", "ADMIN"] });
+        setUser(null);
       } finally {
         setAuthLoading(false);
       }
@@ -62,11 +68,17 @@ export default function MyProjects() {
     fetchUser();
   }, []);
 
+  const userRoles: string[] = user ? (Array.isArray(user.roles) ? user.roles : [user.role || 'CUSTOMER']) : [];
+  const isProjectOwner = userRoles.some(r => r.toUpperCase() === "PROJECT_OWNER");
+  const isAdmin = userRoles.some(r => r.toUpperCase() === "ADMIN" || r.toUpperCase() === "SUPER_ADMIN");
+  const isPendingReview = userRoles.some(r => r.toUpperCase() === "PROJECT_OWNER_PENDING");
+
   useEffect(() => {
     if (authLoading) return;
-    // We allow dummy dev_user for testing the UI
-    fetchProjects();
-  }, [authLoading]);
+    if (user && (isProjectOwner || isAdmin)) {
+      fetchProjects();
+    }
+  }, [authLoading, user, isProjectOwner, isAdmin]);
   
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -144,26 +156,89 @@ export default function MyProjects() {
     }
   };
 
-  const requestRole = async () => {
-    const token = localStorage.getItem("token");
-    await fetch("/api/user/dev-make-admin", {
-      method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
-    });
-    alert("دسترسی مالک پروژه و ادمین به شما داده شد. صفحه را رفرش کنید.");
-    window.location.reload();
+  const handleRequestRole = async () => {
+    setRequestStatus('submitting');
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/user/request-role", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      });
+      if (res.ok) {
+        setRequestStatus('submitted');
+        const meRes = await fetch("/api/auth/me", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (meRes.ok) {
+          const data = await meRes.json();
+          setUser(data.user);
+        }
+      } else {
+        setRequestStatus('error');
+      }
+    } catch {
+      setRequestStatus('error');
+    }
   };
 
-  if (authLoading) return <div className="p-12 text-center">در حال تایید هویت...</div>;
+  if (authLoading) {
+    return <div className="p-12 text-center text-zinc-600 dark:text-zinc-400 font-medium">در حال تایید هویت...</div>;
+  }
 
-  if (!user?.roles?.includes("PROJECT_OWNER") && !user?.roles?.includes("ADMIN")) {
+  if (!user) {
     return (
-      <div className="text-center py-12 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-8">
-        <h2 className="text-xl font-bold mb-4">دسترسی محدود</h2>
-        <p className="text-zinc-600 mb-6">شما نقش مالک پروژه (PROJECT_OWNER) را ندارید.</p>
-        <button onClick={requestRole} className="bg-blue-600 text-white px-4 py-2 rounded-lg">
-          دریافت دسترسی (Dev Helper)
-        </button>
+      <div className="text-center py-12 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-8 max-w-md mx-auto my-12">
+        <div className="w-12 h-12 bg-amber-100 dark:bg-amber-950/60 rounded-full flex items-center justify-center mx-auto mb-4 text-amber-600">
+          <LogIn size={24} />
+        </div>
+        <h2 className="text-xl font-bold mb-2 text-zinc-900 dark:text-zinc-100">نیاز به ورود به حساب کاربری</h2>
+        <p className="text-zinc-600 dark:text-zinc-400 mb-6 text-sm">
+          جهت مشاهده و مدیریت پروژه‌های خورشیدی، لطفاً وارد حساب خود شوید.
+        </p>
+        <Link
+          to="/auth"
+          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
+        >
+          <LogIn size={16} />
+          ورود یا ثبت‌نام
+        </Link>
+      </div>
+    );
+  }
+
+  if (!isProjectOwner && !isAdmin) {
+    return (
+      <div className="text-center py-12 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-8 max-w-md mx-auto my-12">
+        <div className="w-12 h-12 bg-amber-100 dark:bg-amber-950/60 rounded-full flex items-center justify-center mx-auto mb-4 text-amber-600">
+          <ShieldAlert size={24} />
+        </div>
+        <h2 className="text-xl font-bold mb-2 text-zinc-900 dark:text-zinc-100">دسترسی به بخش مدیریت پروژه‌ها</h2>
+        <p className="text-zinc-600 dark:text-zinc-400 mb-6 text-sm leading-relaxed">
+          ثبت و مدیریت پروژه‌ها نیازمند تأیید هویت کاربری به عنوان مالک پروژه خورشیدی (PROJECT_OWNER) است.
+        </p>
+
+        {isPendingReview || requestStatus === 'submitted' ? (
+          <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-200 text-xs flex items-center justify-center gap-2">
+            <Clock size={16} className="shrink-0 text-amber-600" />
+            <span>درخواست شما ثبت شده و در انتظار بررسی و تأیید مدیریت سامانه می‌باشد.</span>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <button
+              onClick={handleRequestRole}
+              disabled={requestStatus === 'submitting'}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              {requestStatus === 'submitting' ? 'در حال ثبت درخواست...' : 'درخواست فعال‌سازی نقش مالک پروژه'}
+            </button>
+            {requestStatus === 'error' && (
+              <p className="text-xs text-rose-600 dark:text-rose-400">خطا در ارسال درخواست. لطفاً دوباره تلاش کنید.</p>
+            )}
+          </div>
+        )}
       </div>
     );
   }
