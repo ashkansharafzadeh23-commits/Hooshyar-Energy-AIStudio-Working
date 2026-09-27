@@ -21,32 +21,59 @@ export const DIVERSITY_FACTORS = {
   agricultural: 0.8,
 };
 
+export interface SolarEngineeringOptions {
+  performanceRatio?: number; // Validated between 0.50 and 0.95 (default 0.775)
+  sqMetersPerKwp?: number;   // Validated between 4.0 and 15.0 m2/kWp (default 6.5)
+  isEngineeringVerified?: boolean;
+}
+
 export function calculateDailyConsumption(
   appliances: SelectedAppliance[],
   locationType: keyof typeof DIVERSITY_FACTORS,
   actualMonthlyKwh?: number
 ) {
-  if (actualMonthlyKwh && actualMonthlyKwh > 0) {
-    return actualMonthlyKwh / 30; // Daily kWh
+  if (actualMonthlyKwh !== undefined && actualMonthlyKwh !== null) {
+    if (actualMonthlyKwh < 0) {
+      throw new Error("میزان مصرف ماهانه نمی‌تواند منفی باشد.");
+    }
+    return actualMonthlyKwh / 30; // Daily kWh (0 is legitimate zero)
   }
 
   let totalDailyKwh = 0;
   for (const app of appliances) {
+    if (app.watt <= 0 || app.quantity <= 0 || app.hours < 0 || app.hours > 24) {
+      throw new Error(`مشخصات دستگاه نامعتبر است: ${app.id || 'نامشخص'}`);
+    }
     totalDailyKwh += (app.watt / 1000) * app.quantity * app.hours;
   }
 
   const factor = DIVERSITY_FACTORS[locationType] || 0.6;
-  return totalDailyKwh * factor;
+  return +(totalDailyKwh * factor).toFixed(2);
 }
 
 export function calculateSolarSizing(
   dailyKwh: number,
   usableAreaSqM: number,
-  sunHours: number = 5.5,
-  panelWatt: number = 550
+  sunHours: number,
+  panelWatt: number = 550,
+  options?: SolarEngineeringOptions
 ) {
-  const requiredKwp = dailyKwh / (sunHours * 0.775);
-  const maxKwpFromArea = usableAreaSqM / 6.5;
+  if (sunHours === undefined || sunHours === null || isNaN(sunHours) || sunHours <= 0) {
+    throw new Error("ساعات تابش روزانه (sunHours) برای محاسبات مهندسی الزامی است و نباید مقدار پیش‌فرض پنهان جایگزین شود.");
+  }
+
+  const pr = options?.performanceRatio ?? 0.775;
+  if (pr < 0.50 || pr > 0.95) {
+    throw new Error("ضریب عملکرد سیستم (Performance Ratio) باید بین ۰.۵۰ تا ۰.۹۵ باشد.");
+  }
+
+  const spacePerKwp = options?.sqMetersPerKwp ?? 6.5;
+  if (spacePerKwp < 4.0 || spacePerKwp > 15.0) {
+    throw new Error("مساحت مورد نیاز به ازای هر کیلووات‌پیک (sqMetersPerKwp) باید بین ۴.۰ تا ۱۵.۰ متر مربع باشد.");
+  }
+
+  const requiredKwp = dailyKwh > 0 ? +(dailyKwh / (sunHours * pr)).toFixed(2) : 0;
+  const maxKwpFromArea = usableAreaSqM > 0 ? +(usableAreaSqM / spacePerKwp).toFixed(2) : 0;
 
   let finalKwp = requiredKwp;
   let spaceConstrained = false;
@@ -56,10 +83,23 @@ export function calculateSolarSizing(
     spaceConstrained = true;
   }
 
-  const numberOfPanels = Math.ceil((finalKwp * 1000) / panelWatt);
-  const inverterKw = finalKwp * 1.1;
+  const numberOfPanels = finalKwp > 0 ? Math.ceil((finalKwp * 1000) / panelWatt) : 0;
+  const inverterKw = +(finalKwp * 1.1).toFixed(2);
 
-  return { requiredKwp, finalKwp, spaceConstrained, numberOfPanels, inverterKw };
+  return {
+    requiredKwp,
+    finalKwp,
+    spaceConstrained,
+    numberOfPanels,
+    inverterKw,
+    assumptions: {
+      performanceRatio: pr,
+      performanceRatioSource: options?.performanceRatio ? 'USER_CONFIGURED' : 'STANDARD_PRELIMINARY_0.775',
+      sqMetersPerKwp: spacePerKwp,
+      sqMetersPerKwpSource: options?.sqMetersPerKwp ? 'USER_CONFIGURED' : 'STANDARD_PRELIMINARY_6.5',
+      isPreliminaryAssumption: !options?.isEngineeringVerified
+    }
+  };
 }
 
 export function calculateGeneratorSizing(

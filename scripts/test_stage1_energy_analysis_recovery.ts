@@ -255,10 +255,11 @@ async function runTestSuite() {
     assert(resE1.status === 200, 'Scenario E1: Genuine zero consumption request succeeds');
     assert(resE1.body.dailyConsumptionEstimate.dailyKwh === 0, 'Scenario E1: Daily consumption is preserved as genuine 0');
     assert(resE1.body.dailyConsumptionEstimate.monthlyKwh === 0, 'Scenario E1: Monthly consumption is preserved as genuine 0');
+    assert(resE1.body.dailyConsumptionEstimate.consumptionSource === 'MEASURED_ZERO', 'Scenario E1: Consumption source is MEASURED_ZERO');
     assert(resE1.body.solar.requiredKwp === 0, 'Scenario E1: Required capacity for zero consumption is 0');
     assert(resE1.body.solar.finalKwp === 0, 'Scenario E1: Final capacity is 0 (not fabricated)');
 
-    // Missing consumption on residential: estimated from area (not 0)
+    // Missing consumption on residential without explicit hypothetical flag: Strictly rejected (HTTP 400)
     const resE2 = await request(serverUrl, 'POST', '/api/analyze', {
       targets: ['solar'],
       locationType: 'residential',
@@ -266,9 +267,70 @@ async function runTestSuite() {
       city: 'تهران',
       area: 100
     });
-    assert(resE2.status === 200, 'Scenario E2: Missing consumption triggers area estimate');
-    assert(resE2.body.dailyConsumptionEstimate.dailyKwh === 20, 'Scenario E2: Estimated daily consumption is 20 kWh for 100m2');
-    assert(resE2.body.solar.finalKwp > 0, 'Scenario E2: System capacity is sized based on legitimate estimate');
+    assert(resE2.status === 400, 'Scenario E2: Missing consumption without hypothetical flag is strictly rejected (HTTP 400)');
+    assert(resE2.body.code === 'INSUFFICIENT_DATA', 'Scenario E2: Error code is INSUFFICIENT_DATA');
+    assert(resE2.body.error.includes('قبض ماهانه'), 'Scenario E2: Error message explicitly prompts for actual bill or appliances');
+
+    // Missing consumption WITH explicit hypothetical scenario mode: Allowed with clear warning flag
+    const resE3 = await request(serverUrl, 'POST', '/api/analyze', {
+      targets: ['solar'],
+      locationType: 'residential',
+      province: 'تهران',
+      city: 'تهران',
+      area: 100,
+      isHypotheticalScenario: true
+    });
+    assert(resE3.status === 200, 'Scenario E3: Explicit hypothetical scenario succeeds');
+    assert(resE3.body.dailyConsumptionEstimate.isHypothetical === true, 'Scenario E3: Explicitly tagged as isHypothetical = true');
+    assert(resE3.body.dailyConsumptionEstimate.dataClassification === 'HYPOTHETICAL_ESTIMATE', 'Scenario E3: Classification is HYPOTHETICAL_ESTIMATE');
+
+    // -------------------------------------------------------------
+    console.log('\n--- Scenario E4: Configurable Engineering Assumptions (PR & Space) ---');
+    // -------------------------------------------------------------
+    const resE4 = await request(serverUrl, 'POST', '/api/analyze', {
+      targets: ['solar'],
+      locationType: 'residential',
+      province: 'تهران',
+      city: 'تهران',
+      monthlyKwh: 600,
+      area: 150,
+      performanceRatio: 0.82,
+      sqMetersPerKwp: 7.0,
+      isEngineeringVerified: true
+    });
+    assert(resE4.status === 200, 'Scenario E4: Configurable assumptions accepted (HTTP 200)');
+    assert(resE4.body.solar.assumptions.performanceRatio === 0.82, 'Scenario E4: Configured PR 0.82 is applied');
+    assert(resE4.body.solar.assumptions.sqMetersPerKwp === 7.0, 'Scenario E4: Configured space 7.0 m2/kWp is applied');
+    assert(resE4.body.solar.assumptions.isEngineeringVerified === true, 'Scenario E4: Engineering verified flag recorded');
+
+    // Invalid PR rejected
+    const resE4Invalid = await request(serverUrl, 'POST', '/api/analyze', {
+      targets: ['solar'],
+      locationType: 'residential',
+      province: 'تهران',
+      city: 'تهران',
+      monthlyKwh: 600,
+      area: 150,
+      performanceRatio: 1.5 // Invalid (> 0.95)
+    });
+    assert(resE4Invalid.status === 400, 'Scenario E4: Invalid PR rejected with HTTP 400');
+    assert(resE4Invalid.body.code === 'INVALID_PERFORMANCE_RATIO', 'Scenario E4: Error code is INVALID_PERFORMANCE_RATIO');
+
+    // -------------------------------------------------------------
+    console.log('\n--- Scenario E5: Appliance Input Validation ---');
+    // -------------------------------------------------------------
+    // Invalid appliance hours (> 24)
+    const resE5InvalidHours = await request(serverUrl, 'POST', '/api/analyze', {
+      targets: ['solar'],
+      locationType: 'residential',
+      city: 'تهران',
+      area: 120,
+      appliances: [
+        { id: 'cooler', name: 'کولر', watt: 500, quantity: 1, hours: 28 } // Invalid 28 hrs
+      ]
+    });
+    assert(resE5InvalidHours.status === 400, 'Scenario E5: Appliance hours > 24 rejected with HTTP 400');
+    assert(resE5InvalidHours.body.code === 'INVALID_APPLIANCE_DATA', 'Scenario E5: Error code is INVALID_APPLIANCE_DATA');
 
     // -------------------------------------------------------------
     console.log('\n--- Scenario F: Backend Endpoint Authentication Flexibility ---');
@@ -342,14 +404,50 @@ async function runTestSuite() {
     assert(sunTehran.monthlySunHours !== undefined, 'Scenario I: Monthly 12-month irradiance breakdown present');
 
     // -------------------------------------------------------------
-    console.log('\n--- Scenario J & K: NASA Fallback & Reference-Estimate Classification ---');
+    console.log('\n--- Scenario J & K: Irradiance Data Truthfulness & User-Provided Input ---');
     // -------------------------------------------------------------
-    // Querying a city not in the NASA atlas (e.g. unknown remote locality)
+    // Querying a city not in the NASA atlas without user input -> INSUFFICIENT_DATA (no fabricated numbers!)
     const unknownCityData = await getSunHoursForCity('روستای_ناشناخته_آزمایشی');
-    assert(unknownCityData.dataClassification === 'REFERENCE_ESTIMATE', 'Scenario J/K: Unknown city receives REFERENCE_ESTIMATE');
-    assert(unknownCityData.isReferenceOnly === true, 'Scenario J/K: Marked as isReferenceOnly = true');
+    assert(unknownCityData.dataClassification === 'INSUFFICIENT_DATA', 'Scenario J/K: Unknown city receives truthful INSUFFICIENT_DATA');
+    assert(unknownCityData.sunHours === null, 'Scenario J/K: sunHours is null (no fabricated 5.0)');
+    assert(unknownCityData.monthlySunHours === null, 'Scenario J/K: monthlySunHours is null (no fabricated bell curve)');
     assert(unknownCityData.isVerifiedSource === false, 'Scenario J/K: isVerifiedSource is false');
-    assert(typeof unknownCityData.warning === 'string', 'Scenario J/K: Contains explicit warning that data is reference-only');
+    assert(typeof unknownCityData.warning === 'string', 'Scenario J/K: Contains explicit warning that irradiance data is insufficient');
+
+    // Querying with user-provided explicit irradiance
+    const userSunData = await getSunHoursForCity('روستای_ناشناخته_آزمایشی', {
+      sunHours: 5.3,
+      source: 'ایستگاه سینوپتیک محلی'
+    });
+    assert(userSunData.status === 'READY', 'Scenario J/K: User-provided irradiance is accepted');
+    assert(userSunData.sunHours === 5.3, 'Scenario J/K: User sun hours preserved as 5.3');
+    assert(userSunData.dataClassification === 'USER_PROVIDED', 'Scenario J/K: Data classification is USER_PROVIDED');
+    assert(userSunData.source === 'USER_PROVIDED', 'Scenario J/K: Source is USER_PROVIDED');
+
+    // API request for unknown city without user-provided irradiance fails with HTTP 400
+    const resUnknownCityWithoutSun = await request(serverUrl, 'POST', '/api/analyze', {
+      targets: ['solar'],
+      locationType: 'residential',
+      city: 'روستای_ناشناخته_آزمایشی',
+      monthlyKwh: 500,
+      area: 120
+    });
+    assert(resUnknownCityWithoutSun.status === 400, 'Scenario J/K: Solar analysis without valid irradiance rejected (HTTP 400)');
+    assert(resUnknownCityWithoutSun.body.code === 'INSUFFICIENT_IRRADIANCE_DATA', 'Scenario J/K: Error code is INSUFFICIENT_IRRADIANCE_DATA');
+
+    // API request for unknown city WITH customSunHours succeeds
+    const resUnknownCityWithSun = await request(serverUrl, 'POST', '/api/analyze', {
+      targets: ['solar'],
+      locationType: 'residential',
+      city: 'روستای_ناشناخته_آزمایشی',
+      monthlyKwh: 500,
+      area: 120,
+      customSunHours: 5.4,
+      customSunHoursSource: 'ایستگاه سینوپتیک محلی'
+    });
+    assert(resUnknownCityWithSun.status === 200, 'Scenario J/K: Solar analysis with customSunHours succeeds (HTTP 200)');
+    assert(resUnknownCityWithSun.body.solar.finalKwp > 0, 'Scenario J/K: Sized solar capacity using user-provided irradiance');
+    assert(resUnknownCityWithSun.body.dataSource.dataClassification === 'USER_PROVIDED', 'Scenario J/K: Response marks dataSource as USER_PROVIDED');
 
     // -------------------------------------------------------------
     console.log('\n--- Scenario L: Optional AI Provider Failure Independence ---');

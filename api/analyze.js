@@ -13,7 +13,24 @@ export async function runRuleEngine(body) {
   };
 
   // 3.1 اعتبارسنجی ورودی
-    const { targets, locationType, appliances, actualMonthlyKwh, monthlyKwh, area, city, usableArea } = req.body;
+    const {
+      targets,
+      locationType,
+      appliances,
+      actualMonthlyKwh,
+      monthlyKwh,
+      area,
+      city,
+      usableArea,
+      customSunHours,
+      customSunHoursSource,
+      userProvidedIrradiance,
+      performanceRatio: inputPR,
+      sqMetersPerKwp: inputSpace,
+      isEngineeringVerified,
+      isHypotheticalScenario,
+      scenarioMode
+    } = req.body;
     
     if (area === undefined || area === null || isNaN(Number(area)) || Number(area) <= 0) {
       return res.status(400).json({
@@ -39,50 +56,109 @@ export async function runRuleEngine(body) {
       });
     }
   
-    // 3.2 Rule Engine - محاسبات قطعی
+    // 3.2 Rule Engine - اعتبارسنجی و محاسبه دقیق مصرف برق
     let dailyKwh = 0;
+    let consumptionSource = 'UNSPECIFIED';
+    let consumptionClassification = 'UNVERIFIED';
+    let isHypothetical = false;
+
     const rawMonthly = actualMonthlyKwh !== undefined ? actualMonthlyKwh : monthlyKwh;
     const parsedMonthly = (rawMonthly !== undefined && rawMonthly !== null && rawMonthly !== '') ? Number(rawMonthly) : null;
     
-    if (parsedMonthly !== null && !isNaN(parsedMonthly)) {
-      if (parsedMonthly > 0) {
-        dailyKwh = parsedMonthly / 30;
-      } else {
+    if (parsedMonthly !== null) {
+      if (isNaN(parsedMonthly) || parsedMonthly < 0) {
+        return res.status(400).json({
+          error: "میزان مصرف ماهانه برق در قبض باید عددی معتبر و نامنفی باشد.",
+          code: "INVALID_CONSUMPTION",
+          missingInfo: ["actualMonthlyKwh"]
+        });
+      }
+      if (parsedMonthly === 0) {
         // تفکیک مقدار واقعی صفر از مفقودی
         dailyKwh = 0;
+        consumptionSource = 'MEASURED_ZERO';
+        consumptionClassification = 'MEASURED_ZERO';
+      } else {
+        dailyKwh = parsedMonthly / 30;
+        consumptionSource = 'BILL_DATA';
+        consumptionClassification = 'MEASURED_DATA';
       }
-    } else if (appliances && appliances.length > 0) {
+    } else if (appliances && Array.isArray(appliances) && appliances.length > 0) {
       let rawDaily = 0;
       for (const app of appliances) {
-        rawDaily += (app.watt / 1000) * app.quantity * app.hours;
+        if (!app || typeof app !== 'object') {
+          return res.status(400).json({
+            error: "ساختار اطلاعات مصرف‌کننده‌ها نامعتبر است.",
+            code: "INVALID_APPLIANCE_DATA",
+            missingInfo: ["appliances"]
+          });
+        }
+        const watt = Number(app.watt);
+        const quantity = Number(app.quantity);
+        const hours = Number(app.hours);
+        if (isNaN(watt) || watt <= 0) {
+          return res.status(400).json({
+            error: `توان مصرفی برای دستگاه "${app.name || app.id || 'نامشخص'}" باید یک عدد مثبت باشد.`,
+            code: "INVALID_APPLIANCE_DATA",
+            missingInfo: ["appliances.watt"]
+          });
+        }
+        if (isNaN(quantity) || quantity <= 0 || !Number.isInteger(quantity)) {
+          return res.status(400).json({
+            error: `تعداد برای دستگاه "${app.name || app.id || 'نامشخص'}" باید عدد صحیح مثبت باشد.`,
+            code: "INVALID_APPLIANCE_DATA",
+            missingInfo: ["appliances.quantity"]
+          });
+        }
+        if (isNaN(hours) || hours < 0 || hours > 24) {
+          return res.status(400).json({
+            error: `ساعات کارکرد روزانه برای دستگاه "${app.name || app.id || 'نامشخص'}" باید بین ۰ تا ۲۴ ساعت باشد.`,
+            code: "INVALID_APPLIANCE_DATA",
+            missingInfo: ["appliances.hours"]
+          });
+        }
+        rawDaily += (watt / 1000) * quantity * hours;
       }
       let diversityFactor = 0.6; // residential
       if (locationType === 'industrial_warehouse') diversityFactor = 0.7;
       if (locationType === 'factory') diversityFactor = 0.75;
       if (locationType === 'agricultural') diversityFactor = 0.8;
-      dailyKwh = rawDaily * diversityFactor;
+      dailyKwh = +(rawDaily * diversityFactor).toFixed(2);
+      consumptionSource = 'APPLIANCE_AUDIT';
+      consumptionClassification = 'MEASURED_DATA';
     } else {
-      // تخمین متراژی در صورت عدم ارائه مصرف
-      const numArea = Number(area);
-      if (locationType === 'residential') {
-        dailyKwh = (numArea / 100) * 20;
-      } else if (locationType === 'industrial_warehouse') {
-        dailyKwh = (numArea / 100) * 40;
-      } else if (locationType === 'factory') {
+      // عدم وجود داده مصرف: تخمین متراژی خودکار به دلیل عدم قطعیت مهندسی اکیداً حذف گردید
+      const isExplicitHypothetical = Boolean(isHypotheticalScenario || scenarioMode === 'HYPOTHETICAL');
+      if (isExplicitHypothetical) {
+        const numArea = Number(area);
+        let benchmarkDaily = 0;
+        if (locationType === 'residential') benchmarkDaily = (numArea / 100) * 15;
+        else if (locationType === 'industrial_warehouse') benchmarkDaily = (numArea / 100) * 30;
+        else if (locationType === 'factory') benchmarkDaily = (numArea / 100) * 45;
+        else if (locationType === 'agricultural') benchmarkDaily = 30;
+        else benchmarkDaily = 20;
+
+        dailyKwh = +benchmarkDaily.toFixed(2);
+        consumptionSource = 'HYPOTHETICAL_SIMULATION';
+        consumptionClassification = 'HYPOTHETICAL_ESTIMATE';
+        isHypothetical = true;
+      } else {
         return res.status(400).json({
-          error: "برای کاربری صنعتی یا کارخانه‌ای، ثبت مشخصات مصرف‌کننده‌ها یا مقدار قبض برق الزامی است.",
+          error: "برای طراحی و محاسبه مهندسی، ثبت مقدار مصرف برق (بر اساس قبض ماهانه) یا لیست لوازم مصرفی الزامی است. تخمین خودکار بر اساس مساحت برای طراحی مهندسی مجاز نیست.",
           code: "INSUFFICIENT_DATA",
-          missingInfo: ["appliances", "actualMonthlyKwh"]
+          missingInfo: ["actualMonthlyKwh", "appliances"]
         });
-      } else if (locationType === 'agricultural') {
-        dailyKwh = 50; // بر اساس توان پمپ (پیشفرض)
       }
     }
   
     const engineResult = {
       dailyConsumptionEstimate: {
         dailyKwh: +(dailyKwh).toFixed(2),
-        monthlyKwh: +(dailyKwh * 30).toFixed(2)
+        monthlyKwh: +(dailyKwh * 30).toFixed(2),
+        consumptionSource,
+        dataClassification: consumptionClassification,
+        isHypothetical,
+        isMeasuredZero: parsedMonthly === 0
       }
     };
   
@@ -90,31 +166,72 @@ export async function runRuleEngine(body) {
     const isGenerator = targets && targets.includes("generator");
     const isPowerbank = targets && targets.includes("powerbank");
   
-    // Sun hours mapping via NASA POWER API
-    const sunData = await getSunHoursForCity(city);
-    const {
-      sunHours,
-      monthlySunHours,
-      source: sunHoursSource,
-      dataClassification = 'REFERENCE_ESTIMATE',
-      isVerifiedSource = false,
-      isReferenceOnly = true
-    } = sunData;
-  
-    let sourceLabel = "داده تابش خورشیدی ماهواره‌ای NASA POWER (میانگین ۲۲ ساله)";
-    if (sunHoursSource !== "nasa_power_api" && sunHoursSource !== "nasa_power_api_cached") {
-      sourceLabel = "تخمین تقریبی منطقه‌ای (داده مرجع اقلیمی - تاییدنشده ماهواره‌ای)";
+    // اعتبارسنجی مفروضات مهندسی قابل تنظیم
+    let performanceRatio = 0.775;
+    let prSource = 'STANDARD_PRELIMINARY_0.775';
+    let isPrConfigured = false;
+    if (inputPR !== undefined && inputPR !== null) {
+      const pr = Number(inputPR);
+      if (isNaN(pr) || pr < 0.50 || pr > 0.95) {
+        return res.status(400).json({
+          error: "ضریب عملکرد سیستم (Performance Ratio) باید عددی بین ۰.۵۰ تا ۰.۹۵ باشد.",
+          code: "INVALID_PERFORMANCE_RATIO",
+          missingInfo: ["performanceRatio"]
+        });
+      }
+      performanceRatio = pr;
+      prSource = 'USER_CONFIGURED';
+      isPrConfigured = true;
+    }
+
+    let sqMetersPerKwp = 6.5;
+    let spaceSource = 'STANDARD_PRELIMINARY_6.5';
+    let isSpaceConfigured = false;
+    if (inputSpace !== undefined && inputSpace !== null) {
+      const sm = Number(inputSpace);
+      if (isNaN(sm) || sm < 4.0 || sm > 15.0) {
+        return res.status(400).json({
+          error: "مساحت مورد نیاز به ازای هر کیلووات‌پیک (sqMetersPerKwp) باید عددی بین ۴.۰ تا ۱۵.۰ متر مربع باشد.",
+          code: "INVALID_SPACE_RATIO",
+          missingInfo: ["sqMetersPerKwp"]
+        });
+      }
+      sqMetersPerKwp = sm;
+      spaceSource = 'USER_CONFIGURED';
+      isSpaceConfigured = true;
+    }
+
+    // دریافت داده تابش خورشیدی: ماهواره‌ای ناسا یا ورودی صریح کاربر
+    const userIrradiance = (customSunHours !== undefined && customSunHours !== null)
+      ? {
+          sunHours: Number(customSunHours),
+          source: customSunHoursSource || 'ورودی کاربر / گزارش مهندسی',
+          monthlySunHours: req.body.customMonthlySunHours || null
+        }
+      : (userProvidedIrradiance || null);
+
+    const sunData = await getSunHoursForCity(city, userIrradiance);
+
+    if (isSolar && (!sunData.sunHours || sunData.sunHours <= 0)) {
+      return res.status(400).json({
+        error: "داده‌های تابش ماهواره‌ای معتبر برای این شهر در دسترس نیست. جهت انجام محاسبات مهندسی خورشیدی، لطفاً ساعات تابش موثر روزانه را به همراه منبع وارد فرمایید.",
+        code: "INSUFFICIENT_IRRADIANCE_DATA",
+        missingInfo: ["customSunHours", "customSunHoursSource"],
+        dataSource: sunData
+      });
     }
   
     if (isSolar) {
       const numArea = Number(area);
-      // مساحت مفید: در صورت ارائه مساحت قابل استفاده توسط کاربر از همان استفاده می‌شود، در غیر این صورت مساحت کل
       const usableAreaM2 = (usableArea !== undefined && usableArea !== null && !isNaN(Number(usableArea)) && Number(usableArea) > 0)
         ? Number(usableArea)
         : numArea;
 
-      const requiredKwp = (sunHours && sunHours > 0 && dailyKwh > 0) ? +(dailyKwh / (sunHours * 0.775)).toFixed(2) : 0;
-      const maxKwpBySpace = +(usableAreaM2 / 6.5).toFixed(2);
+      const sunHours = sunData.sunHours;
+      const requiredKwp = (sunHours && sunHours > 0 && dailyKwh > 0)
+        ? +(dailyKwh / (sunHours * performanceRatio)).toFixed(2)
+        : 0;
+      const maxKwpBySpace = +(usableAreaM2 / sqMetersPerKwp).toFixed(2);
       
       let spaceConstrained = false;
       let finalKwp = requiredKwp;
@@ -124,8 +241,9 @@ export async function runRuleEngine(body) {
         spaceConstrained = true;
       }
 
-      const annualGenerationKwh = Math.round(finalKwp * (sunHours || 4.5) * 365 * 0.775);
-      const requiredAreaM2 = +(finalKwp * 6.5).toFixed(1);
+      // محاسبه دقیق تولید سالانه بر پایه تابش واقعی بدون عدد فرضی
+      const annualGenerationKwh = Math.round(finalKwp * sunHours * 365 * performanceRatio);
+      const requiredAreaM2 = +(finalKwp * sqMetersPerKwp).toFixed(1);
   
       let catalogPanels = req.body.catalogPanels || [];
       let panelOptions = [];
@@ -178,7 +296,9 @@ export async function runRuleEngine(body) {
             panelWattage: 550,
             panelCount: count,
             actualSystemKwp: +(count * 550 / 1000).toFixed(2),
-            requiredAreaM2
+            requiredAreaM2,
+            isGenericBenchmark: true,
+            note: "مشخصات عمومی بر پایه ماژول استاندارد ۵۵۰ وات (بدون انتخاب کاتالوگ فروشندگان)"
           }
         };
       }
@@ -198,21 +318,35 @@ export async function runRuleEngine(body) {
         spaceConstrained,
         catalogAvailable,
         panelOptions,
-        dataClassification,
-        isVerifiedSource,
-        isReferenceOnly
+        assumptions: {
+          performanceRatio,
+          performanceRatioSource: prSource,
+          isPerformanceRatioConfigured: isPrConfigured,
+          sqMetersPerKwp,
+          sqMetersPerKwpSource: spaceSource,
+          isSpaceConfigured,
+          isEngineeringVerified: Boolean(isEngineeringVerified),
+          dataClassification: isEngineeringVerified ? 'VERIFIED_ENGINEERING_INPUT' : 'PRELIMINARY_ASSUMPTION',
+          notes: isEngineeringVerified
+            ? 'محاسبات بر اساس مفروضات تاییدشده مهندسی پروژه انجام شده است.'
+            : 'محاسبات بر پایه مفروضات استاندارد اولیه (PR=0.775 و 6.5 متر مربع بر کیلووات) است و نیازمند تایید نهایی EPC می‌باشد.'
+        },
+        dataClassification: sunData.dataClassification,
+        isVerifiedSource: sunData.isVerifiedSource,
+        isReferenceOnly: sunData.isReferenceOnly
       };
     }
   
-    console.log("Adding monthlySunHours to dataSource:", monthlySunHours);
     engineResult.dataSource = {
-      sunHours,
-      monthlySunHours,
-      sunHoursSource,
-      sourceLabel,
-      dataClassification,
-      isVerifiedSource,
-      isReferenceOnly
+      sunHours: sunData.sunHours,
+      monthlySunHours: sunData.monthlySunHours,
+      sunHoursSource: sunData.source,
+      sourceLabel: sunData.sourceLabel,
+      dataClassification: sunData.dataClassification,
+      isVerifiedSource: sunData.isVerifiedSource,
+      isReferenceOnly: sunData.isReferenceOnly,
+      retrievalDate: sunData.retrievalDate,
+      warning: sunData.warning || null
     };
   
     if (isGenerator) {

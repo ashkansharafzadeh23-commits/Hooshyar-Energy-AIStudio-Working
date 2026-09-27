@@ -8,40 +8,67 @@ import { logger } from '../../src/observability/logger.js';
 const CACHE_MAX_AGE_DAYS = 180;
 const NASA_TIMEOUT_MS = Number(process.env.NASA_POWER_TIMEOUT_MS) || 10000;
 
-export async function getSunHoursForCity(city) {
-  const cached = monitoringRepository.getCityIrradianceCache(city);
-  if (cached) {
-    const ageDays = (Date.now() - cached.fetchedAt) / (1000 * 60 * 60 * 24);
-    if (ageDays < CACHE_MAX_AGE_DAYS) {
+export async function getSunHoursForCity(city, userProvidedIrradiance = null) {
+  // 1. If explicit user-provided irradiance is supplied with valid source, validate and use it
+  if (userProvidedIrradiance && userProvidedIrradiance.sunHours !== undefined && userProvidedIrradiance.sunHours !== null) {
+    const rawVal = Number(userProvidedIrradiance.sunHours);
+    if (!isNaN(rawVal) && rawVal >= 1.0 && rawVal <= 12.0) {
+      const source = userProvidedIrradiance.source || 'کاربر / داده محلی';
       return {
-        sunHours: cached.sunHours,
-        monthlySunHours: cached.monthlySunHours,
-        source: 'nasa_power_api_cached',
-        dataClassification: 'VERIFIED_SOURCE',
-        isVerifiedSource: true,
-        isReferenceOnly: false,
-        status: 'READY'
+        sunHours: +(rawVal).toFixed(2),
+        monthlySunHours: userProvidedIrradiance.monthlySunHours || null, // Never fabricate monthly curves!
+        source: 'USER_PROVIDED',
+        sourceLabel: `ساعات تابش روزانه اعلامی کاربر (${source})`,
+        dataClassification: 'USER_PROVIDED',
+        isVerifiedSource: false,
+        isReferenceOnly: true,
+        status: 'READY',
+        retrievalDate: new Date().toISOString()
       };
     }
   }
 
-  const coords = CITY_COORDINATES[city];
+  // 2. Check cache for validated NASA POWER data
+  if (city) {
+    const cached = monitoringRepository.getCityIrradianceCache(city);
+    if (cached) {
+      const ageDays = (Date.now() - cached.fetchedAt) / (1000 * 60 * 60 * 24);
+      if (ageDays < CACHE_MAX_AGE_DAYS && cached.sunHours) {
+        return {
+          sunHours: cached.sunHours,
+          monthlySunHours: cached.monthlySunHours || null,
+          source: 'nasa_power_api_cached',
+          sourceLabel: 'داده تابش خورشیدی ماهواره‌ای NASA POWER (ذخیره‌شده در حافظه موقت)',
+          dataClassification: 'VERIFIED_SOURCE',
+          isVerifiedSource: true,
+          isReferenceOnly: false,
+          status: 'READY',
+          retrievalDate: new Date(cached.fetchedAt).toISOString()
+        };
+      }
+    }
+  }
+
+  const coords = city ? CITY_COORDINATES[city] : null;
   if (!coords) {
-    logger.warn(`Coordinates for city "${city}" not found in atlas; using regional reference estimate`, {
+    logger.warn(`Coordinates for city "${city}" not found in atlas; returning reference estimate warning without fabricated values`, {
       service: 'SOLAR_IRRADIANCE',
       event: 'CITY_COORDS_MISSING',
       metadata: { city, provider: 'NASA_POWER', errorCategory: 'DATA_UNAVAILABLE' }
     });
-    const fallback = fallbackRegionalEstimate(city);
+    // Never silently substitute hardcoded regional irradiation or fabricate monthly curves!
     return {
-      sunHours: fallback,
-      monthlySunHours: generateFallbackMonthly(fallback),
+      sunHours: null,
+      monthlySunHours: null,
       source: 'REGIONAL_REFERENCE_ESTIMATE',
+      sourceLabel: 'برآورد مرجع اقلیمی (نیازمند ثبت ساعت آفتابی برای طراحی مهندسی)',
       dataClassification: 'REFERENCE_ESTIMATE',
       isVerifiedSource: false,
       isReferenceOnly: true,
-      status: 'DEGRADED',
-      warning: 'Regional estimate for reference only; not verified measured engineering input'
+      status: 'INSUFFICIENT_DATA',
+      error: 'NASA_POWER_UNAVAILABLE',
+      warning: 'داده‌های تابش ماهواره‌ای معتبر برای این منطقه در دسترس نیست. جهت انجام محاسبات مهندسی، ثبت ساعات تابش موثر کارشناسی به همراه منبع الزامی است.',
+      missingInfo: ['customSunHours', 'customSunHoursSource']
     };
   }
 
@@ -82,17 +109,19 @@ export async function getSunHoursForCity(city) {
         sunHours,
         monthlySunHours,
         source: 'nasa_power_api',
+        sourceLabel: 'داده تابش خورشیدی ماهواره‌ای NASA POWER (میانگین ۲۲ ساله)',
         dataClassification: 'VERIFIED_SOURCE',
         isVerifiedSource: true,
         isReferenceOnly: false,
-        status: 'READY'
+        status: 'READY',
+        retrievalDate: new Date().toISOString()
       };
     });
   } catch (err) {
     const safeMeta = extractSafeExternalErrorMetadata('NASA_POWER', err);
-    logger.warn(`NASA POWER fetch failed; using marked regional reference estimate`, {
+    logger.warn(`NASA POWER fetch failed; returning reference estimate warning without fabricated values`, {
       service: 'NASA_POWER',
-      event: 'NASA_FETCH_FALLBACK',
+      event: 'NASA_FETCH_FAILED',
       metadata: {
         city,
         provider: safeMeta.provider,
@@ -101,44 +130,20 @@ export async function getSunHoursForCity(city) {
         isTransient: safeMeta.isTransient
       }
     });
-    const fallback = fallbackRegionalEstimate(city);
+
+    // Never silently substitute hardcoded regional irradiation or fabricate monthly curves!
     return {
-      sunHours: fallback,
-      monthlySunHours: generateFallbackMonthly(fallback),
+      sunHours: null,
+      monthlySunHours: null,
       source: 'REGIONAL_REFERENCE_ESTIMATE',
+      sourceLabel: 'برآورد مرجع اقلیمی (نیازمند ثبت ساعت آفتابی برای طراحی مهندسی)',
       dataClassification: 'REFERENCE_ESTIMATE',
       isVerifiedSource: false,
       isReferenceOnly: true,
-      status: 'DEGRADED',
-      warning: 'Regional estimate for reference only; not verified measured engineering input',
-      error: 'NASA_POWER_UNAVAILABLE'
+      status: 'INSUFFICIENT_DATA',
+      error: 'NASA_POWER_UNAVAILABLE',
+      warning: 'داده‌های تابش ماهواره‌ای معتبر برای این منطقه موقتاً در دسترس نیست. جهت انجام محاسبات مهندسی، ثبت ساعات تابش موثر کارشناسی به همراه منبع الزامی است.',
+      missingInfo: ['customSunHours', 'customSunHoursSource']
     };
   }
-}
-
-function fallbackRegionalEstimate(city) {
-  const desertCities = ['یزد', 'کرمان', 'اصفهان', 'اراک', 'قم', 'سمنان', 'کاشان', 'اهواز', 'بندرعباس'];
-  const northCities = ['رشت', 'ساری', 'بابل', 'آمل'];
-  if (desertCities.includes(city)) return 5.75;
-  if (northCities.includes(city)) return 4.0;
-  return 5.0;
-}
-
-
-function generateFallbackMonthly(ann) {
-  // Rough estimate shaping a bell curve around summer
-  return {
-    JAN: +(ann * 0.6).toFixed(2),
-    FEB: +(ann * 0.7).toFixed(2),
-    MAR: +(ann * 0.9).toFixed(2),
-    APR: +(ann * 1.1).toFixed(2),
-    MAY: +(ann * 1.3).toFixed(2),
-    JUN: +(ann * 1.4).toFixed(2),
-    JUL: +(ann * 1.4).toFixed(2),
-    AUG: +(ann * 1.3).toFixed(2),
-    SEP: +(ann * 1.1).toFixed(2),
-    OCT: +(ann * 0.9).toFixed(2),
-    NOV: +(ann * 0.7).toFixed(2),
-    DEC: +(ann * 0.6).toFixed(2)
-  };
 }

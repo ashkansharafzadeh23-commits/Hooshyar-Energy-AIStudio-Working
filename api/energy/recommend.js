@@ -1,4 +1,5 @@
 import { calculateSolarSizing, calculateGeneratorSizing, calculatePowerbankSizing, calculateDailyConsumption, DIVERSITY_FACTORS } from '../../src/api/engine.js';
+import { getSunHoursForCity } from '../lib/solarIrradiance.js';
 import { db } from '../../src/db/index.js';
 import { SCORING_WEIGHTS } from './scoringConfig.js';
 
@@ -66,10 +67,25 @@ export default async function handler(req, res) {
   const candidates = selectCandidateArchitectures(profile);
   
   let dailyKwh = 0;
-  if (profile.monthlyConsumptionKwh) {
+  if (profile.monthlyConsumptionKwh && profile.monthlyConsumptionKwh > 0) {
     dailyKwh = profile.monthlyConsumptionKwh / 30;
   } else if (profile.selectedAppliances && profile.selectedAppliances.length > 0) {
     dailyKwh = calculateDailyConsumption(profile.selectedAppliances, profile.locationType || 'residential');
+  } else if (profile.isHypotheticalScenario) {
+    dailyKwh = 15; // Benchmark only for hypothetical simulation
+  }
+
+  // Resolve solar irradiance from NASA POWER or user input
+  let sunHours = profile.sunHours || null;
+  if (!sunHours && profile.city) {
+    try {
+      const sunData = await getSunHoursForCity(profile.city, profile.userProvidedIrradiance);
+      if (sunData && sunData.sunHours) {
+        sunHours = sunData.sunHours;
+      }
+    } catch {
+      // fallback handled below
+    }
   }
 
   const evaluated = await Promise.all(candidates.map(async (type) => {
@@ -80,8 +96,21 @@ export default async function handler(req, res) {
     let costEstimate = 0;
 
     if (type.includes('solar')) {
-      solarPart = calculateSolarSizing(dailyKwh, profile.usableArea || profile.totalArea || 100);
-      costEstimate += solarPart.finalKwp * 300_000_000;
+      const effectiveSunHours = sunHours || (profile.isHypotheticalScenario ? 5.0 : null);
+      if (effectiveSunHours) {
+        solarPart = calculateSolarSizing(
+          dailyKwh,
+          profile.usableArea || profile.totalArea || 100,
+          effectiveSunHours,
+          550,
+          {
+            performanceRatio: profile.performanceRatio,
+            sqMetersPerKwp: profile.sqMetersPerKwp,
+            isEngineeringVerified: profile.isEngineeringVerified
+          }
+        );
+        costEstimate += solarPart.finalKwp * 300_000_000;
+      }
     }
     
     if (type.includes('generator')) {
