@@ -672,29 +672,42 @@ maintenanceRouter.post(['/cases', '/maintenance/cases'], async (req: Request, re
 });
 
 /**
- * POST /api/diagnose, /api/maintenance/diagnose
- * Evidence-based preliminary AI diagnosis for customer problem reports
+ * POST /api/diagnose, /api/maintenance/diagnose, /api/analyze-maintenance
+ * Evidence-based preliminary AI diagnosis for customer problem reports and visual inspections
  */
-maintenanceRouter.post(['/diagnose', '/maintenance/diagnose'], async (req: Request, res: Response) => {
+maintenanceRouter.post(['/diagnose', '/maintenance/diagnose', '/analyze-maintenance'], async (req: Request, res: Response) => {
   try {
     const {
       assetId,
       componentId,
       equipmentType,
       symptoms,
-      description,
-      photos,
-      documents,
-      billData,
       locationCity,
       triggerAiAssisted
-    } = req.body;
+    } = req.body || {};
+
+    const description = req.body?.description || req.body?.textContext;
+    const rawPhotos = req.body?.photos || req.body?.images;
+    const documents = req.body?.documents;
+    const billData = req.body?.billData;
+
+    // Normalize photos preserving MIME types and base64 payloads
+    const photos = Array.isArray(rawPhotos) ? rawPhotos.map((p: any, idx: number) => {
+      if (typeof p === 'string') {
+        return { name: `photo_${idx + 1}.jpg`, data: p, mimeType: 'image/jpeg' };
+      }
+      return {
+        name: p.name || p.filename || `photo_${idx + 1}.jpg`,
+        mimeType: p.mimeType || p.type || 'image/jpeg',
+        data: p.data || p.base64
+      };
+    }) : undefined;
 
     const diagnosis = await diagnosisService.generateDiagnosis({
       assetId,
       componentId,
       equipmentType,
-      symptoms,
+      symptoms: Array.isArray(symptoms) ? symptoms : typeof symptoms === 'string' ? [symptoms] : undefined,
       description,
       photos,
       documents,

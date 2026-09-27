@@ -205,22 +205,117 @@ app.post("/api/energy/recommend", runVercelHandler(recommendHandler));
 app.post("/api/energy/analyze-images", runVercelHandler(analyzeImagesHandler));
 app.post("/api/energy/optimize-layout", runVercelHandler(optimizeLayoutHandler));
 
-app.post("/api/plan-powerplant", async (req, res) => {
+// Power Plant Planning Handler (Preliminary / Illustrative Feasibility Engine)
+const handlePowerPlantPlanning = async (req: express.Request, res: express.Response) => {
   try {
-    const { area, city, roofType, phase, usage, budget } = req.body;
-    let capacityKw = 0;
-    if (area > 0) {
-       capacityKw = (area * 0.75) / 6.5; 
+    const { area, city, roofType, phase, usage, budget, budgetUnit } = req.body || {};
+
+    const missingFields: string[] = [];
+    const numericArea = Number(area);
+
+    if (area === undefined || area === null || area === '' || isNaN(numericArea) || numericArea <= 0) {
+      missingFields.push('area');
     }
-    const totalBudgetMillion = budget || (capacityKw * 30);
-    const analysisText = `### 🗺️ نقشه راه جامع و گام‌به‌گام احداث نیروگاه خورشیدی\nبرنامه عملیاتی شما...`;
-    
+    if (!city || typeof city !== 'string' || !city.trim()) {
+      missingFields.push('city');
+    }
+
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        code: 'INSUFFICIENT_INPUT_DATA',
+        error: 'اطلاعات ورودی برای ارزیابی اولیه نیروگاه خورشیدی کافی نیست. لطفاً مساحت و شهر را مشخص کنید.',
+        missingFields
+      });
+    }
+
+    // Preliminary engineering assumptions (clearly disclosed as illustrative)
+    // 75% surface factor, 6.5 sqm/kWp specific footprint
+    const usableAreaRatio = 0.75;
+    const areaPerKwpM2 = 6.5;
+    const estimatedCapacityKw = Math.round(((numericArea * usableAreaRatio) / areaPerKwpM2) * 10) / 10;
+
+    // Unit budget conversion (Toman in millions)
+    let totalBudgetMillion = 0;
+    if (budget && Number(budget) > 0) {
+      const bNum = Number(budget);
+      totalBudgetMillion = budgetUnit === 'billion' ? bNum * 1000 : bNum;
+    } else {
+      // Benchmark: ~30 Million Tomans per kWp
+      totalBudgetMillion = Math.round(estimatedCapacityKw * 30);
+    }
+
+    // Annual generation: ~1600 kWh/kWp/year for standard irradiation in Iran
+    const annualGenerationKwh = Math.round(estimatedCapacityKw * 1600);
+    const benchmarkRateTomanPerKwh = 3500; // Reference SATBA / green board benchmark
+    const baseAnnualRevenueMillion = Math.round((annualGenerationKwh * benchmarkRateTomanPerKwh) / 1000000);
+    const baseAnnualOpexMillion = Math.max(1, Math.round(totalBudgetMillion * 0.015));
+
+    // 10-Year cash flow simulation with 0.7% annual degradation & 10% O&M inflation
     const financialData = [];
-    res.json({ analysis: analysisText, financialData });
+    let cumulativeProfit = -totalBudgetMillion;
+
+    for (let year = 1; year <= 10; year++) {
+      const degradationFactor = Math.pow(1 - 0.007, year - 1);
+      const yearRevenue = Math.round(baseAnnualRevenueMillion * degradationFactor);
+      const yearOpex = Math.round(baseAnnualOpexMillion * Math.pow(1.10, year - 1));
+      const netProfit = yearRevenue - yearOpex;
+      cumulativeProfit += netProfit;
+
+      financialData.push({
+        year: `سال ${year}`,
+        revenue: yearRevenue,
+        maintenance: yearOpex,
+        netProfit,
+        cumulativeProfit
+      });
+    }
+
+    const analysisText = `### 🗺️ نقشه راه و مدل‌سازی امکان‌سنجی اولیه احداث نیروگاه خورشیدی
+
+> **سلب مسئولیت مهندسی و مالی:** ارقام و نمودارهای ارائه‌شده صرفاً بر مبنای **شبیه‌سازی مقدماتی و شاخص‌های آماری مرجع بازار** محاسبه شده‌اند و فاقد تأییدیه میدانی، نظام مهندسی یا قرارداد رسمی EPC می‌باشند. برآورد قطعی مستلزم نقشه‌برداری سازه و اخذ مجوز اتصال به شبکه است.
+
+#### ۱. مشخصات برآوردی سامانه:
+- **مساحت کل در دسترس:** ${numericArea.toLocaleString('fa-IR')} متر مربع
+- **مساحت مفید برآوردی (ضریب ۷۵٪):** ${Math.round(numericArea * usableAreaRatio).toLocaleString('fa-IR')} متر مربع
+- **ظرفیت نامی تقریبی نیروگاه:** **${estimatedCapacityKw.toLocaleString('fa-IR')} کیلووات (kWp)**
+- **تولید سالانه تخمینی:** حدود **${annualGenerationKwh.toLocaleString('fa-IR')} کیلووات‌ساعت** در سال
+- **موقعیت ساختگاه:** ${city} (منطقه با پتانسیل تابشی استاندارد)
+- **محل و نوع استقرار:** ${roofType === 'sloped' ? 'سقف شیب‌دار' : roofType === 'ground' ? 'پایه‌کوبی روی زمین' : 'سقف مسطح'}
+- **نوع فاز شبکه:** ${phase === '1-phase' ? 'تک‌فاز' : 'سه‌فاز'}
+
+#### ۲. الزامات فنی و فرآیند احداث قطعی:
+1. **استعلام فنی و بازدید میدانی:** ارزیابی زاویه شیب، استحکام بارگذاری سازه و مقاومت کابل‌کشی.
+2. **مجوز اتصال به شبکه (PPA):** ثبت نام در درگاه سامانه مهرسان یا دفتر خدمات انرژی‌های تجدیدپذیر شرکت توزیع/برق منطقه‌ای.
+3. **مناقصه و انتخاب مجری مجاز (EPC):** دریافت پیشنهادات فنی-مالی رسمی از طریق سامانه مناقصات هوشیار انرژی.
+4. **تأمین تجهیزات دارای گواهی معتبر:** پنل‌های دارای استاندارد IEC 61215 و اینورترهای مجاز توانیر.`;
+
+    const sizingMetadata = {
+      capacityKw: estimatedCapacityKw,
+      totalBudgetMillion,
+      annualGenerationKwh,
+      isIllustrative: true,
+      isVerifiedEngineering: false,
+      disclaimer: 'محاسبات فوق بر مبنای شاخص‌های مرجع بازار و شبیه‌سازی مساحتی استخراج شده و به منزله پیشنهاد قیمت قطعی یا تضمین بازدهی مالی نمی‌باشد.',
+      assumptions: {
+        usableAreaRatio,
+        areaPerKwpM2,
+        annualEquivalentHours: 1600,
+        benchmarkCostPerKwpMillion: 30
+      }
+    };
+
+    return res.json({
+      analysis: analysisText,
+      financialData,
+      sizingMetadata
+    });
   } catch (error) {
-    res.status(500).json({ error: "Analysis failed" });
+    return res.status(500).json({ error: 'خطا در ارزیابی نیروگاه خورشیدی' });
   }
-});
+};
+
+app.post('/api/plan-powerplant', handlePowerPlantPlanning);
+app.post('/api/analyze-powerplant', handlePowerPlantPlanning);
 
 // Domain sub-routers
 app.use("/api/auth", authRouter);

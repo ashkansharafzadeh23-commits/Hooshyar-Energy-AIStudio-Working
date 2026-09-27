@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { provinces } from '../config/cities';
-import { ArrowLeft, ArrowRight, Sun, Loader2, MapPin, Maximize, Wallet, CheckCircle, Building2, Star, Phone, Send } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Sun, Loader2, MapPin, Maximize, Wallet, CheckCircle, Building2, Star, Phone, Send, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AdBanner } from '../components/AdBanner';
 import { PanelComparison } from '../components/PanelComparison';
@@ -23,6 +23,9 @@ export default function PowerPlantSetup() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [financialData, setFinancialData] = useState<any[]>([]);
+  const [sizingMetadata, setSizingMetadata] = useState<any | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [missingFields, setMissingFields] = useState<string[]>([]);
   const [isSent, setIsSent] = useState(false);
   const resultRef = React.useRef<HTMLDivElement>(null);
 
@@ -32,15 +35,17 @@ export default function PowerPlantSetup() {
     }
   }, [result]);
 
-
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setResult(null);
+    setFinancialData([]);
+    setSizingMetadata(null);
+    setErrorMessage(null);
+    setMissingFields([]);
 
     try {
-      const response = await fetch('/api/analyze-powerplant', {
+      const response = await fetch('/api/plan-powerplant', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -48,12 +53,20 @@ export default function PowerPlantSetup() {
         body: JSON.stringify(formData)
       });
       
-            const data = await response.json();
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setErrorMessage(data.error || 'خطا در ارزیابی و محاسبه نقشه راه نیروگاه. لطفاً ورودی‌های فرم را مجدداً بررسی فرمایید.');
+        setMissingFields(data.missingFields || []);
+        return;
+      }
+
       setResult(data.analysis);
       setFinancialData(data.financialData || []);
+      setSizingMetadata(data.sizingMetadata || null);
     } catch (error) {
       console.error(error);
-      setResult('خطا در برقراری ارتباط با سرور. لطفاً دوباره تلاش کنید.');
+      setErrorMessage('خطا در برقراری ارتباط با سرور. لطفاً دوباره تلاش کنید.');
     } finally {
       setLoading(false);
     }
@@ -184,6 +197,20 @@ export default function PowerPlantSetup() {
               )}
             </button>
           </form>
+
+          {errorMessage && (
+            <div className="mt-4 p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-sm flex items-start gap-3">
+              <AlertTriangle className="shrink-0 mt-0.5 text-rose-600" size={18} />
+              <div>
+                <p className="font-bold">{errorMessage}</p>
+                {missingFields.length > 0 && (
+                  <p className="text-xs mt-1 text-rose-600 dark:text-rose-400">
+                    فیلدهای الزامی تکمیل‌نشده: {missingFields.map(f => f === 'area' ? 'مساحت زمین/سقف' : f === 'city' ? 'شهر/استان' : f).join('، ')}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {result && (
@@ -194,6 +221,26 @@ export default function PowerPlantSetup() {
               </div>
               <h2 className="text-2xl font-black text-gray-800">نقشه راه و تحلیل احداث نیروگاه</h2>
             </div>
+
+            {sizingMetadata && (
+              <div className="mb-6 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={18} />
+                  <div>
+                    <h4 className="font-bold text-sm mb-1">سلب مسئولیت و فرضیات امکان‌سنجی اولیه (غیررسمی)</h4>
+                    <p className="leading-relaxed">
+                      {sizingMetadata.disclaimer}
+                    </p>
+                    <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 font-medium text-[11px] text-amber-900 dark:text-amber-100">
+                      <span>• ضریب کارایی مساحت: ۷۵٪</span>
+                      <span>• مساحت استاندارد هر کیلووات: ۶.۵ متر مربع</span>
+                      <span>• برآورد هزینه مرجع: ۳۰ میلیون تومان / کیلووات</span>
+                      <span>• تولید سالانه تخمینی: ۱۶۰۰ کیلووات‌ساعت / کیلووات</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             
             <div className="prose prose-lg prose-amber max-w-none font-Vazirmatn leading-relaxed text-gray-700 prose-headings:font-black prose-headings:text-gray-900 prose-strong:text-amber-700 text-right" dir="rtl">
               <Markdown>{result}</Markdown>

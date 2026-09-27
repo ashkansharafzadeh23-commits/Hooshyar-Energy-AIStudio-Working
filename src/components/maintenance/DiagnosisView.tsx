@@ -13,7 +13,8 @@ import {
   Camera,
   Search,
   Loader2,
-  X
+  X,
+  Check
 } from 'lucide-react';
 import { AssetAlert, MaintenanceDiagnosis } from '../../types/maintenance';
 import Markdown from 'react-markdown';
@@ -39,7 +40,8 @@ export const DiagnosisView: React.FC<DiagnosisViewProps> = ({
   const [images, setImages] = useState<{ data: string; mimeType: string; previewUrl: string }[]>([]);
   const [visualDescription, setVisualDescription] = useState('');
   const [isAnalyzingVisual, setIsAnalyzingVisual] = useState(false);
-  const [visualAnalysisResult, setVisualAnalysisResult] = useState<string | null>(null);
+  const [visualDiagnosisResult, setVisualDiagnosisResult] = useState<MaintenanceDiagnosis | null>(null);
+  const [visualError, setVisualError] = useState<string | null>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -53,7 +55,7 @@ export const DiagnosisView: React.FC<DiagnosisViewProps> = ({
             ...prev,
             {
               data: base64Data,
-              mimeType: file.type,
+              mimeType: file.type || 'image/jpeg',
               previewUrl: result
             }
           ]);
@@ -70,21 +72,57 @@ export const DiagnosisView: React.FC<DiagnosisViewProps> = ({
   const handleAnalyzeVisual = async () => {
     if (images.length === 0 && !visualDescription) return;
     setIsAnalyzingVisual(true);
+    setVisualError(null);
+    setVisualDiagnosisResult(null);
+
+    const token = localStorage.getItem('token');
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    };
+
     try {
-      const res = await fetch('/api/analyze-maintenance', {
+      const symptomsList: string[] = [];
+      if (selectedAlert?.title) symptomsList.push(selectedAlert.title);
+      if (selectedAlert?.description) symptomsList.push(selectedAlert.description);
+      if (visualDescription) symptomsList.push(`مشاهدات بازرسی بصری: ${visualDescription}`);
+
+      const payload = {
+        assetId: selectedAlert?.assetId,
+        alertId: selectedAlert?.id,
+        componentId: selectedAlert?.componentId,
+        equipmentType: selectedAlert?.metricType || 'SOLAR_EQUIPMENT',
+        symptoms: symptomsList,
+        description: visualDescription,
+        photos: images.map((img, idx) => ({
+          name: `equipment_photo_${idx + 1}.jpg`,
+          mimeType: img.mimeType || 'image/jpeg',
+          data: img.data
+        })),
+        triggerAiAssisted: true
+      };
+
+      const res = await fetch('/api/maintenance/diagnose', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          images,
-          textContext: visualDescription
-        })
+        headers,
+        body: JSON.stringify(payload)
       });
-      const data = await res.json();
-      if (data.analysis) {
-        setVisualAnalysisResult(data.analysis);
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          setVisualError('جهت انجام عیب‌یابی تصویری هوشمند، لطفاً ابتدا وارد حساب کاربری خود شوید.');
+        } else {
+          setVisualError(data.error || 'خطا در اجرای فرآیند عیب‌یابی تصویری تجهیزات.');
+        }
+        return;
       }
-    } catch (error) {
-      console.error(error);
+
+      setVisualDiagnosisResult(data);
+    } catch (error: any) {
+      console.error('Visual diagnosis failed:', error);
+      setVisualError('خطا در برقراری ارتباط با سرور عیب‌یابی هوشمند. لطفاً اتصال شبکه را بررسی نمایید.');
     } finally {
       setIsAnalyzingVisual(false);
     }
@@ -396,15 +434,103 @@ export const DiagnosisView: React.FC<DiagnosisViewProps> = ({
             )}
           </button>
 
-          {visualAnalysisResult && (
-            <div className="mt-4 bg-white p-4 rounded-xl border border-indigo-200 text-xs leading-relaxed space-y-2">
-              <h4 className="font-bold text-indigo-900 flex items-center gap-1.5">
-                <ShieldCheck size={16} className="text-emerald-500" />
-                نتیجه تحلیل تصویر:
-              </h4>
-              <div className="prose prose-xs max-w-none markdown-body" dir="rtl">
-                <Markdown>{visualAnalysisResult}</Markdown>
+          {visualError && (
+            <div className="mt-3 p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs flex items-start gap-2">
+              <AlertTriangle className="shrink-0 mt-0.5 text-red-600" size={16} />
+              <p className="leading-relaxed">{visualError}</p>
+            </div>
+          )}
+
+          {visualDiagnosisResult && (
+            <div className="mt-4 bg-white dark:bg-slate-900 p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 text-xs leading-relaxed space-y-3">
+              <div className="flex items-center justify-between border-b border-indigo-100 dark:border-indigo-800/60 pb-2">
+                <h4 className="font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                  <ShieldCheck size={16} className="text-emerald-500" />
+                  نتیجه عیب‌یابی و بازرسی بصری:
+                </h4>
+                <div className="flex items-center gap-1.5">
+                  <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                    visualDiagnosisResult.diagnosisMethod === 'AI_ASSISTED'
+                      ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300'
+                      : 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'
+                  }`}>
+                    {visualDiagnosisResult.diagnosisMethod === 'AI_ASSISTED' ? 'تحلیل هوش مصنوعی + کارشناسی' : 'موتور قوانین مهندسی'}
+                  </span>
+                  {visualDiagnosisResult.confidenceScore !== undefined && (
+                    <span className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 px-2 py-0.5 rounded-full font-bold text-[10px]">
+                      اطمینان: {Math.round(visualDiagnosisResult.confidenceScore)}%
+                    </span>
+                  )}
+                </div>
               </div>
+
+              {/* AI response summary if available */}
+              {visualDiagnosisResult.rawAiResponse && (
+                <div className="p-3 bg-indigo-50/60 dark:bg-indigo-950/30 rounded-xl border border-indigo-100 dark:border-indigo-900/50 text-indigo-950 dark:text-indigo-200 prose prose-xs max-w-none">
+                  <Markdown>{visualDiagnosisResult.rawAiResponse}</Markdown>
+                </div>
+              )}
+
+              {/* Root causes */}
+              {visualDiagnosisResult.likelyRootCauses && visualDiagnosisResult.likelyRootCauses.length > 0 && (
+                <div>
+                  <h5 className="font-bold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center gap-1">
+                    علل ریشه‌ای شناسایی‌شده:
+                  </h5>
+                  <div className="space-y-1.5">
+                    {visualDiagnosisResult.likelyRootCauses.map((rc, idx) => (
+                      <div key={idx} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-slate-900 dark:text-slate-100">{rc.cause}</span>
+                          {rc.probability !== undefined && (
+                            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 shrink-0">
+                              {Math.round(rc.probability * 100)}٪
+                            </span>
+                          )}
+                        </div>
+                        {rc.description && (
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{rc.description}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recommended Actions */}
+              {visualDiagnosisResult.recommendedActions && visualDiagnosisResult.recommendedActions.length > 0 && (
+                <div>
+                  <h5 className="font-bold text-slate-800 dark:text-slate-200 mb-1.5">اقدامات اصلاحی پیشنهادی:</h5>
+                  <ul className="space-y-1">
+                    {visualDiagnosisResult.recommendedActions.map((act, idx) => (
+                      <li key={idx} className="flex items-start gap-1.5 text-slate-700 dark:text-slate-300 text-[11px]">
+                        <CheckCircle2 size={13} className="text-emerald-500 shrink-0 mt-0.5" />
+                        <span>{act.action}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Required Tools & Parts if any */}
+              {visualDiagnosisResult.requiredTools && visualDiagnosisResult.requiredTools.length > 0 && (
+                <div className="pt-1 text-[11px] text-slate-600 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800">
+                  <span className="font-bold text-slate-700 dark:text-slate-300">ابزارهای لازم تکنسین: </span>
+                  {visualDiagnosisResult.requiredTools.join('، ')}
+                </div>
+              )}
+
+              {/* Action: Create Case */}
+              {selectedAlert && (
+                <button
+                  type="button"
+                  onClick={() => onCreateCaseFromDiagnosis(selectedAlert, visualDiagnosisResult)}
+                  className="w-full mt-2 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Check size={14} />
+                  ایجاد پرونده اقدام اصلاحی بر اساس این تحلیل
+                </button>
+              )}
             </div>
           )}
         </div>
