@@ -4,6 +4,13 @@ import { IProfessionalRepository } from './interfaces/IProfessionalRepository.js
 export class JSONProfessionalRepository implements IProfessionalRepository {
   createProfessional(professional: any) { return db.createProfessional(professional); }
   getProfessionalById(id: string) { return db.getProfessionalById ? db.getProfessionalById(id) : (db.getProfessionals() || []).find((p: any) => p.id === id); }
+  getProfessionalByUserId(userId: string) {
+    if (!userId) return undefined;
+    if (typeof (db as any).getProfessionalByUserId === 'function') {
+      return (db as any).getProfessionalByUserId(userId);
+    }
+    return (db.getProfessionals() || []).find((p: any) => p.userId === userId);
+  }
   getProfessionals() { return db.getProfessionals(); }
   updateProfessionalStatus(id: string, status: string) { return (db as any).updateProfessionalStatus(id, status); }
 }

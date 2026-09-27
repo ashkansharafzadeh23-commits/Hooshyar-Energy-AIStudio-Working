@@ -8,6 +8,7 @@ import { alertService } from '../services/alertService.js';
 import { diagnosisService } from '../services/diagnosisService.js';
 import { maintenanceCaseService } from '../services/maintenanceCaseService.js';
 import { technicianMatchingService } from '../services/technicianMatchingService.js';
+import { isCaseAssignedToTechnician, getTechnicianIdentities, resolveTechnicianProfile } from '../services/technicianIdentityService.js';
 import { professionalRepository } from '../repositories/professionalRepository.js';
 import { projectRepository } from '../repositories/projectRepository.js';
 import {
@@ -43,10 +44,11 @@ export function checkCaseAccess(
   if (!user || !user.id) {
     return { allowed: false, status: 401, error: 'احراز هویت الزامی است.', isReporter: false, isAssignedTech: false, isAdmin: false };
   }
-  const roleUpper = user.role?.toUpperCase();
-  const isAdmin = roleUpper === 'ADMIN' || roleUpper === 'SUPER_ADMIN' || user.role === 'admin';
+  const userRoles: string[] = Array.isArray((user as any).roles) ? (user as any).roles : (user.role ? [user.role] : []);
+  const roleUpper = user.role?.toUpperCase() || (userRoles[0] ? userRoles[0].toUpperCase() : '');
+  const isAdmin = roleUpper === 'ADMIN' || roleUpper === 'SUPER_ADMIN' || user.role === 'admin' || userRoles.some(r => ['ADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase()));
   const isReporter = Boolean(mCase.reportedBy && mCase.reportedBy === user.id);
-  const isAssignedTech = Boolean(mCase.assignedTechnicianId && mCase.assignedTechnicianId === user.id);
+  const isAssignedTech = Boolean(mCase.assignedTechnicianId && (mCase.assignedTechnicianId === user.id || isCaseAssignedToTechnician(mCase.assignedTechnicianId, user.id)));
 
   if (isAdmin) {
     return { allowed: true, isReporter, isAssignedTech, isAdmin: true };
@@ -65,7 +67,7 @@ export function checkCaseAccess(
   }
 
   const techRoles = ['technician', 'professional', 'expert'];
-  const isTechRole = techRoles.includes(user.role?.toLowerCase() || '');
+  const isTechRole = techRoles.includes(user.role?.toLowerCase() || '') || userRoles.some(r => techRoles.includes(r.toLowerCase()));
   if (isTechRole) {
     return { allowed: false, status: 403, error: 'شما به عنوان تکنسین تنها به پرونده‌های محول شده به خودتان دسترسی دارید.', isReporter, isAssignedTech, isAdmin };
   }
@@ -520,9 +522,10 @@ maintenanceRouter.post('/assets/:assetId/maintenance', (req: Request, res: Respo
  */
 maintenanceRouter.get(['/cases', '/maintenance/cases'], (req: Request, res: Response) => {
   const userId = req.user?.id;
-  const roleUpper = req.user?.role?.toUpperCase();
-  const isAdmin = roleUpper === 'ADMIN' || roleUpper === 'SUPER_ADMIN' || req.user?.role === 'admin';
-  const isTech = ['technician', 'professional', 'expert'].includes(req.user?.role?.toLowerCase() || '');
+  const reqRoles: string[] = Array.isArray((req.user as any)?.roles) ? (req.user as any).roles : (req.user?.role ? [req.user.role] : []);
+  const roleUpper = req.user?.role?.toUpperCase() || (reqRoles[0] ? reqRoles[0].toUpperCase() : '');
+  const isAdmin = roleUpper === 'ADMIN' || roleUpper === 'SUPER_ADMIN' || req.user?.role === 'admin' || reqRoles.some(r => ['ADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase()));
+  const isTech = ['technician', 'professional', 'expert'].includes(req.user?.role?.toLowerCase() || '') || reqRoles.some(r => ['technician', 'professional', 'expert'].includes(r.toLowerCase()));
 
   const projectId = req.query.projectId ? String(req.query.projectId) : undefined;
   const assetId = req.query.assetId ? String(req.query.assetId) : undefined;
@@ -531,7 +534,7 @@ maintenanceRouter.get(['/cases', '/maintenance/cases'], (req: Request, res: Resp
   let allCases = maintenanceRepository.getAllCases();
 
   if (isTech && !isAdmin) {
-    allCases = allCases.filter(c => c.assignedTechnicianId === userId);
+    allCases = allCases.filter(c => isCaseAssignedToTechnician(c.assignedTechnicianId, userId) || c.assignedTechnicianId === userId);
   } else if (!isAdmin && userId) {
     const userProjects = projectRepository.findAll().filter(p => p.ownerId === userId);
     const userProjectIds = new Set(userProjects.map(p => p.id));
@@ -782,7 +785,7 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/select-technician', '/c
     return res.status(400).json({ error: 'شناسه متخصص الزامی است.' });
   }
 
-  const pro = professionalRepository.getProfessionalById(technicianId);
+  const pro = professionalRepository.getProfessionalById(technicianId) || (typeof professionalRepository.getProfessionalByUserId === 'function' ? professionalRepository.getProfessionalByUserId(technicianId) : undefined);
   if (!pro) {
     return res.status(404).json({ error: 'متخصص مورد نظر یافت نشد.' });
   }
@@ -824,10 +827,11 @@ maintenanceRouter.get('/technician/cases', (req: Request, res: Response) => {
     return res.status(401).json({ error: 'احراز هویت الزامی است.' });
   }
 
-  const roleUpper = req.user?.role?.toUpperCase();
-  const isAdmin = roleUpper === 'ADMIN' || roleUpper === 'SUPER_ADMIN' || req.user?.role === 'admin';
+  const userRolesList: string[] = Array.isArray((req.user as any)?.roles) ? (req.user as any).roles : (req.user?.role ? [req.user.role] : []);
+  const roleUpper = req.user?.role?.toUpperCase() || (userRolesList[0] ? userRolesList[0].toUpperCase() : '');
+  const isAdmin = roleUpper === 'ADMIN' || roleUpper === 'SUPER_ADMIN' || req.user?.role === 'admin' || userRolesList.some(r => ['ADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase()));
   const techRoles = ['technician', 'professional', 'expert'];
-  const isTechRole = techRoles.includes(req.user?.role?.toLowerCase() || '');
+  const isTechRole = techRoles.includes(req.user?.role?.toLowerCase() || '') || userRolesList.some(r => techRoles.includes(r.toLowerCase()));
 
   // Only authorized technicians or system administrators can use this endpoint
   if (!isAdmin && !isTechRole) {
@@ -841,7 +845,7 @@ maintenanceRouter.get('/technician/cases', (req: Request, res: Response) => {
   }
 
   // Technicians can ONLY access cases explicitly assigned to them (strict project/organization boundary preservation)
-  const myAssignedCases = allCases.filter((c) => c.assignedTechnicianId === userId);
+  const myAssignedCases = allCases.filter((c) => isCaseAssignedToTechnician(c.assignedTechnicianId, userId) || c.assignedTechnicianId === userId);
   return res.json(myAssignedCases);
 });
 
@@ -958,7 +962,7 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/assign', '/cases/:maint
   }
 
   // Lookup professional
-  const pro = professionalRepository.getProfessionalById ? professionalRepository.getProfessionalById(technicianId) : (professionalRepository.getProfessionals() || []).find(p => p.id === technicianId);
+  const pro = (professionalRepository.getProfessionalById && professionalRepository.getProfessionalById(technicianId)) || (professionalRepository.getProfessionalByUserId && professionalRepository.getProfessionalByUserId(technicianId)) || (professionalRepository.getProfessionals() || []).find(p => p.id === technicianId || p.userId === technicianId);
   const techName = pro?.fullName || req.body.technicianName || 'تکنسین تخصصی';
   const techPhone = pro?.phone || req.body.technicianPhone || '';
 

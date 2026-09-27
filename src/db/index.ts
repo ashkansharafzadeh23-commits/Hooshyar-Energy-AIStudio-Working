@@ -1114,6 +1114,7 @@ export const db: any = {
   },
   getProfessionals: () => readDB().professionals,
   getProfessionalById: (id: string) => readDB().professionals.find(p => p.id === id),
+  getProfessionalByUserId: (userId: string) => readDB().professionals.find(p => p.userId === userId),
   createProfessional: (professional: Omit<Professional, "id" | "createdAt" | "status">) => {
     const data = readDB();
     const newPro: Professional = { ...professional, id: uuidv4(), status: "pending_review", createdAt: new Date().toISOString(), rating: null };
