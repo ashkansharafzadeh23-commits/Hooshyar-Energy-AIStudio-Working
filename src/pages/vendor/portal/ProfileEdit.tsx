@@ -2,8 +2,10 @@ import React from "react";
 import { useState } from 'react';
 import { Camera, Save } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useToast } from '../../../context/ToastContext';
 
 export default function ProfileEdit() {
+  const { showSuccess } = useToast();
   const [formData, setFormData] = useState({
     name: 'نیرو گستران پارس',
     description: 'تامین کننده تجهیزات انرژی خورشیدی و ژنراتور',
@@ -20,7 +22,7 @@ export default function ProfileEdit() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    alert('اطلاعات با موفقیت ذخیره شد.');
+    showSuccess('اطلاعات فروشگاه با موفقیت ذخیره شد.', 'ذخیره پروفایل');
   };
 
   return (

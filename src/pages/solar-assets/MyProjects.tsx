@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Upload, Play, Eye, Home, ShieldAlert, LogIn, Clock, CheckCircle2 } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
+import { PersianPromptModal } from '../../components/common/PersianPromptModal';
+import { PersianConfirmModal } from '../../components/common/PersianConfirmModal';
 
 export default function MyProjects() {
   const [user, setUser] = useState<any>(null);
@@ -10,6 +13,9 @@ export default function MyProjects() {
   const [loading, setLoading] = useState(true);
   const [requestStatus, setRequestStatus] = useState<'idle' | 'submitting' | 'submitted' | 'error'>('idle');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const { showSuccess, showError } = useToast();
+  const [uploadDocModalProjectId, setUploadDocModalProjectId] = useState<string | null>(null);
+  const [submitReviewProjectId, setSubmitReviewProjectId] = useState<string | null>(null);
   
   // Form state
   const [showForm, setShowForm] = useState(false);
@@ -109,34 +115,44 @@ export default function MyProjects() {
     }
   };
 
-  const handleUploadDoc = async (projectId: string) => {
-    const type = window.prompt("نوع مدرک؟ (مثلا: ownership, permit, epc_contract)");
-    if (!type) return;
-    const url = window.prompt("لینک فایل (فرضی)؟");
-    if (!url) return;
+  const handleUploadDoc = (projectId: string) => {
+    setUploadDocModalProjectId(projectId);
+  };
 
+  const handleUploadDocSubmit = async (values: Record<string, string>) => {
+    if (!uploadDocModalProjectId) return;
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`/api/assets/${projectId}/documents`, {
+      const res = await fetch(`/api/assets/${uploadDocModalProjectId}/documents`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ documentType: type, fileUrl: url })
+        body: JSON.stringify({ documentType: values.documentType, fileUrl: values.fileUrl })
       });
       if (res.ok) {
-        alert("مدرک آپلود شد.");
+        showSuccess("مدرک با موفقیت برای پروژه بارگذاری گردید.");
+        setUploadDocModalProjectId(null);
+        fetchProjects();
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        showError(errJson.error || "خطا در بارگذاری مدرک");
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      showError(err.message || "خطا در ارتباط با سرور");
     }
   };
 
-  const handleSubmitForReview = async (projectId: string) => {
+  const handleSubmitForReview = (projectId: string) => {
+    setSubmitReviewProjectId(projectId);
+  };
+
+  const handleConfirmSubmitForReview = async () => {
+    if (!submitReviewProjectId) return;
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`/api/assets/${projectId}`, {
+      const res = await fetch(`/api/assets/${submitReviewProjectId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -145,14 +161,15 @@ export default function MyProjects() {
         body: JSON.stringify({ projectStatus: "SUBMITTED" })
       });
       if (res.ok) {
-        alert("پروژه برای بررسی ارسال شد.");
+        showSuccess("پروژه برای بررسی کارشناسان ارسال شد.");
+        setSubmitReviewProjectId(null);
         fetchProjects();
       } else {
-        const data = await res.json();
-        alert(data.error || "خطا در ارسال");
+        const data = await res.json().catch(() => ({}));
+        showError(data.error || "خطا در ارسال پروژه");
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      showError(err.message || "خطا در برقراری ارتباط با سرور");
     }
   };
 
@@ -329,6 +346,53 @@ export default function MyProjects() {
           ))}
         </div>
       )}
+
+      {/* Upload Document Modal */}
+      <PersianPromptModal
+        isOpen={!!uploadDocModalProjectId}
+        onClose={() => setUploadDocModalProjectId(null)}
+        title="بارگذاری مدرک پروژه"
+        description="نوع مدرک و آدرس فایل مربوط به این پروژه را مشخص نمایید."
+        fields={[
+          {
+            id: 'documentType',
+            label: 'نوع مدرک',
+            type: 'select',
+            required: true,
+            options: [
+              { value: 'ownership', label: 'سند مالکیت ساختگاه (ownership)' },
+              { value: 'permit', label: 'مجوز احداث و اتصال به شبکه (permit)' },
+              { value: 'epc_contract', label: 'قرارداد پیمانکاری احداث (epc_contract)' },
+              { value: 'environmental', label: 'مجوز محیط زیست و استعلامات (environmental)' },
+              { value: 'technical_spec', label: 'مشخصات فنی و کاتالوگ تجهیزات (technical_spec)' },
+              { value: 'other', label: 'سایر اسناد و مدارک فنی (other)' }
+            ]
+          },
+          {
+            id: 'fileUrl',
+            label: 'آدرس اینترنتی فایل مدرک (URL)',
+            type: 'url',
+            required: true,
+            placeholder: 'https://...',
+            helpText: 'لینک مستقیم یا ابری فایل مدرک با فرمت معتبر اینترنتی'
+          }
+        ]}
+        submitText="بارگذاری مدرک"
+        cancelText="انصراف"
+        onSubmit={handleUploadDocSubmit}
+      />
+
+      {/* Submit for Review Confirmation Modal */}
+      <PersianConfirmModal
+        isOpen={!!submitReviewProjectId}
+        onClose={() => setSubmitReviewProjectId(null)}
+        onConfirm={handleConfirmSubmitForReview}
+        title="ارسال پروژه جهت بررسی و تایید"
+        message="آیا از ارسال نهایی پروژه جهت بررسی کارشناسان اطمینان دارید؟ پس از ارسال، وضعیت پروژه به «ارسال شده» تغییر می‌یابد."
+        confirmText="ارسال برای بررسی"
+        cancelText="انصراف"
+        variant="primary"
+      />
     </div>
   );
 }

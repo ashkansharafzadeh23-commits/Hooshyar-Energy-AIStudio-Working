@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
+import { useToast } from '../context/ToastContext';
+import { PersianPromptModal } from '../components/common/PersianPromptModal';
 import { motion } from 'framer-motion';
 import { Check, Info, AlertTriangle, ExternalLink, Zap, Share, Map, Lightbulb, MessageSquare, Send, Save, Trash2 } from 'lucide-react';
 import SavingsCalculator from '../components/SavingsCalculator';
@@ -25,18 +27,18 @@ export default function ResultPage() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectStatus, setProjectStatus] = useState<string | null>(null);
   const [projectLoading, setProjectLoading] = useState(false);
+  const { showSuccess, showError, showWarning } = useToast();
+  const [isSaveScenarioModalOpen, setIsSaveScenarioModalOpen] = useState(false);
   const token = localStorage.getItem('token');
-
-  
 
   const handleConvertToProject = async () => {
     if (!token) {
-      alert("برای ایجاد پروژه باید وارد حساب کاربری شوید.");
+      showWarning("برای ایجاد پروژه باید ابتدا وارد حساب کاربری شوید.", "احراز هویت");
       return;
     }
-    const aId = result.analysisId || historyResultId;
+    const aId = result?.analysisId || historyResultId;
     if (!aId) {
-      alert("خطا: شناسه تحلیل یافت نشد.");
+      showError("شناسه تحلیل یافت نشد. لطفاً تحلیل جدیدی ثبت کنید.", "خطا در دسترسی");
       return;
     }
     
@@ -51,24 +53,28 @@ export default function ResultPage() {
       if (!res.ok) throw new Error(data.error || "خطا در ایجاد پروژه");
       setProjectId(data.id);
       setProjectStatus(data.status);
-      alert("پروژه با موفقیت ایجاد شد! کد پروژه: " + data.projectCode);
+      showSuccess(`پروژه با موفقیت ایجاد شد! کد پروژه: ${data.projectCode}`, "پروژه ثبت گردید");
     } catch (err: any) {
-      alert(err.message);
+      showError(err.message || "خطا در تبدیل تحلیل به پروژه", "خطای ارتباط");
     } finally {
       setProjectLoading(false);
     }
   };
 
   const handleSaveScenario = () => {
-    const defaultName = `سناریو ${savedScenarios.length + 1}`;
-    const name = window.prompt("نام سناریو را وارد کنید (مثلاً: پنل ۵۵۰ وات، ظرفیت ۵ کیلووات):", defaultName);
-    if (name) {
-      setSavedScenarios(prev => [...prev, {
-        name,
-        monthlySunHours: result.dataSource.monthlySunHours,
-        systemKwp: result.solar.finalKwp
-      }]);
-    }
+    setIsSaveScenarioModalOpen(true);
+  };
+
+  const handleSaveScenarioSubmit = (values: Record<string, string>) => {
+    const name = values.scenarioName?.trim();
+    if (!name) return;
+    setSavedScenarios(prev => [...prev, {
+      name,
+      monthlySunHours: result.dataSource.monthlySunHours,
+      systemKwp: result.solar.finalKwp
+    }]);
+    setIsSaveScenarioModalOpen(false);
+    showSuccess(`سناریو «${name}» با موفقیت ذخیره گردید.`);
   };
   
   const handleRemoveScenario = (nameToRemove: string) => {
@@ -540,6 +546,27 @@ export default function ResultPage() {
       <SmartWarning 
         monthlyKwh={(result?.dailyConsumptionEstimate?.monthlyKwh || 0)} 
         targets={state.targets} 
+      />
+
+      {/* Persian Scenario Save Prompt Modal */}
+      <PersianPromptModal
+        isOpen={isSaveScenarioModalOpen}
+        onClose={() => setIsSaveScenarioModalOpen(false)}
+        title="ذخیره سناریوی تحلیلی"
+        description="نام مورد نظر خود را برای این سناریو جهت مقایسه در نمودارها وارد نمایید."
+        fields={[
+          {
+            id: 'scenarioName',
+            label: 'نام سناریو',
+            placeholder: 'مثلاً: پنل ۵۵۰ وات، ظرفیت ۵ کیلووات',
+            defaultValue: `سناریو ${savedScenarios.length + 1}`,
+            required: true,
+            helpText: 'نام سناریو در لیست و برچسب‌های نمودار مقایسه‌ای نمایش داده می‌شود.'
+          }
+        ]}
+        submitText="ذخیره سناریو"
+        cancelText="انصراف"
+        onSubmit={handleSaveScenarioSubmit}
       />
     </motion.div>
   );

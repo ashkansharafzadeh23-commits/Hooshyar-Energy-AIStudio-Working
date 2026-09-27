@@ -6,3 +6,6 @@ export * from './DataTruthBadge';
 export * from './EmptyState';
 export * from './LoadingState';
 export * from './ErrorState';
+export * from './PersianModal';
+export * from './PersianPromptModal';
+export * from './PersianConfirmModal';

@@ -10,6 +10,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test": "tsx scripts/test_ph5_production_readiness.ts",
+    "test:step3": "tsx scripts/test_stage10_step3_persian_modals.ts",
     "test:all": "tsx scripts/test_ph5_production_readiness.ts && tsx scripts/test_ph4_reliability.ts && tsx scripts/test_ph3_security.ts && tsx scripts/test_ph2_database.ts && tsx scripts/test_non_empty_migration.ts && tsx scripts/test_phase8.ts && tsx scripts/test_phase9.ts"
   },
   "dependencies": {

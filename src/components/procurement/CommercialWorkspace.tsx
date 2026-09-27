@@ -3,6 +3,7 @@ import { EnergyProject } from '../../types/project';
 import { RFQ, EpcBid } from '../../types/rfq';
 import { BillOfQuantities, BOQItem, ProcurementRFQ, VendorQuote, PurchaseOrder, Delivery } from '../../types/procurement';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 
 import { CommercialProcessNavigator, CommercialStageId, StageInfo, CommercialStageStatus } from './CommercialProcessNavigator';
 import { CommercialDecisionBanner, CommercialDecisionContext } from './CommercialDecisionBanner';
@@ -39,6 +40,7 @@ export const CommercialWorkspace: React.FC<CommercialWorkspaceProps> = ({
   className = ''
 }) => {
   const { user } = useAuth();
+  const { showSuccess, showError } = useToast();
 
   // Active Process Stage
   const [activeStage, setActiveStage] = useState<CommercialStageId>(initialStage);
@@ -222,8 +224,11 @@ export const CommercialWorkspace: React.FC<CommercialWorkspaceProps> = ({
       await loadCommercialData();
       if (onProjectUpdate) onProjectUpdate();
       setEpcFlowView('overview');
+      showSuccess('استعلام مناقصه EPC با موفقیت منتشر گردید.');
     } catch (err: any) {
-      alert(err.message || 'خطا در ثبت استعلام');
+      const msg = err.message || 'خطا در ثبت استعلام';
+      setErrorMessage(msg);
+      showError(msg, 'خطا در انتشار استعلام');
     } finally {
       setActionInProgress(false);
     }
@@ -251,8 +256,11 @@ export const CommercialWorkspace: React.FC<CommercialWorkspaceProps> = ({
       setSelectedBidForAward(null);
       await loadCommercialData();
       if (onProjectUpdate) onProjectUpdate();
+      showSuccess('پیمانکار منتخب با موفقیت تعیین و تایید شد.');
     } catch (err: any) {
-      alert(err.message || 'خطا در انتخاب پیمانکار');
+      const msg = err.message || 'خطا در انتخاب پیمانکار';
+      setErrorMessage(msg);
+      showError(msg, 'خطا در انتخاب پیمانکار');
     } finally {
       setActionInProgress(false);
     }
@@ -282,8 +290,11 @@ export const CommercialWorkspace: React.FC<CommercialWorkspaceProps> = ({
       await loadCommercialData();
       setEquipFlowView('boq');
       setSelectedBOQItemIds([]);
+      showSuccess('استعلام قیمت اقلام با موفقیت به تأمین‌کنندگان ارسال گردید.');
     } catch (err: any) {
-      alert(err.message || 'خطا در ارسال استعلام');
+      const msg = err.message || 'خطا در ارسال استعلام';
+      setErrorMessage(msg);
+      showError(msg, 'خطا در استعلام تجهیزات');
     } finally {
       setActionInProgress(false);
     }
@@ -318,8 +329,11 @@ export const CommercialWorkspace: React.FC<CommercialWorkspaceProps> = ({
       await loadCommercialData();
       if (onProjectUpdate) onProjectUpdate();
       setActiveStage('delivery');
+      showSuccess('سفارش خرید رسمی (PO) با موفقیت صادر گردید.');
     } catch (err: any) {
-      alert(err.message || 'خطا در صدور سفارش خرید');
+      const msg = err.message || 'خطا در صدور سفارش خرید';
+      setErrorMessage(msg);
+      showError(msg, 'خطا در صدور سفارش خرید');
     } finally {
       setActionInProgress(false);
     }

@@ -37,6 +37,7 @@ import SolarAnalysisExperience from './pages/SolarAnalysisExperience';
 import MainLayout from './layouts/MainLayout';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
 import ProjectDetail from './pages/projects/ProjectDetail';
 import ProjectProposal from './pages/projects/ProjectProposal';
 import InvestmentHub from './pages/investment/InvestmentHub';
@@ -52,11 +53,12 @@ import ContractorPublicProfile from './pages/ContractorPublicProfile';
 export default function App() {
   return (
     <AppProvider>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route element={<MainLayout />}>
+      <ToastProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Landing />} />
+              <Route element={<MainLayout />}>
               <Route path="/customer-login" element={<CustomerLogin />} />
               <Route path="/user-dashboard" element={<UserDashboard />} />
               <Route path="/dashboard" element={<UserDashboard />} />
@@ -111,6 +113,7 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </AuthProvider>
+    </ToastProvider>
   </AppProvider>
   );
 }

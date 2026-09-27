@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Plus
 } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
 import { 
   Portfolio, 
   PortfolioOverviewSummary, 
@@ -29,6 +30,7 @@ import {
 } from '../../types/portfolio.js';
 
 export default function PortfolioDashboard() {
+  const { showError, showSuccess } = useToast();
   const [organizations, setOrganizations] = useState<any[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState<string>('');
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
@@ -137,13 +139,17 @@ export default function PortfolioDashboard() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: 'گزارش تحلیلی جامع پرتفوی جهت ارائه به هیئت مدیره' })
     })
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error(`کد خطای ${res.status}`);
+        return res.json();
+      })
       .then(data => {
         setAiSummary(data);
         setAiLoading(false);
+        showSuccess('گزارش هوشمند مدیریتی با موفقیت تولید شد.', 'تولید تحلیل پرتفوی');
       })
       .catch(err => {
-        alert('خطا در تولید گزارش هوشمند: ' + err.message);
+        showError('خطا در تولید گزارش هوشمند: ' + err.message, 'خطای هوش مصنوعی');
         setAiLoading(false);
       });
   };
