@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { NotificationCenter } from '../components/NotificationCenter';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { motion } from 'framer-motion';
-import { Sun, Zap, User, Store, ArrowLeft, ShieldCheck, BatteryCharging, Cpu } from 'lucide-react';
+import { Sun, Zap, User, Store, ArrowLeft, ShieldCheck, BatteryCharging, Cpu, Wrench } from 'lucide-react';
 
 export default function Landing() {
   return (
@@ -104,6 +104,50 @@ export default function Landing() {
 
       {/* Features Section */}
       <section className="py-20 px-4 sm:px-6 max-w-7xl mx-auto w-full relative z-10 -mt-16">
+        {/* Prominent Smart Maintenance Banner Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="mb-8 bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white rounded-3xl p-6 sm:p-8 border border-blue-500/30 shadow-2xl relative overflow-hidden"
+        >
+          <div className="absolute top-0 left-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none -translate-x-1/2 -translate-y-1/2" />
+          <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div className="space-y-2 max-w-2xl">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-bold border border-blue-400/30 mb-1">
+                <Wrench size={14} />
+                <span>خدمات تخصصی بهره‌برداری و O&M هوشیار انرژی</span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-white">
+                تعمیرات و نگهداری هوشمند
+              </h2>
+              <p className="text-slate-300 text-sm sm:text-base leading-relaxed font-normal">
+                ثبت خرابی تجهیزات، بارگذاری تصویر، عیبیابی هوشمند و ارتباط با تعمیرکار متخصص
+              </p>
+              <div className="flex flex-wrap gap-4 pt-2 text-xs text-slate-300">
+                <span className="flex items-center gap-1.5 bg-white/5 px-3 py-1.5 rounded-lg border border-white/10">
+                  ✓ عیب‌یابی تحلیلی انواع اینورتر و پنل
+                </span>
+                <span className="flex items-center gap-1.5 bg-white/5 px-3 py-1.5 rounded-lg border border-white/10">
+                  ✓ امکان ثبت برای تجهیزات فاقد پرونده قبلی
+                </span>
+                <span className="flex items-center gap-1.5 bg-white/5 px-3 py-1.5 rounded-lg border border-white/10">
+                  ✓ ارجاع مستقیم به متخصصان دارای صلاحیت
+                </span>
+              </div>
+            </div>
+            <div className="shrink-0 flex flex-col sm:flex-row gap-3">
+              <Link
+                to="/smart-maintenance"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-600/30 hover:-translate-y-0.5 transition-all"
+              >
+                <span>ورود به سامانه و ثبت خرابی</span>
+                <ArrowLeft size={16} />
+              </Link>
+            </div>
+          </div>
+        </motion.div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <motion.div 
             initial={{ opacity: 0, y: 20 }}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, ArrowLeft, Sun, ExternalLink } from 'lucide-react';
+import { Plus, ArrowLeft, Sun, ExternalLink, Wrench } from 'lucide-react';
 import { UserProfile, UserOrganization } from '../../context/AuthContext';
 import { formatRoleLabel } from '../../utils/formatters';
 
@@ -120,8 +120,15 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         </p>
       </div>
 
-      {/* Role-Aware Primary Quick Action */}
-      <div className="flex items-center gap-2 pt-1 md:pt-0">
+      {/* Role-Aware Primary Quick Action & Smart Maintenance */}
+      <div className="flex flex-wrap items-center gap-2 pt-1 md:pt-0">
+        <Link
+          to="/smart-maintenance"
+          className="inline-flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition-colors shadow-xs min-h-[44px]"
+        >
+          <Wrench size={16} strokeWidth={2} />
+          <span>تعمیرات و نگهداری هوشمند</span>
+        </Link>
         <Link
           to={quickAction.to}
           className={`inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-sm transition-colors shadow-xs min-h-[44px] ${

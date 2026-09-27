@@ -173,21 +173,33 @@ export default function SmartMaintenance() {
       return;
     }
 
-    // Call API by caseId or code
+    // Call secure authenticated API by caseId or human-readable tracking number
     try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setTrackingLookupError('جهت رهگیری پرونده و حفظ محرمانگی داده‌ها، ورود به حساب کاربری الزامی است.');
+        return;
+      }
+
       const res = await fetch(`/api/maintenance/${encodeURIComponent(code)}`, {
         headers: getAuthHeaders()
       });
-      if (res.ok) {
+      if (res.status === 401) {
+        setTrackingLookupError('نشست کاری شما منقضی شده است. لطفاً مجدداً وارد سامانه شوید.');
+      } else if (res.status === 403) {
+        setTrackingLookupError('شما دسترسی مجاز به مشاهده این پرونده تعمیراتی را ندارید.');
+      } else if (res.status === 404) {
+        setTrackingLookupError('پرونده‌ای با این شماره یا کد رهگیری یافت نشد.');
+      } else if (res.ok) {
         const found = await res.json();
         setTrackingCaseId(found.id);
         setActiveTab('TRACKING');
         setTrackingInputCode('');
       } else {
-        setTrackingLookupError('پرونده‌ای با این کد رهگیری یافت نشد.');
+        setTrackingLookupError('خطا در جستجوی پرونده تعمیراتی.');
       }
     } catch {
-      setTrackingLookupError('خطا در جستجوی کد رهگیری.');
+      setTrackingLookupError('خطای ارتباط با سرور در هنگام رهگیری.');
     }
   };
 

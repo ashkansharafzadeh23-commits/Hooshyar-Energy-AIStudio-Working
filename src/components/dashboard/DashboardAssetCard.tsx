@@ -60,8 +60,25 @@ export const DashboardAssetCard: React.FC<DashboardAssetCardProps> = ({ asset })
         </div>
       </div>
 
+      {/* Quick Action: Smart Maintenance */}
+      <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800/80">
+        <span className="text-[11px] text-slate-500">پایش سلامت و عیب‌یابی:</span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            window.location.href = '/smart-maintenance';
+          }}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 dark:text-blue-300 text-xs font-bold transition-colors"
+        >
+          <Wrench size={13} />
+          <span>درخواست سرویس یا گزارش خرابی</span>
+        </button>
+      </div>
+
       {/* Capacity & Verified Facts Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 text-xs">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs">
         <div>
           <span className="text-slate-500 dark:text-slate-400 block mb-0.5">ظرفیت نامی نیروگاه</span>
           <span className="font-bold text-slate-900 dark:text-slate-100">

@@ -2171,7 +2171,15 @@ export const db: any = {
     return all;
   },
   getMaintenanceCaseById: (id: string): MaintenanceCase | undefined => {
-    return (readDB().maintenanceCases || []).find((c: any) => c.id === id);
+    if (!id) return undefined;
+    const cleanId = String(id).trim();
+    const cases = readDB().maintenanceCases || [];
+    // Match by internal UUID primary key, or human-readable caseNumber, or maintenanceCode (case-insensitive)
+    return cases.find((c: any) => 
+      c.id === cleanId || 
+      (c.caseNumber && String(c.caseNumber).trim().toLowerCase() === cleanId.toLowerCase()) ||
+      (c.maintenanceCode && String(c.maintenanceCode).trim().toLowerCase() === cleanId.toLowerCase())
+    );
   },
   createMaintenanceCase: (mCase: Omit<MaintenanceCase, 'id' | 'createdAt' | 'updatedAt' | 'caseNumber' | 'maintenanceCode' | 'reportedBy' | 'reportedAt'> & { caseNumber?: string; maintenanceCode?: string; reportedBy?: string; reportedAt?: string }): MaintenanceCase => {
     const d = readDB();

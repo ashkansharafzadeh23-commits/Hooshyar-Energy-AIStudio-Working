@@ -24,7 +24,8 @@ import {
   Cpu,
   Layers,
   Check,
-  Loader2
+  Loader2,
+  LogIn
 } from 'lucide-react';
 import { MaintenanceCase, MaintenanceDiagnosis, TechnicianMatch } from '../../types/maintenance';
 
@@ -256,6 +257,11 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
 
   // Final Case Submission
   const handleSubmitRequest = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setSubmitError('برای ثبت رسمی پرونده و دریافت کد رهگیری، ورود به حساب کاربری الزامی است. مشخصات فرم شما حفظ شده است.');
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     try {

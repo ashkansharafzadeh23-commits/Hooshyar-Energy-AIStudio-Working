@@ -9,7 +9,8 @@ import {
   X, 
   Calculator, 
   SunMedium, 
-  ArrowRight 
+  ArrowRight, 
+  Wrench 
 } from 'lucide-react';
 
 export const MobileBottomNav: React.FC = () => {
@@ -119,6 +120,27 @@ export const MobileBottomNav: React.FC = () => {
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                     تعریف ساختگاه، بارگذاری اسناد و آغاز چرخه مهندسی و EPC
+                  </p>
+                </div>
+              </div>
+              <ArrowRight size={18} className="text-slate-400 rotate-180 group-hover:-translate-x-1 transition-transform shrink-0" />
+            </button>
+
+            {/* Action 3: Smart Maintenance & Repair */}
+            <button
+              onClick={() => handleAction('/smart-maintenance')}
+              className="w-full flex items-center justify-between p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 hover:border-emerald-300 dark:hover:border-emerald-800 transition-all text-right group"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-xl bg-emerald-500/10 dark:bg-emerald-400/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                  <Wrench size={22} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                    تعمیرات و نگهداری هوشمند
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    ثبت خرابی تجهیزات، بارگذاری تصویر، عیبیابی هوشمند و ارتباط با تعمیرکار متخصص
                   </p>
                 </div>
               </div>

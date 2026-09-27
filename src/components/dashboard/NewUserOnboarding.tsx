@@ -138,8 +138,8 @@ export const NewUserOnboarding: React.FC<NewUserOnboardingProps> = ({
       case 'OWNER':
       default:
         return {
-          title: 'اولین پروژه خورشیدی خود را شروع کنید',
-          description: 'هوشیار انرژی چرخه کامل احداث نیروگاه خورشیدی از امکان‌سنجی اولیه و استعلام قیمت تا عقد قرارداد و راه‌اندازی را مدیریت می‌کند.',
+          title: 'مدیریت و احداث پروژه‌های انرژی خورشیدی',
+          description: 'هوشیار انرژی چرخه کامل احداث، بهره‌برداری، تعمیرات و نگهداری تجهیزات خورشیدی را مدیریت می‌کند.',
           icon: Sun,
           primaryAction: {
             title: 'شروع تحلیل هوشمند انرژی خورشیدی',
@@ -148,10 +148,10 @@ export const NewUserOnboarding: React.FC<NewUserOnboardingProps> = ({
             actionText: 'شروع تحلیل انرژی'
           },
           secondaryAction: {
-            title: 'ایجاد مستقیم پروژه احداث',
-            description: 'ثبت اطلاعات فنی سایت و ورود به فرآیند تهیه اسناد استعلام پیمانکاری',
-            href: '/powerplant-setup',
-            actionText: 'ثبت اطلاعات نیروگاه'
+            title: 'تعمیرات و نگهداری هوشمند تجهیزات',
+            description: 'ثبت خرابی تجهیزات، بارگذاری تصویر، عیبیابی هوشمند و ارتباط با تعمیرکار متخصص',
+            href: '/smart-maintenance',
+            actionText: 'ثبت درخواست تعمیرات'
           }
         };
     }

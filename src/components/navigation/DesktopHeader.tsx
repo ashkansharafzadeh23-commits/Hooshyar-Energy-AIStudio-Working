@@ -12,7 +12,8 @@ import {
   Building2, 
   Check, 
   ShieldCheck,
-  Plus
+  Plus,
+  Wrench
 } from 'lucide-react';
 import { NotificationCenter } from '../NotificationCenter';
 import { ThemeToggle } from '../ThemeToggle';
@@ -78,6 +79,9 @@ export const DesktopHeader: React.FC = () => {
     if (path === '/portfolio') {
       return location.pathname === '/portfolio' || location.pathname === '/enterprise/portfolio';
     }
+    if (path === '/smart-maintenance') {
+      return location.pathname === '/smart-maintenance' || location.pathname === '/maintenance';
+    }
     return false;
   };
 
@@ -85,6 +89,7 @@ export const DesktopHeader: React.FC = () => {
     { label: 'پیشخوان', path: '/dashboard', icon: LayoutDashboard },
     { label: 'پروژه‌ها', path: '/projects', icon: Layers },
     { label: 'دارایی‌ها', path: '/solar-assets', icon: Zap },
+    { label: 'تعمیرات هوشمند', path: '/smart-maintenance', icon: Wrench },
     { label: 'بازارگاه', path: '/contractors', icon: Store },
     ...(canAccessPortfolio ? [{ label: 'پورتفو', path: '/portfolio', icon: Briefcase }] : [])
   ];
@@ -299,6 +304,14 @@ export const DesktopHeader: React.FC = () => {
                   >
                     <Zap size={14} />
                     <span>شروع محاسبه و تحلیل خورشیدی</span>
+                  </Link>
+                  <Link
+                    to="/smart-maintenance"
+                    onClick={() => setIsProfileOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+                  >
+                    <Wrench size={14} />
+                    <span>تعمیرات و نگهداری هوشمند</span>
                   </Link>
                 </div>
 

@@ -865,8 +865,9 @@ maintenanceRouter.get(['/maintenance/:maintenanceCaseId', '/cases/:maintenanceCa
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
-  const actions = maintenanceRepository.getActions(caseId);
-  const assignmentHistories = maintenanceRepository.getAssignmentHistories(caseId);
+  // Use authoritative canonical internal ID for fetching sub-resources
+  const actions = maintenanceRepository.getActions(mCase.id);
+  const assignmentHistories = maintenanceRepository.getAssignmentHistories(mCase.id);
   const diagnosis = mCase.diagnosisId ? maintenanceRepository.getDiagnosisById(mCase.diagnosisId) : undefined;
   const asset = assetRepository.getAssetById(mCase.assetId);
 
