@@ -34,50 +34,98 @@ function selectCandidateArchitectures(profile) {
 }
 
 function rankArchitectures(pool, profile, isPricingActive = true) {
+  const isBudgetValid = Boolean(isPricingActive && profile.budgetIRR && profile.budgetIRR > 0);
+  
+  // Payback is excluded unless genuine verified financial payback data exists with verified inputs
+  const hasVerifiedPayback = pool.some(c => c.verifiedPaybackScore !== undefined && c.verifiedPaybackScore !== null);
+
+  const includedCriteria = ['backupFit', 'reliability'];
+  const excludedCriteria = [];
+
+  if (isBudgetValid) {
+    includedCriteria.push('costFit');
+  } else {
+    excludedCriteria.push({
+      criterion: 'costFit',
+      reason: isPricingActive ? 'BUDGET_NOT_SPECIFIED' : 'PRICE_DATA_REQUIRED'
+    });
+  }
+
+  if (hasVerifiedPayback) {
+    includedCriteria.push('payback');
+  } else {
+    excludedCriteria.push({
+      criterion: 'payback',
+      reason: 'MISSING_VERIFIED_TARIFF_OR_PAYBACK_DATA'
+    });
+  }
+
+  // Calculate sum of active weights for dynamic normalization
+  let totalActiveWeight = 0;
+  for (const crit of includedCriteria) {
+    totalActiveWeight += SCORING_WEIGHTS[crit] || 0;
+  }
+
   return pool.map(cand => {
+    let weightedSum = 0;
+
+    // 1. backupFit (weight: 0.35)
     let backupFitScore = 1.0;
     if (profile.backupRequired) {
       if (cand.type === 'solar_ongrid') {
         backupFitScore = 0.0;
       }
     }
-    
-    let costFitScore = 1.0;
-    if (isPricingActive && cand.costEstimate !== null && profile.budgetIRR && profile.budgetIRR > 0) {
-       if (cand.costEstimate > profile.budgetIRR) {
-         costFitScore = Math.max(0, 1 - ((cand.costEstimate - profile.budgetIRR) / profile.budgetIRR));
-       } else {
-         const slack = (profile.budgetIRR - cand.costEstimate) / profile.budgetIRR;
-         if (slack > 0.5) {
-            costFitScore = 1 - (slack * 0.5);
-         }
-       }
-    }
-    
-    let paybackScore = 0.5; // Neutral baseline without full payback calculation
-    
+    weightedSum += backupFitScore * SCORING_WEIGHTS.backupFit;
+
+    // 2. reliability (weight: 0.15)
     let reliabilityScore = 0.8;
     if (profile.outageFrequency === 'frequent') {
       if (cand.type.includes('generator')) reliabilityScore = 1.0;
       if (cand.type === 'solar_ongrid') reliabilityScore = 0.2;
     }
-    
-    // Weight redistribution if pricing is not active (prevents unverified costs from skewing ranking)
-    let score = 0;
-    if (isPricingActive && cand.costEstimate !== null) {
-      score = (backupFitScore * SCORING_WEIGHTS.backupFit) + 
-              (costFitScore * SCORING_WEIGHTS.costFit) + 
-              (paybackScore * SCORING_WEIGHTS.payback) + 
-              (reliabilityScore * SCORING_WEIGHTS.reliability);
-    } else {
-      // Re-normalize weights among non-cost criteria
-      const nonCostWeightSum = SCORING_WEIGHTS.backupFit + SCORING_WEIGHTS.payback + SCORING_WEIGHTS.reliability;
-      score = ((backupFitScore * SCORING_WEIGHTS.backupFit) + 
-               (paybackScore * SCORING_WEIGHTS.payback) + 
-               (reliabilityScore * SCORING_WEIGHTS.reliability)) / nonCostWeightSum;
+    weightedSum += reliabilityScore * SCORING_WEIGHTS.reliability;
+
+    // 3. costFit (weight: 0.30, only when active)
+    let costFitScore = null;
+    if (isBudgetValid && cand.costEstimate !== null) {
+      if (cand.costEstimate > profile.budgetIRR) {
+        costFitScore = Math.max(0, 1 - ((cand.costEstimate - profile.budgetIRR) / profile.budgetIRR));
+      } else {
+        const slack = (profile.budgetIRR - cand.costEstimate) / profile.budgetIRR;
+        if (slack > 0.5) {
+          costFitScore = 1 - (slack * 0.5);
+        } else {
+          costFitScore = 1.0;
+        }
+      }
+      weightedSum += costFitScore * SCORING_WEIGHTS.costFit;
     }
 
-    return { ...cand, score: +score.toFixed(3) };
+    // 4. payback (weight: 0.20, excluded when genuine financial data is missing)
+    let paybackScore = null;
+    if (hasVerifiedPayback && cand.verifiedPaybackScore !== undefined && cand.verifiedPaybackScore !== null) {
+      paybackScore = cand.verifiedPaybackScore;
+      weightedSum += paybackScore * SCORING_WEIGHTS.payback;
+    }
+
+    const finalScore = totalActiveWeight > 0 ? +(weightedSum / totalActiveWeight).toFixed(3) : 0;
+
+    return {
+      ...cand,
+      score: finalScore,
+      criteriaScores: {
+        backupFit: backupFitScore,
+        reliability: reliabilityScore,
+        costFit: costFitScore,
+        payback: paybackScore
+      },
+      scoringBreakdown: {
+        includedCriteria,
+        excludedCriteria,
+        totalApplicableWeight: +totalActiveWeight.toFixed(2)
+      }
+    };
   }).sort((a, b) => b.score - a.score);
 }
 
@@ -467,6 +515,13 @@ export default async function handler(req, res) {
     isHypothetical,
     pricingStatus: allowBenchmarkPricing ? "PRELIMINARY_BENCHMARK" : "PRICE_DATA_REQUIRED",
     isBenchmarkPricingAllowed: allowBenchmarkPricing,
+    scoringMetadata: {
+      includedCriteria: ranked[0]?.scoringBreakdown?.includedCriteria || ['backupFit', 'reliability'],
+      excludedCriteria: ranked[0]?.scoringBreakdown?.excludedCriteria || [],
+      totalApplicableWeight: ranked[0]?.scoringBreakdown?.totalApplicableWeight || 0.5,
+      isPaybackCalculated: false,
+      paybackExclusionReason: "MISSING_VERIFIED_TARIFF_OR_PAYBACK_DATA"
+    },
     dataSource: sunData ? {
       sunHours: sunData.sunHours,
       source: sunData.source,

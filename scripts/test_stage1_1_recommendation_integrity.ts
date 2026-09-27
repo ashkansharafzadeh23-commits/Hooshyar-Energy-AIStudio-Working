@@ -290,7 +290,85 @@ async function runStage1_1Tests() {
     assert(analyzeSolar.annualGenerationKwh === recSolar.annualGenerationKwh, `Annual kWh matches exactly: analyze=${analyzeSolar.annualGenerationKwh}, recommend=${recSolar.annualGenerationKwh}`);
 
     // -------------------------------------------------------------
-    console.log('\n--- TEST 12: Immutability Guard & DB Isolation ---');
+    console.log('\n--- TEST 13: Default Pricing Consent is False (No Automatic Opt-In) ---');
+    // -------------------------------------------------------------
+    const resDefaultPricing = await request(serverUrl, 'POST', '/api/energy/recommend', {
+      energyProfile: {
+        city: 'تهران',
+        monthlyConsumptionKwh: 600,
+        usableArea: 100,
+        gridConnected: true,
+        locationType: 'residential'
+        // allowBenchmarkPricing is omitted entirely!
+      }
+    });
+    assert(resDefaultPricing.status === 200, 'Default pricing request succeeds (HTTP 200)');
+    assert(resDefaultPricing.body.isBenchmarkPricingAllowed === false, 'Default isBenchmarkPricingAllowed is strictly false');
+    assert(resDefaultPricing.body.pricingStatus === 'PRICE_DATA_REQUIRED', 'Default pricingStatus is PRICE_DATA_REQUIRED');
+    for (const sol of resDefaultPricing.body.solutions) {
+      assert(sol.estimatedCostIRR === null, `Default solution ${sol.systemType} cost is strictly null`);
+      assert(sol.pricingStatus === 'PRICE_DATA_REQUIRED', `Default solution ${sol.systemType} pricingStatus is PRICE_DATA_REQUIRED`);
+    }
+
+    // -------------------------------------------------------------
+    console.log('\n--- TEST 14: Uncalculated Payback Score Exclusion & Provenance ---');
+    // -------------------------------------------------------------
+    const resPaybackExclusion = await request(serverUrl, 'POST', '/api/energy/recommend', {
+      energyProfile: {
+        city: 'تهران',
+        monthlyConsumptionKwh: 600,
+        usableArea: 100,
+        gridConnected: true,
+        locationType: 'residential'
+      }
+    });
+    assert(resPaybackExclusion.status === 200, 'Payback exclusion request succeeds (HTTP 200)');
+    const scoringMeta = resPaybackExclusion.body.scoringMetadata;
+    assert(scoringMeta !== undefined, 'scoringMetadata is returned');
+    assert(scoringMeta.isPaybackCalculated === false, 'isPaybackCalculated is strictly false');
+    assert(scoringMeta.paybackExclusionReason === 'MISSING_VERIFIED_TARIFF_OR_PAYBACK_DATA', 'Payback exclusion reason disclosed');
+    assert(!scoringMeta.includedCriteria.includes('payback'), 'payback is excluded from includedCriteria');
+    assert(scoringMeta.excludedCriteria.some((e: any) => e.criterion === 'payback'), 'payback is listed in excludedCriteria');
+
+    // -------------------------------------------------------------
+    console.log('\n--- TEST 15: Correct Weight Normalization (No Fake 0.5 Score) ---');
+    // -------------------------------------------------------------
+    // Without budget: only backupFit (0.35) and reliability (0.15) active -> sum = 0.50
+    assert(scoringMeta.totalApplicableWeight === 0.5, 'Applicable weight without budget is 0.50 (0.35 + 0.15)');
+    const ongridSol = resPaybackExclusion.body.solutions.find((s: any) => s.systemType === 'solar_ongrid');
+    assert(ongridSol !== undefined, 'solar_ongrid found');
+    // backupFit = 1.0 (weight 0.35), reliability = 0.8 (weight 0.15) -> sum = 0.47 -> normalized = 0.47 / 0.50 = 0.940
+    assert(ongridSol.score === 0.94, `solar_ongrid normalized score is 0.940 (was dragged to 0.57 before patch): actual=${ongridSol.score}`);
+
+    // With budget and benchmark pricing: backupFit (0.35), reliability (0.15), costFit (0.30) -> sum = 0.80
+    const resWithBudget = await request(serverUrl, 'POST', '/api/energy/recommend', {
+      energyProfile: {
+        city: 'تهران',
+        monthlyConsumptionKwh: 600,
+        usableArea: 100,
+        gridConnected: true,
+        locationType: 'residential',
+        budgetIRR: 2000000000,
+        allowBenchmarkPricing: true
+      }
+    });
+    assert(resWithBudget.status === 200, 'Request with budget succeeds');
+    assert(resWithBudget.body.scoringMetadata.totalApplicableWeight === 0.8, 'Applicable weight with budget is 0.80 (0.35 + 0.15 + 0.30)');
+    assert(resWithBudget.body.scoringMetadata.includedCriteria.includes('costFit'), 'costFit is included in criteria');
+    assert(!resWithBudget.body.scoringMetadata.includedCriteria.includes('payback'), 'payback remains strictly excluded');
+
+    // -------------------------------------------------------------
+    console.log('\n--- TEST 16: Recommendation UI Explicit Consent Verification ---');
+    // -------------------------------------------------------------
+    const uiSourcePath = path.resolve(process.cwd(), 'src/pages/Recommendation.tsx');
+    const uiSource = fs.readFileSync(uiSourcePath, 'utf8');
+    assert(uiSource.includes('allowBenchmarkPricing'), 'UI manages allowBenchmarkPricing state');
+    assert(!uiSource.includes('allowBenchmarkPricing: true // Enable disclosed'), 'UI no longer automatically sets allowBenchmarkPricing: true');
+    assert(uiSource.includes('مشاهده برآورد اولیه هزینه‌ها بر اساس شاخص‌های مرجع بازار'), 'UI contains Persian benchmark pricing consent control');
+    assert(uiSource.includes('نیازمند استعلام رسمی'), 'UI formats price required as official quotation needed');
+
+    // -------------------------------------------------------------
+    console.log('\n--- TEST 17: Immutability Guard & DB Isolation ---');
     // -------------------------------------------------------------
     const finalDbHash = computeFileHash(repoDbPath);
     assert(initialDbHash === finalDbHash, `Repository db.json byte-for-byte identical (SHA-256: ${finalDbHash})`);

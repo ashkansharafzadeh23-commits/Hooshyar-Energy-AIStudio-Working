@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { TargetModule } from '../types';
-import { Sun, Zap, BatteryCharging, ArrowRight, Loader2, CheckCircle2, ShieldAlert, AlertTriangle, FileText } from 'lucide-react';
+import { Sun, Zap, BatteryCharging, ArrowRight, Loader2, CheckCircle2, ShieldAlert, AlertTriangle, FileText, Info, Calculator } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function RecommendationPage() {
@@ -15,54 +15,64 @@ export default function RecommendationPage() {
   const [error, setError] = useState('');
   const [missingInfo, setMissingInfo] = useState<string[]>([]);
 
-  useEffect(() => {
-    const fetchRecommendations = async () => {
-      try {
-        const token = localStorage.getItem("token");
-        const res = await fetch("/api/energy/recommend", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({
-            energyProfile: {
-              locationType: state.locationType,
-              city: state.city,
-              totalArea: state.area,
-              usableArea: state.usableArea,
-              selectedAppliances: state.appliances,
-              monthlyConsumptionKwh: state.actualMonthlyKwh,
-              budgetIRR: null, 
-              gridConnected: state.gridConnected,
-              outageFrequency: state.gridStable ? "none" : "frequent",
-              backupRequired: state.essentialAppliances && state.essentialAppliances.length > 0,
-              backupHours: state.supportHours || 2,
-              allowBenchmarkPricing: true // Enable disclosed preliminary benchmark estimates for consumer preview
-            }
-          })
-        });
-        
-        const data = await res.json();
-        if (res.ok) {
-          setRecommendations(data.solutions || []);
-          setRecMetadata(data);
-        } else {
-          setError(data.error || 'خطا در دریافت پیشنهادها');
-          if (Array.isArray(data.missingInfo)) {
-            setMissingInfo(data.missingInfo);
+  // Default consent for benchmark pricing is strictly false
+  const [allowBenchmarkPricing, setAllowBenchmarkPricing] = useState(Boolean(state.allowBenchmarkPricing));
+
+  const fetchRecommendations = useCallback(async (pricingConsent: boolean) => {
+    setLoading(true);
+    setError('');
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/energy/recommend", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          energyProfile: {
+            locationType: state.locationType,
+            city: state.city,
+            totalArea: state.area,
+            usableArea: state.usableArea,
+            selectedAppliances: state.appliances,
+            monthlyConsumptionKwh: state.actualMonthlyKwh,
+            budgetIRR: null, 
+            gridConnected: state.gridConnected,
+            outageFrequency: state.gridStable ? "none" : "frequent",
+            backupRequired: state.essentialAppliances && state.essentialAppliances.length > 0,
+            backupHours: state.supportHours || 2,
+            allowBenchmarkPricing: pricingConsent // Explicit user consent only
           }
+        })
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        setRecommendations(data.solutions || []);
+        setRecMetadata(data);
+      } else {
+        setError(data.error || 'خطا در دریافت پیشنهادها');
+        if (Array.isArray(data.missingInfo)) {
+          setMissingInfo(data.missingInfo);
         }
-      } catch (err) {
-        console.error(err);
-        setError('خطا در ارتباط با سرور');
-      } finally {
-        setLoading(false);
       }
-    };
-    
-    fetchRecommendations();
-  }, [state]);
+    } catch (err) {
+      console.error(err);
+      setError('خطا در ارتباط با سرور');
+    } finally {
+      setLoading(false);
+    }
+  }, [state.locationType, state.city, state.area, state.usableArea, state.appliances, state.actualMonthlyKwh, state.gridConnected, state.gridStable, state.essentialAppliances, state.supportHours]);
+
+  useEffect(() => {
+    fetchRecommendations(allowBenchmarkPricing);
+  }, [fetchRecommendations, allowBenchmarkPricing]);
+
+  const handleToggleBenchmarkConsent = (checked: boolean) => {
+    setAllowBenchmarkPricing(checked);
+    updateState({ allowBenchmarkPricing: checked });
+  };
 
   const handleSelect = (systemType: string) => {
     let targets: TargetModule[] = [];
@@ -85,7 +95,7 @@ export default function RecommendationPage() {
 
   const formatCost = (cost: number | null, pricingStatus?: string) => {
     if (pricingStatus === 'PRICE_DATA_REQUIRED' || cost === null || cost === undefined) {
-      return "نیازمند استعلام از تأمین‌کنندگان";
+      return "نیازمند استعلام رسمی";
     }
     return (cost / 10000000).toLocaleString('fa-IR') + " میلیون تومان";
   };
@@ -123,6 +133,31 @@ export default function RecommendationPage() {
           </div>
         </div>
       )}
+
+      {/* Explicit User Control for Preliminary Benchmark Pricing Consent */}
+      <div className="mb-6 p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+        <label className="flex items-start gap-3 cursor-pointer select-none">
+          <input 
+            type="checkbox"
+            id="benchmark-pricing-consent-toggle"
+            checked={allowBenchmarkPricing}
+            onChange={(e) => handleToggleBenchmarkConsent(e.target.checked)}
+            className="mt-1 w-5 h-5 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800"
+          />
+          <div className="flex-1">
+            <div className="flex items-center gap-2 font-bold text-sm text-zinc-900 dark:text-zinc-100">
+              <Calculator size={16} className="text-blue-600 dark:text-blue-400" />
+              <span>مشاهده برآورد اولیه هزینه‌ها بر اساس شاخص‌های مرجع بازار</span>
+              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${allowBenchmarkPricing ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'}`}>
+                {allowBenchmarkPricing ? 'فعال (شاخص مرجع)' : 'غیرفعال (استعلام رسمی)'}
+              </span>
+            </div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed">
+              ارقام شاخص مرجع صرفاً فرضیات مقدماتی جهت برآورد حدودی بوده و به منزله پیش‌فاکتور رسمی تأمین‌کنندگان، بودجه مصوب پروژه یا تضمین بازگشت سرمایه نمی‌باشد. در صورت عدم فعال‌سازی، وضعیت هزینه‌ها به صورت «نیازمند استعلام رسمی» ثبت می‌شود.
+            </p>
+          </div>
+        </label>
+      </div>
 
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -191,9 +226,13 @@ export default function RecommendationPage() {
                     <div className="flex justify-between items-center text-sm border-b border-zinc-100 dark:border-zinc-800 pb-2">
                       <span className="text-zinc-500">هزینه تخمینی:</span>
                       <div className="text-left">
-                        <span className="font-bold text-xs sm:text-sm">{formatCost(rec.estimatedCostIRR, rec.pricingStatus)}</span>
-                        {rec.pricingStatus === 'PRELIMINARY_BENCHMARK' && (
+                        <span className={`font-bold text-xs sm:text-sm ${rec.pricingStatus === 'PRICE_DATA_REQUIRED' ? 'text-amber-600 dark:text-amber-400' : ''}`}>
+                          {formatCost(rec.estimatedCostIRR, rec.pricingStatus)}
+                        </span>
+                        {rec.pricingStatus === 'PRELIMINARY_BENCHMARK' ? (
                           <div className="text-[10px] text-zinc-400 dark:text-zinc-500">شاخص مرجع مقدماتی</div>
+                        ) : (
+                          <div className="text-[10px] text-zinc-400 dark:text-zinc-500">منوط به استعلام تأمین‌کنندگان</div>
                         )}
                       </div>
                     </div>
@@ -218,9 +257,15 @@ export default function RecommendationPage() {
           </div>
 
           {/* Preliminary Benchmark Disclaimer */}
-          {recMetadata?.pricingStatus === 'PRELIMINARY_BENCHMARK' && (
-            <div className="mt-8 text-center text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/40 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800">
-              توجه: برآورد هزینه‌ها بر اساس شاخص‌های مرجع بازار بوده و قیمت نهایی پس از استعلام رسمی از فروشندگان تجهیزات تعیین می‌گردد.
+          {recMetadata?.pricingStatus === 'PRELIMINARY_BENCHMARK' ? (
+            <div className="mt-8 text-center text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/40 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 flex items-center justify-center gap-2">
+              <Info size={16} className="text-blue-500 shrink-0" />
+              <span>توجه: برآورد هزینه‌ها بر اساس شاخص‌های مرجع بازار بوده و قیمت قطعی پس از استعلام رسمی از فروشندگان تجهیزات تعیین می‌گردد.</span>
+            </div>
+          ) : (
+            <div className="mt-8 text-center text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/40 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 flex items-center justify-center gap-2">
+              <Info size={16} className="text-amber-500 shrink-0" />
+              <span>جهت مشاهده برآورد اولیه حدودی هزینه‌ها بر اساس شاخص‌های مرجع، گزینه بالای صفحه را فعال نمایید.</span>
             </div>
           )}
         </>

@@ -26,6 +26,7 @@ export interface UserFlowState {
   essentialAppliances: SelectedAppliance[]; // For powerbank
   supportHours: number;
   actualMonthlyKwh: number | null;
+  allowBenchmarkPricing?: boolean;
   notifications: AppNotification[];
 }
 

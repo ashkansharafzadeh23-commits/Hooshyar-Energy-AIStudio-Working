@@ -14,6 +14,7 @@ const initialState: UserFlowState = {
   essentialAppliances: [],
   supportHours: 2,
   actualMonthlyKwh: null,
+  allowBenchmarkPricing: false,
 
   notifications: [
     {
