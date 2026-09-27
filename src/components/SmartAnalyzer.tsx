@@ -8,8 +8,8 @@ const POPULAR_CITIES = [
 ];
 
 interface AnalysisResultData {
-  monthlyConsumptionKwh: number;
-  solarCapacityKwp: number;
+  monthlyConsumptionKwh: number | null;
+  solarCapacityKwp: number | null;
   recommendedDesign: string;
   status?: 'SUCCESS' | 'INSUFFICIENT_DATA';
   missingFields?: string[];
@@ -63,7 +63,7 @@ interface Props {
   area: number;
   city?: string;
   isSolar?: boolean;
-  onAnalysisComplete: (consumption: number, recommendation: string, capacity: number) => void;
+  onAnalysisComplete: (consumption: number | null, recommendation: string, capacity: number | null) => void;
 }
 
 export default function SmartAnalyzer({ area: defaultArea, city: defaultCity, isSolar = true, onAnalysisComplete }: Props) {
@@ -152,9 +152,9 @@ export default function SmartAnalyzer({ area: defaultArea, city: defaultCity, is
       setResult(data);
 
       onAnalysisComplete(
-        data.monthlyConsumptionKwh || 0,
+        data.monthlyConsumptionKwh !== undefined ? data.monthlyConsumptionKwh : null,
         data.recommendedDesign || '',
-        data.solarCapacityKwp || 0
+        data.solarCapacityKwp !== undefined ? data.solarCapacityKwp : null
       );
 
     } catch (err: any) {
@@ -353,15 +353,35 @@ export default function SmartAnalyzer({ area: defaultArea, city: defaultCity, is
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                   <span className="block text-[11px] text-gray-500 mb-1">مصرف ماهانه مبنا</span>
-                  <span className="font-black text-gray-800 text-base">{result.monthlyConsumptionKwh} <span className="text-xs font-normal">kWh</span></span>
+                  {result.monthlyConsumptionKwh !== null && result.monthlyConsumptionKwh !== undefined ? (
+                    <span className="font-black text-gray-800 text-base">
+                      {result.monthlyConsumptionKwh} <span className="text-xs font-normal">kWh</span>
+                    </span>
+                  ) : (
+                    <span className="font-bold text-amber-700 text-xs bg-amber-50 px-2 py-0.5 rounded border border-amber-200 inline-block">
+                      اطلاعات کافی نیست
+                    </span>
+                  )}
                   <span className="block text-[10px] text-indigo-600 mt-1 font-medium">
-                    {result.dataProvenance?.consumption?.source === 'USER_MANUAL_INPUT' ? 'ورودی دستی کاربر' : 'استخراج از قبض'}
+                    {result.monthlyConsumptionKwh === null || result.monthlyConsumptionKwh === undefined
+                      ? 'نیازمند ورود دستی یا قبض'
+                      : result.dataProvenance?.consumption?.source === 'USER_MANUAL_INPUT'
+                      ? 'ورودی دستی کاربر'
+                      : 'استخراج از قبض'}
                   </span>
                 </div>
 
                 <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
                   <span className="block text-[11px] text-indigo-600 mb-1">ظرفیت مهندسی سامانه</span>
-                  <span className="font-black text-indigo-900 text-base">{result.solarCapacityKwp} <span className="text-xs font-normal">kWp</span></span>
+                  {result.solarCapacityKwp !== null && result.solarCapacityKwp !== undefined ? (
+                    <span className="font-black text-indigo-900 text-base">
+                      {result.solarCapacityKwp} <span className="text-xs font-normal">kWp</span>
+                    </span>
+                  ) : (
+                    <span className="font-bold text-amber-700 text-xs bg-amber-50 px-2 py-0.5 rounded border border-amber-200 inline-block">
+                      اطلاعات کافی نیست
+                    </span>
+                  )}
                   {result.engineeringSizing?.numberOfPanels ? (
                     <span className="block text-[10px] text-indigo-700 mt-1">{result.engineeringSizing.numberOfPanels} پنل ۵۵۰ وات</span>
                   ) : null}
@@ -370,7 +390,13 @@ export default function SmartAnalyzer({ area: defaultArea, city: defaultCity, is
                 <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
                   <span className="block text-[11px] text-amber-700 mb-1">تابش روزانه اقلیمی</span>
                   <span className="font-black text-amber-900 text-base">
-                    {result.dataProvenance?.irradiance?.sunHours || '—'} <span className="text-xs font-normal">ساعت/روز</span>
+                    {result.dataProvenance?.irradiance?.sunHours !== null && result.dataProvenance?.irradiance?.sunHours !== undefined ? (
+                      <>
+                        {result.dataProvenance.irradiance.sunHours} <span className="text-xs font-normal">ساعت/روز</span>
+                      </>
+                    ) : (
+                      <span className="text-xs font-normal text-amber-700">نامشخص</span>
+                    )}
                   </span>
                   <span className="block text-[10px] text-amber-800 mt-1 truncate">
                     {result.dataProvenance?.irradiance?.source || 'NASA POWER'}

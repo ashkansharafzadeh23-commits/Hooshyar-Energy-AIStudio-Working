@@ -149,26 +149,43 @@ Return your response strictly as a JSON object with this exact structure (no mar
     const parsedArea = (area !== undefined && area !== null && area !== '') ? Number(area) : null;
     const validArea = (parsedArea !== null && !isNaN(parsedArea) && parsedArea > 0) ? parsedArea : null;
 
-    // 4. Solar Irradiance Resolution (Attributed NASA POWER or User Custom - NEVER hardcoded 4.5!)
+    // 4. Solar Irradiance Resolution & Validation (Attributed NASA POWER or User Custom - NEVER hardcoded 4.5!)
     let sunHours = null;
     let sunHoursSource = 'UNSPECIFIED';
     let sunHoursClassification = 'UNVERIFIED';
 
-    const targetCity = city || (req.body && req.body.location);
-    if (customSunHours !== undefined && customSunHours !== null && !isNaN(Number(customSunHours)) && Number(customSunHours) > 0) {
-      sunHours = Number(customSunHours);
-      sunHoursSource = customSunHoursSource || 'USER_CUSTOM_HOURS';
+    if (customSunHours !== undefined && customSunHours !== null && customSunHours !== '') {
+      const cHours = Number(customSunHours);
+      if (isNaN(cHours) || cHours < 1.0 || cHours > 12.0) {
+        return res.status(400).json({
+          error: "ساعات تابش روزانه اعلامی (customSunHours) باید عددی بین ۱.۰ تا ۱۲.۰ باشد.",
+          code: "INVALID_IRRADIANCE_DATA",
+          missingInfo: ["customSunHours"]
+        });
+      }
+      if (!customSunHoursSource) {
+        return res.status(400).json({
+          error: "برای استفاده از ساعات تابش دستی، ذکر منبع استعلام (customSunHoursSource) الزامی است.",
+          code: "MISSING_IRRADIANCE_SOURCE",
+          missingInfo: ["customSunHoursSource"]
+        });
+      }
+      sunHours = cHours;
+      sunHoursSource = customSunHoursSource;
       sunHoursClassification = 'USER_PROVIDED';
-    } else if (targetCity) {
-      try {
-        const irradianceResult = await getSunHoursForCity(targetCity);
-        if (irradianceResult && irradianceResult.sunHours) {
-          sunHours = irradianceResult.sunHours;
-          sunHoursSource = irradianceResult.sourceLabel || irradianceResult.source || 'NASA_POWER';
-          sunHoursClassification = irradianceResult.dataClassification || 'VERIFIED_SOURCE';
+    } else {
+      const targetCity = city || (req.body && req.body.location);
+      if (targetCity) {
+        try {
+          const irradianceResult = await getSunHoursForCity(targetCity);
+          if (irradianceResult && irradianceResult.sunHours) {
+            sunHours = irradianceResult.sunHours;
+            sunHoursSource = irradianceResult.sourceLabel || irradianceResult.source || 'NASA_POWER';
+            sunHoursClassification = irradianceResult.dataClassification || 'VERIFIED_SOURCE';
+          }
+        } catch (irrError) {
+          console.warn('[ImageAnalysis] Irradiance retrieval failed for city:', targetCity, irrError.message);
         }
-      } catch (irrError) {
-        console.warn('[ImageAnalysis] Irradiance retrieval failed for city:', targetCity, irrError.message);
       }
     }
 
@@ -184,7 +201,7 @@ Return your response strictly as a JSON object with this exact structure (no mar
       missingFields.push('area');
     }
 
-    let solarCapacityKwp = 0;
+    let solarCapacityKwp = null;
     let sizingDetails = null;
     let status = 'SUCCESS';
     let recommendedDesign = '';
@@ -224,7 +241,7 @@ Return your response strictly as a JSON object with this exact structure (no mar
       recommendedDesign = 'مصرف ماهانه صفر ثبت شده است؛ احداث سامانه خورشیدی صرفاً در صورت تمایل به فروش کامل برق (طرح نیروگاه تجاری) پیشنهاد می‌گردد.';
     } else {
       status = 'INSUFFICIENT_DATA';
-      solarCapacityKwp = 0;
+      solarCapacityKwp = null;
 
       if (monthlyConsumptionKwh === null && sunHours === null) {
         recommendedDesign = 'اطلاعات قبض برق در تصویر قابل استخراج نبود و شهر پروژه مشخص نیست. لطفاً رقم مصرف ماهانه و شهر محل احداث را مشخص فرمایید.';
@@ -235,10 +252,10 @@ Return your response strictly as a JSON object with this exact structure (no mar
       }
     }
 
-    // 7. Structured Response (Ensuring 100% Backward Compatibility + Data-Truth Integrity)
+    // 7. Structured Response (Data-Truth Integrity + Strict Null for Unknowns)
     return res.status(200).json({
-      // Backward-compatible fields expected by existing components
-      monthlyConsumptionKwh: monthlyConsumptionKwh !== null ? monthlyConsumptionKwh : 0,
+      // Canonical data-truth fields: null when unknown, genuine numeric 0 when measured 0
+      monthlyConsumptionKwh: monthlyConsumptionKwh,
       solarCapacityKwp: solarCapacityKwp,
       recommendedDesign: recommendedDesign,
 
