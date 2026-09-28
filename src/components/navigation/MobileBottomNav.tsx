@@ -11,13 +11,21 @@ import {
   SunMedium, 
   ArrowRight, 
   Wrench,
-  Box 
+  Box,
+  Briefcase,
+  ShieldCheck
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 export const MobileBottomNav: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, activeRole, canAccessPortfolio } = useAuth();
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
+
+  const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(activeRole?.toUpperCase() || '') ||
+                  ['ADMIN', 'SUPER_ADMIN'].includes(user?.role?.toUpperCase() || '') ||
+                  (Array.isArray(user?.roles) && user.roles.some((r: string) => ['ADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase())));
 
   // Active check helper
   const isNavActive = (path: string) => {
@@ -168,6 +176,52 @@ export const MobileBottomNav: React.FC = () => {
               </div>
               <ArrowRight size={18} className="text-slate-400 rotate-180 group-hover:-translate-x-1 transition-transform shrink-0" />
             </button>
+
+            {/* Action 5 (Conditional): Enterprise Portfolio */}
+            {canAccessPortfolio && (
+              <button
+                onClick={() => handleAction('/portfolio')}
+                className="w-full flex items-center justify-between p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 hover:border-indigo-300 dark:hover:border-indigo-800 transition-all text-right group"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-11 h-11 rounded-xl bg-indigo-500/10 dark:bg-indigo-400/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                    <Briefcase size={22} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                      داشبورد پرتفوی سازمانی
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      نظارت یکپارچه بر عملکرد مالی، تدارکات و عملیات نیروگاه‌های تجمیعی
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight size={18} className="text-slate-400 rotate-180 group-hover:-translate-x-1 transition-transform shrink-0" />
+              </button>
+            )}
+
+            {/* Action 6 (Conditional): Admin Review & Approval */}
+            {isAdmin && (
+              <button
+                onClick={() => handleAction('/admin/solar-assets')}
+                className="w-full flex items-center justify-between p-4 rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/60 dark:bg-amber-950/20 hover:bg-amber-100/60 transition-all text-right group"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-11 h-11 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                    <ShieldCheck size={22} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                      تأیید و بررسی پرونده‌ها (مدیر سامانه)
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      بررسی فنی، استعلام و تأیید مدارک نیروگاه‌های ثبت‌شده
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight size={18} className="text-slate-400 rotate-180 group-hover:-translate-x-1 transition-transform shrink-0" />
+              </button>
+            )}
           </div>
         </div>
       )}

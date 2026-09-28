@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { usePlacementStore } from '../../store/usePlacementStore';
 import * as THREE from 'three';
 import { snapToGrid } from '../../utils/snapping';
@@ -6,18 +6,42 @@ import { ThreeEvent } from '@react-three/fiber';
 
 export function PanelPlacementTool({ children }: { children: React.ReactNode }) {
   const { addPanel, selectedPanelId, setSelectedPanelId } = usePlacementStore();
+  const pointerDownRef = useRef<{ clientX: number; clientY: number; timestamp: number } | null>(null);
 
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation();
-    if (selectedPanelId) {
-       setSelectedPanelId(null);
-       return;
+    // Record starting pointer position to distinguish intentional tap/click from drag/pan
+    pointerDownRef.current = {
+      clientX: e.nativeEvent.clientX,
+      clientY: e.nativeEvent.clientY,
+      timestamp: Date.now()
+    };
+  };
+
+  const handlePointerUp = (e: ThreeEvent<PointerEvent>) => {
+    if (!pointerDownRef.current) return;
+
+    const dx = e.nativeEvent.clientX - pointerDownRef.current.clientX;
+    const dy = e.nativeEvent.clientY - pointerDownRef.current.clientY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const duration = Date.now() - pointerDownRef.current.timestamp;
+    pointerDownRef.current = null;
+
+    // Movement threshold: more than 6px movement or long hold (> 500ms) indicates a drag/rotate/pan gesture, not a deliberate placement tap
+    if (distance > 6 || duration > 500) {
+      return;
     }
-    
+
+    e.stopPropagation();
+
+    if (selectedPanelId) {
+      setSelectedPanelId(null);
+      return;
+    }
+
     // Calculate placement
     const { point, face, object } = e;
     if (!face) return;
-    
+
     // Snap to grid
     const x = snapToGrid(point.x, 0.5);
     const z = snapToGrid(point.z, 0.5);
@@ -39,7 +63,7 @@ export function PanelPlacementTool({ children }: { children: React.ReactNode }) 
   };
 
   return (
-    <group onPointerDown={handlePointerDown}>
+    <group onPointerDown={handlePointerDown} onPointerUp={handlePointerUp}>
       {children}
     </group>
   );

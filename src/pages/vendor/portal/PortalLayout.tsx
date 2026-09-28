@@ -1,11 +1,14 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Store, Package, CreditCard, LogOut, ExternalLink } from 'lucide-react';
+import { useAuth } from '../../../context/AuthContext';
 
 export default function PortalLayout() {
   const navigate = useNavigate();
+  const { logout } = useAuth();
 
   const handleLogout = () => {
-    navigate('/vendor-portal/login');
+    logout();
+    navigate('/vendor-auth');
   };
 
   return (

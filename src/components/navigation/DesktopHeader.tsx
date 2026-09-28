@@ -40,6 +40,10 @@ export const DesktopHeader: React.FC = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(activeRole?.toUpperCase() || '') ||
+                  ['ADMIN', 'SUPER_ADMIN'].includes(user?.role?.toUpperCase() || '') ||
+                  (Array.isArray(user?.roles) && user.roles.some((r: string) => ['ADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase())));
+
   // Close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -322,6 +326,26 @@ export const DesktopHeader: React.FC = () => {
                     <Box size={14} />
                     <span>طراحی سه‌بعدی پنل خورشیدی</span>
                   </Link>
+                  {canAccessPortfolio && (
+                    <Link
+                      to="/portfolio"
+                      onClick={() => setIsProfileOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <Briefcase size={14} />
+                      <span>داشبورد پرتفوی سازمانی</span>
+                    </Link>
+                  )}
+                  {isAdmin && (
+                    <Link
+                      to="/admin/solar-assets"
+                      onClick={() => setIsProfileOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-50/70 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                    >
+                      <ShieldCheck size={14} className="text-amber-600 dark:text-amber-400" />
+                      <span>تأیید و بررسی پرونده‌ها (مدیریت)</span>
+                    </Link>
+                  )}
                 </div>
 
                 {/* Logout Button */}

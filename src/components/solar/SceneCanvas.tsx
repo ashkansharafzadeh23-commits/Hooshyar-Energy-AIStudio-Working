@@ -109,7 +109,15 @@ export function SceneCanvas() {
           ))}
 
           <ContactShadows resolution={2048} scale={100} blur={2} opacity={0.6} far={20} color="#000000" />
-          <OrbitControls makeDefault target={[0, 2, 0]} maxPolarAngle={Math.PI / 2 - 0.01} minDistance={10} maxDistance={150} />
+          <OrbitControls 
+            makeDefault 
+            target={[0, 2, 0]} 
+            maxPolarAngle={Math.PI / 2 - 0.01} 
+            minDistance={10} 
+            maxDistance={150} 
+            enableDamping={true}
+            dampingFactor={0.05}
+          />
         </Suspense>
       </Canvas>
     </div>

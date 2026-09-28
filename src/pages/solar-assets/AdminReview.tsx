@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Check, X, Eye, ShieldAlert, LogIn } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
 
 export default function AdminReview() {
+  const { showSuccess, showError } = useToast();
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const navigate = useNavigate();
@@ -74,11 +76,15 @@ export default function AdminReview() {
         body: JSON.stringify({ projectStatus: status, verificationNotes: "بررسی ادمین" })
       });
       if (res.ok) {
-        alert(`وضعیت پروژه به ${status} تغییر یافت.`);
+        const statusLabel = status === 'APPROVED' ? 'تأیید شد' : status === 'REJECTED' ? 'رد شد' : status;
+        showSuccess(`وضعیت پروژه با موفقیت به "${statusLabel}" تغییر یافت.`);
         fetchProjects();
+      } else {
+        showError('خطا در به‌روزرسانی وضعیت پروژه');
       }
     } catch (err) {
       console.error(err);
+      showError('خطا در برقراری ارتباط با سرور');
     }
   };
 
