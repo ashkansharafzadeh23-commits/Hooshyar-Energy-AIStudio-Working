@@ -13,7 +13,8 @@ import {
   Check, 
   ShieldCheck,
   Plus,
-  Wrench
+  Wrench,
+  Box
 } from 'lucide-react';
 import { NotificationCenter } from '../NotificationCenter';
 import { ThemeToggle } from '../ThemeToggle';
@@ -312,6 +313,14 @@ export const DesktopHeader: React.FC = () => {
                   >
                     <Wrench size={14} />
                     <span>تعمیرات و نگهداری هوشمند</span>
+                  </Link>
+                  <Link
+                    to="/solar-planner"
+                    onClick={() => setIsProfileOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors"
+                  >
+                    <Box size={14} />
+                    <span>طراحی سه‌بعدی پنل خورشیدی</span>
                   </Link>
                 </div>
 

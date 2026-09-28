@@ -10,7 +10,8 @@ import {
   Calculator, 
   SunMedium, 
   ArrowRight, 
-  Wrench 
+  Wrench,
+  Box 
 } from 'lucide-react';
 
 export const MobileBottomNav: React.FC = () => {
@@ -141,6 +142,27 @@ export const MobileBottomNav: React.FC = () => {
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                     ثبت خرابی تجهیزات، بارگذاری تصویر، عیبیابی هوشمند و ارتباط با تعمیرکار متخصص
+                  </p>
+                </div>
+              </div>
+              <ArrowRight size={18} className="text-slate-400 rotate-180 group-hover:-translate-x-1 transition-transform shrink-0" />
+            </button>
+
+            {/* Action 4: 3D Solar Planner */}
+            <button
+              onClick={() => handleAction('/solar-planner')}
+              className="w-full flex items-center justify-between p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 hover:border-amber-300 dark:hover:border-amber-800 transition-all text-right group"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-xl bg-amber-500/10 dark:bg-amber-400/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                  <Box size={22} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                    طراحی سه‌بعدی پنل خورشیدی
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    شبیه‌سازی سه‌بعدی چینش پنل‌ها، محاسبه زوایای تابش و تحلیل سایه‌اندازی
                   </p>
                 </div>
               </div>

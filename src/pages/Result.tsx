@@ -548,6 +548,11 @@ export default function ResultPage() {
         targets={state.targets} 
       />
 
+      {/* Sponsored Partner Advertisement Banner */}
+      <div className="mt-8 w-full max-w-4xl mx-auto">
+        <AdBanner layout="banner" />
+      </div>
+
       {/* Persian Scenario Save Prompt Modal */}
       <PersianPromptModal
         isOpen={isSaveScenarioModalOpen}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { Briefcase, Clock, FileText, Plus, Search, Filter, ArrowLeft, ArrowRight, ExternalLink } from 'lucide-react';
+import { Briefcase, Clock, FileText, Plus, Search, Filter, ArrowLeft, ArrowRight, ExternalLink, Box, Wrench } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { EnergyProject } from '../types/project';
 import { EnergyAsset } from '../types/asset';
@@ -9,6 +9,7 @@ import { LoadingState } from '../components/common/LoadingState';
 import { ErrorState } from '../components/common/ErrorState';
 import { EmptyState } from '../components/common/EmptyState';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { AdBanner } from '../components/AdBanner';
 import {
   DashboardHeader,
   AttentionCenter,
@@ -905,6 +906,59 @@ export default function UserDashboard() {
         activeOrganization={activeOrganization}
       />
 
+      {/* 2. Specialized Engineering & Maintenance Quick Tools */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 gap-4" aria-label="ابزارهای تخصصی خورشیدی">
+        <Link
+          to="/solar-planner"
+          className="p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-amber-400 dark:hover:border-amber-500/50 hover:shadow-md transition-all flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-amber-500/10 dark:bg-amber-400/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+              <Box size={24} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                  طراحی سه‌بعدی پنل خورشیدی
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                  شبیه‌ساز ۳D
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                چیدمان سه‌بعدی پنل‌ها بر روی پشت‌بام، تنظیم شیب و محاسبه تحلیل سایه‌اندازی
+              </p>
+            </div>
+          </div>
+          <ArrowRight size={18} className="text-slate-400 rotate-180 group-hover:-translate-x-1 transition-transform shrink-0" />
+        </Link>
+
+        <Link
+          to="/smart-maintenance"
+          className="p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-400 dark:hover:border-blue-500/50 hover:shadow-md transition-all flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-blue-500/10 dark:bg-blue-400/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+              <Wrench size={24} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                  تعمیرات و نگهداری هوشمند
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
+                  سرویس و عیب‌یابی
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                ثبت خرابی تجهیزات، پایش سلامت نیروگاه و ارتباط با متخصصان نگهداری
+              </p>
+            </div>
+          </div>
+          <ArrowRight size={18} className="text-slate-400 rotate-180 group-hover:-translate-x-1 transition-transform shrink-0" />
+        </Link>
+      </section>
+
       {/* When user is completely new (0 projects & 0 assets), render helpful onboarding first */}
       {isNewUser ? (
         <div className="space-y-8">
@@ -921,28 +975,33 @@ export default function UserDashboard() {
         </div>
       ) : (
         <div className="space-y-8">
-          {/* 2. Attention Center (Highest priority section: «نیازمند توجه شما») */}
+          {/* 3. Attention Center (Highest priority section: «نیازمند توجه شما») */}
           <AttentionCenter items={attentionItems} />
 
-          {/* 3. Next Actions (Deterministic lifecycle steps: «اقدام‌های بعدی») */}
+          {/* 4. Next Actions (Deterministic lifecycle steps: «اقدام‌های بعدی») */}
           <NextActions actions={nextActions} />
 
-          {/* 4. Active Projects (Compact project cards: «پروژه‌های فعال») */}
+          {/* 5. Active Projects (Compact project cards: «پروژه‌های فعال») */}
           <ActiveProjects projects={projects} maxDisplay={5} />
 
-          {/* 5. Operational Assets (ONLY rendered if user has operational assets!) */}
+          {/* 6. Operational Assets (ONLY rendered if user has operational assets!) */}
           <OperationalAssets assets={assets} />
 
-          {/* 6. Role-Specific Summary (Max 4 verified metrics: «خلاصه شاخص‌ها») */}
+          {/* 7. Role-Specific Summary (Max 4 verified metrics: «خلاصه شاخص‌ها») */}
           <RoleSummary
             activeRole={activeRole}
             metrics={roleMetrics}
           />
 
-          {/* 7. Recent Activity (Real activity logs: «فعالیت‌های اخیر») */}
+          {/* 8. Recent Activity (Real activity logs: «فعالیت‌های اخیر») */}
           <RecentActivity activities={activities} />
         </div>
       )}
+
+      {/* Customer-Facing Partner Advertisement Banner */}
+      <section className="pt-2">
+        <AdBanner layout="inline" />
+      </section>
     </PageContainer>
   );
 }
