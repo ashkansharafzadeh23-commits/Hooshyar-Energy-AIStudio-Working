@@ -1,16 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
+import { setupTestDatabaseIsolation } from './test_isolation_guard.js';
 
-// PRE-INITIALIZE ISOLATED DB BEFORE REPOSITORY IMPORTS!
-const tempDbPath = path.join('/tmp', `hooshyar_test_stage11_2_${Date.now()}.json`);
-const initialDbData = JSON.parse(fs.readFileSync('db.json', 'utf8'));
-fs.writeFileSync(tempDbPath, JSON.stringify(initialDbData));
-process.env.TEST_DB_PATH = tempDbPath;
+// Setup strict test database isolation before loading any modules
+const isolation = setupTestDatabaseIsolation('stage11_2_discoverability');
 
 import express, { Request, Response, NextFunction } from 'express';
-import { db, setDBPath } from '../src/db/index.js';
-setDBPath(tempDbPath);
+import { db } from '../src/db/index.js';
 import { maintenanceRepository } from '../src/repositories/maintenanceRepository.js';
 import { userRepository } from '../src/repositories/userRepository.js';
 import { professionalRepository } from '../src/repositories/professionalRepository.js';
@@ -241,9 +238,7 @@ async function runTests() {
 
   } finally {
     server.close();
-    if (fs.existsSync(tempDbPath)) {
-      fs.unlinkSync(tempDbPath);
-    }
+    isolation.cleanup();
   }
 
   console.log('\n========================================================================');
