@@ -213,7 +213,7 @@ export function validateEnvironment(customEnv?: NodeJS.ProcessEnv): ValidationRe
     database,
     auth,
     cors,
-    bodyLimit: envSource.BODY_LIMIT || '1mb',
+    bodyLimit: envSource.BODY_LIMIT || '10mb',
     integrations
   };
 

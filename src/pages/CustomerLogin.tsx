@@ -1,26 +1,77 @@
 import React from "react";
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Phone, ArrowLeft, KeySquare } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Phone, ArrowLeft, KeySquare, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
 
 export default function CustomerLogin() {
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
+  const { login } = useAuth();
 
-  const handlePhoneSubmit = (e: React.FormEvent) => {
+  // Read target redirect or fallback
+  const queryParams = new URLSearchParams(location.search);
+  const redirectTarget = queryParams.get('redirect') || '/user-dashboard';
+
+  const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (phone.length > 9) {
+    setError(null);
+    if (phone.length < 10) {
+      setError('لطفاً یک شماره موبایل معتبر وارد کنید.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'خطا در ارسال کد تایید');
+      }
       setStep('otp');
+    } catch (err: any) {
+      setError(err?.message || 'خطا در ارسال کد تایید');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleOtpSubmit = (e: React.FormEvent) => {
+  const handleOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (otp.length === 4) {
-      navigate('/target-select');
+    setError(null);
+    if (otp.length !== 4) {
+      setError('کد تایید باید ۴ رقم باشد.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, code: otp })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'کد تایید نادرست است');
+      }
+
+      login(data.token, data.user);
+      navigate(redirectTarget);
+    } catch (err: any) {
+      setError(err?.message || 'کد تایید نادرست است');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -53,6 +104,12 @@ export default function CustomerLogin() {
           </p>
         </div>
 
+        {error && (
+          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl text-center">
+            {error}
+          </div>
+        )}
+
         {step === 'phone' ? (
           <form onSubmit={handlePhoneSubmit} className="space-y-4">
             <div>
@@ -72,10 +129,17 @@ export default function CustomerLogin() {
 
             <button 
               type="submit" 
-              className="w-full py-3.5 bg-[#1A1D23] text-white rounded-xl text-sm font-black hover:bg-black transition-colors mt-6 shadow-[0_4px_12px_rgba(0,0,0,0.15)] flex justify-center items-center gap-2"
+              disabled={loading}
+              className="w-full py-3.5 bg-[#1A1D23] text-white rounded-xl text-sm font-black hover:bg-black transition-colors mt-6 shadow-[0_4px_12px_rgba(0,0,0,0.15)] flex justify-center items-center gap-2 disabled:opacity-50"
             >
-              ارسال کد تایید
-              <ArrowLeft size={18} />
+              {loading ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <>
+                  ارسال کد تایید
+                  <ArrowLeft size={18} />
+                </>
+              )}
             </button>
           </form>
         ) : (
@@ -99,10 +163,17 @@ export default function CustomerLogin() {
 
             <button 
               type="submit" 
-              className="w-full py-3.5 bg-[#1F9254] text-white rounded-xl text-sm font-black hover:bg-[#167643] transition-colors mt-6 shadow-[0_4px_12px_rgba(31,146,84,0.3)] flex justify-center items-center gap-2"
+              disabled={loading}
+              className="w-full py-3.5 bg-[#1F9254] text-white rounded-xl text-sm font-black hover:bg-[#167643] transition-colors mt-6 shadow-[0_4px_12px_rgba(31,146,84,0.3)] flex justify-center items-center gap-2 disabled:opacity-50"
             >
-              ورود به سیستم
-              <ArrowLeft size={18} />
+              {loading ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <>
+                  ورود به سیستم
+                  <ArrowLeft size={18} />
+                </>
+              )}
             </button>
             <button
               type="button"

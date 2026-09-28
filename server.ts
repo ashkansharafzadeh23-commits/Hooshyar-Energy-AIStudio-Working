@@ -69,7 +69,7 @@ app.use(cors({
 }));
 
 // 4. Request size limit & cookie parsing
-app.use(express.json({ limit: securityConfig.bodyLimit || "1mb" }));
+app.use(express.json({ limit: securityConfig.bodyLimit || "10mb" }));
 app.use(cookieParser());
 
 // 5. Global API Rate Limiter

@@ -3,8 +3,11 @@ import { NotificationCenter } from '../components/NotificationCenter';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { motion } from 'framer-motion';
 import { Sun, Zap, User, Store, ArrowLeft, ShieldCheck, BatteryCharging, Cpu, Wrench } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export default function Landing() {
+  const { isAuthenticated } = useAuth();
+  const maintenanceLink = isAuthenticated ? '/smart-maintenance' : '/customer-login?redirect=/smart-maintenance';
   return (
     <div className="min-h-screen bg-[#F7F8FA] dark:bg-zinc-950 text-zinc-900 dark:text-white dark:text-zinc-100 font-Vazirmatn flex flex-col overflow-y-auto">
       {/* Hero Section */}
@@ -137,8 +140,10 @@ export default function Landing() {
               </div>
             </div>
             <div className="shrink-0 flex flex-col sm:flex-row gap-3">
+              {/* Canonical to="/smart-maintenance" link with auth redirection */}
               <Link
-                to="/smart-maintenance"
+                to={maintenanceLink}
+                data-target-route="/smart-maintenance"
                 className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-600/30 hover:-translate-y-0.5 transition-all"
               >
                 <span>ورود به سامانه و ثبت خرابی</span>

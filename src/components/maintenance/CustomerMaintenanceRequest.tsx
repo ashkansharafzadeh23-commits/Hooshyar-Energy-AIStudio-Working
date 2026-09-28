@@ -165,7 +165,9 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
               id: Math.random().toString(36).substring(2, 9),
               name: file.name,
               preview: result,
-              base64: base64Data
+              base64: base64Data,
+              mimeType: file.type || 'image/jpeg',
+              sizeBytes: file.size
             }
           ]);
         };
@@ -191,7 +193,12 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
         symptoms: selectedSymptoms,
         description: problemDescription,
         locationCity,
-        photos: photos.map(p => ({ name: p.name, data: p.base64 })),
+        photos: photos.map(p => ({
+          name: p.name,
+          data: p.base64,
+          mimeType: (p as any).mimeType,
+          sizeBytes: (p as any).sizeBytes
+        })),
         billData: billDoc ? {
           name: billDoc.name,
           status: billDoc.status || 'UNVERIFIED',
@@ -284,7 +291,12 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
         contactName: contactName || undefined,
         contactPhone: contactPhone || undefined,
         scheduledDate: scheduledDate || undefined,
-        photos: photos.map(p => ({ name: p.name, data: p.base64 })),
+        photos: photos.map(p => ({
+          name: p.name,
+          data: p.base64,
+          mimeType: (p as any).mimeType,
+          sizeBytes: (p as any).sizeBytes
+        })),
         billDoc: billDoc ? {
           name: billDoc.name,
           status: billDoc.status || 'UNVERIFIED',

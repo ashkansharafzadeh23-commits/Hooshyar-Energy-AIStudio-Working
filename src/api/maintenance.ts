@@ -11,6 +11,7 @@ import { technicianMatchingService } from '../services/technicianMatchingService
 import { isCaseAssignedToTechnician, getTechnicianIdentities, resolveTechnicianProfile } from '../services/technicianIdentityService.js';
 import { professionalRepository } from '../repositories/professionalRepository.js';
 import { projectRepository } from '../repositories/projectRepository.js';
+import { validateAndNormalizeImage, ImageValidationError, ValidatedImage } from '../utils/imageValidator.js';
 import {
   AssetAlert,
   AlertRule,
@@ -560,6 +561,11 @@ maintenanceRouter.get(['/cases', '/maintenance/cases'], (req: Request, res: Resp
  * Create customer maintenance request (with optional asset linkage or unregistered equipment)
  */
 maintenanceRouter.post(['/cases', '/maintenance/cases'], async (req: Request, res: Response) => {
+  // Operational maintenance operations require authentication
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ error: 'برای ثبت رسمی پرونده تعمیراتی، ورود به حساب کاربری الزامی است.' });
+  }
+
   const {
     assetId,
     componentId,
@@ -604,7 +610,15 @@ maintenanceRouter.post(['/cases', '/maintenance/cases'], async (req: Request, re
   }
 
   try {
-    const initialAttachments: any[] = Array.isArray(attachments) ? [...attachments] : [];
+    const initialAttachments: any[] = Array.isArray(attachments) ? attachments.map((att: any) => {
+      const sanitized = { ...att };
+      delete sanitized.data;
+      if (typeof sanitized.url === 'string' && sanitized.url.startsWith('data:')) {
+        sanitized.url = '';
+      }
+      return sanitized;
+    }) : [];
+
     if (Array.isArray(photos)) {
       photos.forEach((p: any, idx: number) => {
         initialAttachments.push({
@@ -612,8 +626,8 @@ maintenanceRouter.post(['/cases', '/maintenance/cases'], async (req: Request, re
           maintenanceCaseId: '',
           name: p.name || `photo_${idx + 1}.jpg`,
           type: 'PHOTO',
-          url: p.preview || p.data || '',
-          data: p.data || p.preview || '',
+          mimeType: p.mimeType,
+          sizeBytes: p.sizeBytes,
           uploadedBy: req.user?.id || 'CUSTOMER',
           uploadedAt: new Date().toISOString(),
           status: 'UPLOADED'
@@ -628,8 +642,6 @@ maintenanceRouter.post(['/cases', '/maintenance/cases'], async (req: Request, re
         maintenanceCaseId: '',
         name: effectiveBill.name || 'electricity_bill.pdf',
         type: 'BILL',
-        url: effectiveBill.url || effectiveBill.preview || '',
-        data: effectiveBill.data || '',
         uploadedBy: req.user?.id || 'CUSTOMER',
         uploadedAt: new Date().toISOString(),
         status: effectiveBill.status || 'UNVERIFIED',
@@ -694,17 +706,13 @@ maintenanceRouter.post(['/diagnose', '/maintenance/diagnose', '/analyze-maintena
     const documents = req.body?.documents;
     const billData = req.body?.billData;
 
-    // Normalize photos preserving MIME types and base64 payloads
-    const photos = Array.isArray(rawPhotos) ? rawPhotos.map((p: any, idx: number) => {
-      if (typeof p === 'string') {
-        return { name: `photo_${idx + 1}.jpg`, data: p, mimeType: 'image/jpeg' };
-      }
-      return {
-        name: p.name || p.filename || `photo_${idx + 1}.jpg`,
-        mimeType: p.mimeType || p.type || 'image/jpeg',
-        data: p.data || p.base64
-      };
-    }) : undefined;
+    // Validate and normalize photos (MIME, size, base64)
+    let validatedPhotos: ValidatedImage[] | undefined = undefined;
+    if (Array.isArray(rawPhotos) && rawPhotos.length > 0) {
+      validatedPhotos = rawPhotos.map((p: any, idx: number) => {
+        return validateAndNormalizeImage(p, idx);
+      });
+    }
 
     const diagnosis = await diagnosisService.generateDiagnosis({
       assetId,
@@ -712,7 +720,7 @@ maintenanceRouter.post(['/diagnose', '/maintenance/diagnose', '/analyze-maintena
       equipmentType,
       symptoms: Array.isArray(symptoms) ? symptoms : typeof symptoms === 'string' ? [symptoms] : undefined,
       description,
-      photos,
+      photos: validatedPhotos,
       documents,
       billData,
       locationCity,
@@ -721,7 +729,8 @@ maintenanceRouter.post(['/diagnose', '/maintenance/diagnose', '/analyze-maintena
 
     return res.json(diagnosis);
   } catch (err: any) {
-    return res.status(400).json({ error: err.message || 'خطا در انجام عیب‌یابی هوشمند' });
+    const statusCode = err?.statusCode || (err instanceof ImageValidationError ? err.statusCode : 400);
+    return res.status(statusCode).json({ error: err.message || 'خطا در انجام عیب‌یابی هوشمند' });
   }
 });
 
@@ -1449,8 +1458,7 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/attachments', '/cases/:
     maintenanceCaseId: caseId,
     name,
     type: type || 'PHOTO',
-    url: url || data || '',
-    data: data || '',
+    url: typeof url === 'string' && !url.startsWith('data:') ? url : '',
     mimeType,
     sizeBytes,
     status: status || 'UPLOADED',

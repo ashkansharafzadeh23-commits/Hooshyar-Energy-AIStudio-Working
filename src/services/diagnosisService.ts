@@ -347,31 +347,59 @@ export const diagnosisService = {
       ]
     };
 
-    // 4. Optional AI Enrichment Layer
+    // 4. Optional AI Multimodal / Text Enrichment Layer
     let diagnosisMethod: DiagnosisMethod = 'EXPERT_RULESET';
     let rawAiResponse: string | undefined = undefined;
+
+    // Prepare multimodal image parts if validated photos exist
+    const imageParts: any[] = [];
+    const validPhotos = (params.photos || []).filter(
+      (p: any) => p && typeof p.base64Data === 'string' && p.base64Data.length > 0 && p.mimeType
+    );
+
+    for (const photo of validPhotos) {
+      imageParts.push({
+        inlineData: {
+          mimeType: photo.mimeType,
+          data: photo.base64Data
+        }
+      });
+    }
+
+    const hasImages = imageParts.length > 0;
 
     const ai = getGeminiClient();
     if (ai && triggerAiAssisted !== false) {
       try {
         const prompt = `شما یک مهندس ارشد و کارشناس عیب‌یابی نیروگاه‌های خورشیدی و سیستم‌های انرژی تجدیدپذیر هستید.
+${hasImages ? 'تصویر/تصاویر ارسالی از تجهیز یا قطعه آسیب‌دیده ضمیمه شده است. لطفاً به دقت وضعیت ظاهری، علائم سوختگی، تغییر رنگ، شکستگی، داغ‌شدگی، دوده، آثار شل‌شدگی اتصالات یا آسیب مکانیکی/الکتریکی را در تصویر بررسی کنید.' : ''}
+
 اطلاعات دارایی یا تجهیز:
 - نام و نوع تجهیز: ${asset ? `${asset.name || asset.assetCode} (${asset.assetType})` : params.equipmentType || 'تجهیز خورشیدی'}
 - ظرفیت تقریبی: ${asset ? `${asset.installedCapacityKw} کیلووات` : 'نامشخص'}
-- نشانه‌ها و هشدارهای دریافتی: ${collectedSymptoms.join(' | ') || 'بررسی وضعیت عمومی'}
+- نشانه‌ها و هشدارهای دریافتی کاربر: ${collectedSymptoms.join(' | ') || 'بررسی وضعیت عمومی'}
 - وضعیت گارانتی تجهیزات: ${warrantyImpact.hasWarrantyCoverage ? 'دارد: ' + warrantyImpact.warrantyNotes : 'ندارد یا نامشخص'}
+
+دستورالعمل ایمنی حیاتی:
+در صورت مشاهده علائم خطرناک مانند هادی‌های برق‌دار لخت، سوختگی شدید اینورتر، آثار آتش‌سوزی، یا ولتاژ بالای ناامن، حتماً دستور قطع فوری کلید ایزولاتور DC/AC و عدم مداخله توسط کاربر غیرمتخصص را در اولویت قرار دهید.
+اگر تصویر ارسالی واضح، مرتبط یا کافی نیست، صراحتاً اعلام کنید: «تصویر برای تشخیص دقیق کافی نیست. لطفاً تصویر واضح‌تری از بخش آسیب‌دیده بارگذاری کنید.»
 
 بر اساس این شواهد، لطفاً تحلیل فنی علت ریشه‌ای و ۳ اقدام پیشنهادی دارای اولویت را ارائه دهید.
 پاسخ را خلاصه، تخصصی و به زبان فارسی بنویسید.`;
 
         const response: any = await externalCircuitBreakers.geminiAi.execute(async () => {
+          // Multimodal structure: image parts + text prompt
+          const parts: any[] = [...imageParts, { text: prompt }];
+
           const aiPromise = ai.models.generateContent({
             model: 'gemini-flash-latest',
-            contents: prompt
+            contents: { parts }
           });
 
+          // Timeout: 20 seconds for multimodal (image processing), 10 seconds for text-only
+          const timeoutMs = hasImages ? 20000 : 10000;
           const timeoutPromise = new Promise<null>((_, reject) =>
-            setTimeout(() => reject(new Error('AI generation timeout')), 3000)
+            setTimeout(() => reject(new Error('AI generation timeout')), timeoutMs)
           );
 
           return await Promise.race([aiPromise, timeoutPromise]);
@@ -380,7 +408,12 @@ export const diagnosisService = {
         if (response && response.text) {
           rawAiResponse = response.text;
           diagnosisMethod = 'AI_ASSISTED';
-          confidenceScore = Math.min(95, confidenceScore + 5);
+          confidenceScore = Math.min(95, confidenceScore + (hasImages ? 10 : 5));
+
+          if (hasImages) {
+            inferences.push('تحلیل چندوجهی تصویر و متن با هوش مصنوعی (Visual Multimodal AI) انجام شد.');
+            facts.push(`ارزیابی هوشمند ${imageParts.length} تصویر پیوست با پردازش مستقیم بینایی ماشین.`);
+          }
         }
       } catch (aiErr: any) {
         logger.warn('Gemini diagnosis enrichment skipped, timed out, or circuit open:', {
@@ -389,6 +422,12 @@ export const diagnosisService = {
           metadata: { errorMessage: aiErr?.message }
         });
         // Fallback remains EXPERT_RULESET
+        if (hasImages) {
+          if (!evidenceCategorized.PHOTO_OBSERVED) {
+            evidenceCategorized.PHOTO_OBSERVED = [];
+          }
+          evidenceCategorized.PHOTO_OBSERVED.push('تصویر دریافت شد؛ به علت عدم پاسخ‌دهی موتور بینایی هوش مصنوعی، تحلیل بر مبنای قوانین مهندسی انجام گرفت.');
+        }
       }
     }
 

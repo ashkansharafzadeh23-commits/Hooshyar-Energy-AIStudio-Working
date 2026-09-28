@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Settings, 
   AlertTriangle, 
@@ -19,6 +20,7 @@ import {
   Sparkles,
   ArrowLeft
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { AdBanner } from '../components/AdBanner';
 import { AlertDashboard } from '../components/maintenance/AlertDashboard';
 import { DiagnosisView } from '../components/maintenance/DiagnosisView';
@@ -79,6 +81,20 @@ export default function SmartMaintenance() {
   // Energy balance state (preserving previous calculator)
   const [generation, setGeneration] = useState(5000);
   const [consumption, setConsumption] = useState(4500);
+
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { isAuthenticated, loading: authLoading } = useAuth();
+
+  // Redirect unauthenticated user preserving destination
+  useEffect(() => {
+    if (!authLoading) {
+      const token = localStorage.getItem('token');
+      if (!isAuthenticated && !token) {
+        navigate(`/customer-login?redirect=${encodeURIComponent(location.pathname + location.search)}`, { replace: true });
+      }
+    }
+  }, [authLoading, isAuthenticated, navigate, location]);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
