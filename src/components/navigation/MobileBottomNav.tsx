@@ -28,6 +28,10 @@ export const MobileBottomNav: React.FC = () => {
                   ['ADMIN', 'SUPER_ADMIN'].includes(user?.role?.toUpperCase() || '') ||
                   (Array.isArray(user?.roles) && user.roles.some((r: string) => ['ADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase())));
 
+  const canCreateAds = ['VENDOR', 'CONTRACTOR', 'EPC', 'TECHNICIAN', 'ADMIN', 'SUPER_ADMIN'].includes(activeRole?.toUpperCase() || '') ||
+                       ['VENDOR', 'CONTRACTOR', 'EPC', 'TECHNICIAN', 'ADMIN', 'SUPER_ADMIN'].includes(user?.role?.toUpperCase() || '') ||
+                       (Array.isArray(user?.roles) && user.roles.some((r: string) => ['VENDOR', 'CONTRACTOR', 'EPC', 'TECHNICIAN', 'ADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase())));
+
   // Active check helper
   const isNavActive = (path: string) => {
     if (path === '/dashboard') {
@@ -194,6 +198,29 @@ export const MobileBottomNav: React.FC = () => {
                     </h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                       نظارت یکپارچه بر عملکرد مالی، تدارکات و عملیات نیروگاه‌های تجمیعی
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight size={18} className="text-slate-400 rotate-180 group-hover:-translate-x-1 transition-transform shrink-0" />
+              </button>
+            )}
+
+            {/* Action 5.5: Advertising Portal for Business Partners */}
+            {canCreateAds && (
+              <button
+                onClick={() => handleAction('/ads/portal')}
+                className="w-full flex items-center justify-between p-4 rounded-2xl border border-purple-200 dark:border-purple-800/60 bg-purple-50/60 dark:bg-purple-950/20 hover:bg-purple-100/60 transition-all text-right group"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-11 h-11 rounded-xl bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                    <Megaphone size={22} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                      پرتال تبلیغات تجاری و سفارش پلن
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      رزرو جایگاه بنری و ویدیویی در پلتفرم با پرداخت آنلاین
                     </p>
                   </div>
                 </div>

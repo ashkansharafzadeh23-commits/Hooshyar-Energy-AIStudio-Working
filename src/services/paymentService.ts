@@ -1,11 +1,11 @@
 /**
- * Hooshyar Energy — Payment Production Boundary Service (PH-5)
+ * Hooshyar Energy — Payment Production Boundary Service (PH-5 + Stage 12.1C)
  * 
  * Implements strict separation of payment request and payment verification.
  * Enforces:
  *  - Server-side provider verification (never trust callback params alone)
  *  - Duplicate verification & replay protection
- *  - Duplicate subscription activation prevention
+ *  - Duplicate subscription & ad activation prevention
  *  - Amount and user matching
  *  - Truthful status reporting (PRODUCTION_VERIFIED, SANDBOX_ONLY, NOT_CONFIGURED, NOT_VERIFIED)
  *  - Timeout & circuit breaker protection on provider requests
@@ -29,6 +29,9 @@ export interface PaymentRequestParams {
   planId: string;
   callbackUrl?: string;
   userPhone?: string;
+  adId?: string;
+  amountIRR?: number;
+  descriptionFa?: string;
 }
 
 export interface PaymentRequestResult {
@@ -52,6 +55,7 @@ export interface PaymentVerificationResult {
   message: string;
   refId?: string;
   subscriptionId?: string;
+  adId?: string;
   alreadyVerified?: boolean;
   transactionId?: string;
 }
@@ -78,9 +82,17 @@ export class PaymentService {
       throw new Error('SERVICE_NOT_CONFIGURED: Zarinpal payment gateway is not configured in production. Mock payment is prohibited.');
     }
 
-    const plan = subscriptionRepository.getSubscriptionPlanById(params.planId);
-    if (!plan) {
-      throw new Error(`Plan ${params.planId} not found`);
+    let amount = params.amountIRR;
+    let description = params.descriptionFa;
+
+    // If not explicitly provided (e.g. standard subscription), resolve from subscription plan
+    if (!amount) {
+      const plan = subscriptionRepository.getSubscriptionPlanById(params.planId);
+      if (!plan) {
+        throw new Error(`Plan ${params.planId} not found`);
+      }
+      amount = plan.priceIRR;
+      description = `اشتراک سامانه هوشیar انرژی - پلن ${plan.nameFa || plan.name}`;
     }
 
     const callbackUrl = params.callbackUrl || `${process.env.APP_BASE_URL || 'http://localhost:3000'}/api/subscriptions/callback`;
@@ -93,14 +105,15 @@ export class PaymentService {
 
       const payload = {
         merchant_id: merchantId,
-        amount: plan.priceIRR,
+        amount,
         currency: 'IRR',
-        description: `اشتراک سامانه هوشیار انرژی - پلن ${plan.nameFa}`,
+        description: description || 'پرداخت سامانه هوشیار انرژی',
         callback_url: callbackUrl,
         metadata: {
           mobile: params.userPhone || '',
           userId: params.userId,
-          planId: plan.id
+          planId: params.planId,
+          adId: params.adId || ''
         }
       };
 
@@ -120,8 +133,10 @@ export class PaymentService {
 
           const tx = subscriptionRepository.createTransaction({
             userId: params.userId,
-            planId: plan.id,
-            amount: plan.priceIRR,
+            planId: params.planId,
+            adId: params.adId,
+            type: params.adId ? 'advertisement' : 'subscription',
+            amount,
             currency: 'IRR',
             status: 'pending',
             authority,
@@ -136,7 +151,7 @@ export class PaymentService {
             authority,
             paymentUrl,
             transactionId: tx.id,
-            amount: plan.priceIRR,
+            amount,
             isSandbox,
             status: 'PENDING'
           };
@@ -162,8 +177,10 @@ export class PaymentService {
     const simulatedAuthority = `MOCK_AUTH_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     const tx = subscriptionRepository.createTransaction({
       userId: params.userId,
-      planId: plan.id,
-      amount: plan.priceIRR,
+      planId: params.planId,
+      adId: params.adId,
+      type: params.adId ? 'advertisement' : 'subscription',
+      amount,
       currency: 'IRR',
       status: 'pending',
       authority: simulatedAuthority,
@@ -174,13 +191,15 @@ export class PaymentService {
       }
     });
 
-    const paymentUrl = `/api/subscriptions/mock-payment-page?authority=${simulatedAuthority}`;
+    const paymentUrl = params.adId
+      ? `/ads/portal?simulated_authority=${simulatedAuthority}`
+      : `/api/subscriptions/mock-payment-page?authority=${simulatedAuthority}`;
 
     return {
       authority: simulatedAuthority,
       paymentUrl,
       transactionId: tx.id,
-      amount: plan.priceIRR,
+      amount,
       isSandbox: true,
       status: 'PENDING'
     };
@@ -226,9 +245,12 @@ export class PaymentService {
 
     // 3. Durable Idempotency: If transaction is already successful, return idempotent success
     if (tx.status === 'success') {
-      // Find associated subscription
-      const userSubs = subscriptionRepository.getUserSubscriptions(tx.userId);
-      const activeSub = userSubs.find(s => s.planId === tx.planId && s.status === 'active');
+      let activeSubId: string | undefined;
+      if (!tx.adId) {
+        const userSubs = subscriptionRepository.getUserSubscriptions(tx.userId);
+        const activeSub = userSubs.find(s => s.planId === tx.planId && s.status === 'active');
+        activeSubId = activeSub?.id;
+      }
 
       return {
         verified: true,
@@ -236,7 +258,8 @@ export class PaymentService {
         code: 101, // 101 in Zarinpal signifies "Transaction has already been verified"
         message: 'این تراکنش قبلاً با موفقیت تأیید شده است.',
         refId: tx.refId || 'ALREADY_VERIFIED',
-        subscriptionId: activeSub?.id,
+        subscriptionId: activeSubId,
+        adId: tx.adId,
         transactionId: tx.id
       };
     }
@@ -295,15 +318,20 @@ export class PaymentService {
             verifiedAt: new Date().toISOString()
           });
 
-          // Activate subscription
-          const newSub = this.activateSubscriptionForTransaction(tx);
+          // Activate subscription if subscription type, else skip (ad activation is handled in ads controller)
+          let subscriptionId: string | undefined;
+          if (!tx.adId) {
+            const newSub = this.activateSubscriptionForTransaction(tx);
+            subscriptionId = newSub.id;
+          }
 
           return {
             verified: true,
             code: respCode,
             message: 'پرداخت با موفقیت توسط درگاه بانکی تأیید شد.',
             refId,
-            subscriptionId: newSub.id,
+            subscriptionId,
+            adId: tx.adId,
             transactionId: tx.id
           };
         } else {
@@ -336,14 +364,19 @@ export class PaymentService {
       verifiedAt: new Date().toISOString()
     });
 
-    const newSub = this.activateSubscriptionForTransaction(tx);
+    let subscriptionId: string | undefined;
+    if (!tx.adId) {
+      const newSub = this.activateSubscriptionForTransaction(tx);
+      subscriptionId = newSub.id;
+    }
 
     return {
       verified: true,
       code: 100,
       message: '[SANDBOX/TEST] پرداخت با موفقیت ثبت شد.',
       refId: simulatedRefId,
-      subscriptionId: newSub.id,
+      subscriptionId,
+      adId: tx.adId,
       transactionId: tx.id
     };
   }

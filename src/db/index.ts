@@ -143,6 +143,12 @@ export interface Ad {
   reviewedBy?: string;
   reviewedAt?: string;
   rejectionReason?: string;
+  paymentStatus?: "unpaid" | "paid" | "failed";
+  paidAt?: string;
+  paymentAmount?: number;
+  paymentRefId?: string;
+  paymentAuthority?: string;
+  transactionId?: string;
 }
 
 export interface AnalysisHistory {
@@ -171,6 +177,14 @@ export interface Transaction {
   authority: string | null;
   status: "pending" | "success" | "failed";
   createdAt: string;
+  adId?: string;
+  type?: "subscription" | "advertisement";
+  refId?: string;
+  verifiedAt?: string;
+  currency?: string;
+  gateway?: string;
+  gatewayMetadata?: any;
+  errorMessage?: string;
 }
 
 export interface Subscription {
@@ -1171,12 +1185,31 @@ export const db: any = {
     }
     return null;
   },
-  createAd: (ad: Omit<Ad, "id" | "createdAt" | "status">) => {
+  createAd: (ad: Omit<Ad, "id" | "createdAt" | "status"> & { status?: Ad["status"]; paymentStatus?: Ad["paymentStatus"] }) => {
     const data = readDB();
-    const newAd: Ad = { ...ad, id: uuidv4(), status: "pending_review", createdAt: new Date().toISOString() };
+    const newAd: Ad = { 
+      ...ad, 
+      id: uuidv4(), 
+      status: ad.status || "pending_review", 
+      ...(ad.paymentStatus !== undefined ? { paymentStatus: ad.paymentStatus } : {}),
+      createdAt: new Date().toISOString() 
+    };
     data.ads.push(newAd);
     writeDB(data);
     return newAd;
+  },
+  updateAd: (id: string, updates: Partial<Ad>) => {
+    const data = readDB();
+    const idx = data.ads.findIndex(a => a.id === id);
+    if (idx !== -1) {
+      data.ads[idx] = { ...data.ads[idx], ...updates };
+      writeDB(data);
+      return data.ads[idx];
+    }
+    return null;
+  },
+  getUserAds: (userId: string) => {
+    return readDB().ads.filter(a => a.ownerId === userId).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
   getHistoryByUserId: (userId: string) => {
     return readDB().analysisHistory.filter(h => h.userId === userId).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

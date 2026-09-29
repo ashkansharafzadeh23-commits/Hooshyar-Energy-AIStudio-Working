@@ -45,6 +45,10 @@ export const DesktopHeader: React.FC = () => {
                   ['ADMIN', 'SUPER_ADMIN'].includes(user?.role?.toUpperCase() || '') ||
                   (Array.isArray(user?.roles) && user.roles.some((r: string) => ['ADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase())));
 
+  const canCreateAds = ['VENDOR', 'CONTRACTOR', 'EPC', 'TECHNICIAN', 'ADMIN', 'SUPER_ADMIN'].includes(activeRole?.toUpperCase() || '') ||
+                       ['VENDOR', 'CONTRACTOR', 'EPC', 'TECHNICIAN', 'ADMIN', 'SUPER_ADMIN'].includes(user?.role?.toUpperCase() || '') ||
+                       (Array.isArray(user?.roles) && user.roles.some((r: string) => ['VENDOR', 'CONTRACTOR', 'EPC', 'TECHNICIAN', 'ADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase())));
+
   // Close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -335,6 +339,16 @@ export const DesktopHeader: React.FC = () => {
                     >
                       <Briefcase size={14} />
                       <span>داشبورد پرتفوی سازمانی</span>
+                    </Link>
+                  )}
+                  {canCreateAds && (
+                    <Link
+                      to="/ads/portal"
+                      onClick={() => setIsProfileOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-purple-700 dark:text-purple-300 bg-purple-50/70 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors"
+                    >
+                      <Megaphone size={14} className="text-purple-600 dark:text-purple-400" />
+                      <span>پرتال تبلیغات تجاری و سفارش پلن</span>
                     </Link>
                   )}
                   {isAdmin && (
