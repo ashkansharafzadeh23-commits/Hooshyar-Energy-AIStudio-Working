@@ -476,10 +476,29 @@ adsRouter.patch("/:id/status", verifyAuthToken, requireAuth, (req: Request, res:
     if (!existingAd.placement || !VALID_PLACEMENTS.includes(existingAd.placement)) {
       return res.status(400).json({ error: "جایگاه تبلیغ نامعتبر است." });
     }
-    const start = new Date(existingAd.startDate).getTime();
-    const end = new Date(existingAd.endDate).getTime();
-    if (isNaN(start) || isNaN(end) || end <= start) {
-      return res.status(400).json({ error: "بازه زمانی تاریخ شروع و پایان تبلیغ نامعتبر است." });
+
+    // 2. COMMERCIAL BILLING PERIOD START (Stage 12.1C.1)
+    // The paid advertising period begins when approved and activated by an admin.
+    // If this is the FIRST activation (not previously activated), compute the period now from server plan.
+    // If previously activated, preserve original startDate and endDate to prevent free extensions.
+    if (!existingAd.activatedAt) {
+      const plan = resolveAdPlan(existingAd.planId);
+      const durationDays = plan?.durationDays || 30;
+      const activationStart = new Date();
+      const activationEnd = new Date(activationStart.getTime() + durationDays * 24 * 60 * 60 * 1000);
+
+      adsRepository.updateAd(id, {
+        startDate: activationStart.toISOString(),
+        endDate: activationEnd.toISOString(),
+        activatedAt: activationStart.toISOString()
+      });
+    } else {
+      // For already-activated ads, validate the existing date range integrity
+      const start = new Date(existingAd.startDate).getTime();
+      const end = new Date(existingAd.endDate).getTime();
+      if (isNaN(start) || isNaN(end) || end <= start) {
+        return res.status(400).json({ error: "بازه زمانی تاریخ شروع و پایان تبلیغ نامعتبر است." });
+      }
     }
   }
 

@@ -140,6 +140,7 @@ export interface Ad {
   status: "pending_review" | "active" | "expired" | "rejected";
   planId: string;
   createdAt: string;
+  activatedAt?: string;
   reviewedBy?: string;
   reviewedAt?: string;
   rejectionReason?: string;

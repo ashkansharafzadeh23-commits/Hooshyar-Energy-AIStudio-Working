@@ -493,8 +493,16 @@ export default function AdsPortal() {
                         </div>
                         <h4 className="font-bold text-sm text-slate-900">{item.title}</h4>
                         <div className="text-xs text-slate-500 flex items-center gap-4">
-                          <span>شروع: {new Date(item.startDate).toLocaleDateString('fa-IR')}</span>
-                          <span>پایان: {new Date(item.endDate).toLocaleDateString('fa-IR')}</span>
+                          {item.status === 'pending_review' ? (
+                            <span className="text-amber-700 font-medium">
+                              در انتظار تأیید — دوره تبلیغ پس از تأیید مدیر آغاز می‌شود
+                            </span>
+                          ) : (
+                            <>
+                              <span>شروع: {new Date(item.startDate).toLocaleDateString('fa-IR')}</span>
+                              <span>پایان: {new Date(item.endDate).toLocaleDateString('fa-IR')}</span>
+                            </>
+                          )}
                         </div>
                       </div>
 

@@ -37,6 +37,7 @@ interface AdminAd {
   status: 'pending_review' | 'active' | 'expired' | 'rejected';
   planId: string;
   createdAt: string;
+  activatedAt?: string;
   reviewedBy?: string;
   reviewedAt?: string;
   rejectionReason?: string;
@@ -425,14 +426,23 @@ export default function AdminAdsReview() {
 
                     {/* Dates */}
                     <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 bg-slate-50/50 p-3 rounded-xl border border-slate-100/60">
-                      <div className="flex items-center gap-1.5">
-                        <Calendar size={13} className="text-slate-400 shrink-0" />
-                        <span>شروع: {new Date(ad.startDate).toLocaleDateString('fa-IR')}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Calendar size={13} className="text-slate-400 shrink-0" />
-                        <span>پایان: {new Date(ad.endDate).toLocaleDateString('fa-IR')}</span>
-                      </div>
+                      {ad.status === 'pending_review' && !ad.activatedAt ? (
+                        <div className="col-span-2 text-amber-700 font-medium flex items-center gap-1.5">
+                          <Calendar size={13} className="text-amber-500 shrink-0" />
+                          <span>دوره ۳۰ روزه پس از تأیید مدیر آغاز می‌شود</span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-1.5">
+                            <Calendar size={13} className="text-slate-400 shrink-0" />
+                            <span>شروع: {new Date(ad.startDate).toLocaleDateString('fa-IR')}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Calendar size={13} className="text-slate-400 shrink-0" />
+                            <span>پایان: {new Date(ad.endDate).toLocaleDateString('fa-IR')}</span>
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {/* Rejection Note if rejected */}
