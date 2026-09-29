@@ -9,7 +9,12 @@ import {
   AlertCircle, 
   Loader2,
   FileCheck,
-  Plus
+  Plus,
+  Download,
+  Trash2,
+  Link,
+  ShieldCheck,
+  File
 } from 'lucide-react';
 import { ProjectDocument, ProjectDocumentType } from '../../types/project';
 import { formatJalaliDate } from '../../utils/formatters';
@@ -36,16 +41,27 @@ const DOCUMENT_GROUPS: DocumentCategoryGroup[] = [
   { id: 'operation', title: 'بهره‌برداری و سایر', types: ['OTHER'] },
 ];
 
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes <= 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export const ProjectDocumentCenter: React.FC<ProjectDocumentCenterProps> = ({ projectId }) => {
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadMode, setUploadMode] = useState<'FILE' | 'URL'>('FILE');
   const [uploadType, setUploadType] = useState<ProjectDocumentType>('ENGINEERING');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadUrl, setUploadUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
 
   const fetchDocs = async () => {
     setLoading(true);
@@ -67,33 +83,117 @@ export const ProjectDocumentCenter: React.FC<ProjectDocumentCenterProps> = ({ pr
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!uploadUrl.trim()) return;
-    setUploading(true);
     setUploadError('');
 
+    if (uploadMode === 'FILE') {
+      if (!selectedFile) {
+        setUploadError('لطفاً یک فایل را انتخاب کنید.');
+        return;
+      }
+
+      setUploading(true);
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('type', uploadType);
+      formData.append('version', '1');
+
+      try {
+        const res = await fetch(`/api/projects/${projectId}/documents/upload`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (res.ok) {
+          setSelectedFile(null);
+          setShowUploadModal(false);
+          await fetchDocs();
+        } else {
+          const data = await res.json();
+          setUploadError(data.error || 'خطا در بارگذاری فایل');
+        }
+      } catch (err: any) {
+        setUploadError(err.message || 'خطا در ارتباط با سرور');
+      } finally {
+        setUploading(false);
+      }
+    } else {
+      // Legacy URL registration mode
+      if (!uploadUrl.trim()) return;
+      setUploading(true);
+
+      try {
+        const res = await fetch(`/api/projects/${projectId}/documents`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: uploadType,
+            fileUrl: uploadUrl.trim(),
+            version: 1
+          })
+        });
+
+        if (res.ok) {
+          setUploadUrl('');
+          setShowUploadModal(false);
+          await fetchDocs();
+        } else {
+          const data = await res.json();
+          setUploadError(data.error || 'خطا در ثبت نشانی سند');
+        }
+      } catch (err: any) {
+        setUploadError(err.message || 'خطا در ارتباط با سرور');
+      } finally {
+        setUploading(false);
+      }
+    }
+  };
+
+  const handleDownload = async (doc: ProjectDocument) => {
+    if (doc.storageProvider === 'EXTERNAL_URL' || (!doc.storageProvider && !doc.sizeBytes)) {
+      window.open(doc.fileUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    setDownloadingDocId(doc.id);
     try {
-      const res = await fetch(`/api/projects/${projectId}/documents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: uploadType,
-          fileUrl: uploadUrl.trim(),
-          version: 1
-        })
+      const res = await fetch(`/api/projects/${projectId}/documents/${doc.id}/download`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.downloadUrl) {
+          window.open(data.downloadUrl, '_blank', 'noopener,noreferrer');
+        }
+      } else {
+        const errData = await res.json();
+        alert(errData.error || 'خطا در دریافت لینک دانلود');
+      }
+    } catch (err: any) {
+      alert('خطا در برقراری ارتباط با سامانه دانلود');
+    } finally {
+      setDownloadingDocId(null);
+    }
+  };
+
+  const handleDelete = async (docId: string) => {
+    if (!confirm('آیا از حذف این سند اطمینان دارید؟ این عملیات قابل بازگشت نیست.')) {
+      return;
+    }
+
+    setDeletingDocId(docId);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/documents/${docId}`, {
+        method: 'DELETE'
       });
 
       if (res.ok) {
-        setUploadUrl('');
-        setShowUploadModal(false);
         await fetchDocs();
       } else {
         const data = await res.json();
-        setUploadError(data.error || 'خطا در بارگذاری سند');
+        alert(data.error || 'خطا در حذف سند');
       }
     } catch (err: any) {
-      setUploadError(err.message || 'خطا در ارتباط با سرور');
+      alert('خطا در ارتباط با سرور هنگام حذف');
     } finally {
-      setUploading(false);
+      setDeletingDocId(null);
     }
   };
 
@@ -111,7 +211,8 @@ export const ProjectDocumentCenter: React.FC<ProjectDocumentCenterProps> = ({ pr
       const q = searchQuery.toLowerCase();
       return (
         doc.type.toLowerCase().includes(q) ||
-        doc.fileUrl.toLowerCase().includes(q)
+        (doc.originalFilename && doc.originalFilename.toLowerCase().includes(q)) ||
+        (doc.fileUrl && doc.fileUrl.toLowerCase().includes(q))
       );
     }
     return true;
@@ -177,17 +278,20 @@ export const ProjectDocumentCenter: React.FC<ProjectDocumentCenterProps> = ({ pr
             مرکز اسناد پروژه (Document Center)
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            آرشیو امن، دسته‌بندی‌شده و قابل ممیزی اسناد و گواهی‌نامه‌های پروژه
+            آرشیو امن، دسته‌بندی‌شده و قابل ممیزی اسناد و گواهی‌نامه‌های پروژه با ذخیره‌سازی رمزنگاری‌شده
           </p>
         </div>
 
         <button
           type="button"
-          onClick={() => setShowUploadModal(true)}
+          onClick={() => {
+            setUploadError('');
+            setShowUploadModal(true);
+          }}
           className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-xs transition-colors cursor-pointer min-h-[44px]"
         >
           <UploadCloud className="w-4 h-4" />
-          <span>ثبت سند جدید</span>
+          <span>بارگذاری سند جدید</span>
         </button>
       </div>
 
@@ -255,50 +359,101 @@ export const ProjectDocumentCenter: React.FC<ProjectDocumentCenterProps> = ({ pr
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredDocuments.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs hover:border-slate-300 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                      <FileText className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-sm text-slate-900">
-                        {getDocTypeTitle(doc.type)}
-                      </h4>
-                      <div className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-2">
-                        <span>نسخه: {doc.version}</span>
-                        <span>•</span>
-                        <span>تاریخ ثبت: {formatJalaliDate(doc.createdAt)}</span>
-                        <span>•</span>
-                        <span className="font-mono text-slate-400 truncate max-w-[200px]" dir="ltr">
-                          {doc.fileUrl}
-                        </span>
+              {filteredDocuments.map((doc) => {
+                const isS3 = doc.storageProvider === 'S3_COMPATIBLE';
+                const isDownloading = downloadingDocId === doc.id;
+                const isDeleting = deletingDocId === doc.id;
+
+                return (
+                  <div
+                    key={doc.id}
+                    className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs hover:border-slate-300 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                        isS3 ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'
+                      }`}>
+                        {isS3 ? <ShieldCheck className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-sm text-slate-900">
+                            {getDocTypeTitle(doc.type)}
+                          </h4>
+                          {isS3 ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              فایل امن ابری
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-50 text-slate-600 border border-slate-200">
+                              پیوند خارجی
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-2">
+                          <span>نسخه: {doc.version}</span>
+                          <span>•</span>
+                          <span>تاریخ ثبت: {formatJalaliDate(doc.createdAt)}</span>
+                          {doc.sizeBytes ? (
+                            <>
+                              <span>•</span>
+                              <span className="font-mono text-slate-600">{formatBytes(doc.sizeBytes)}</span>
+                            </>
+                          ) : null}
+                          {doc.originalFilename ? (
+                            <>
+                              <span>•</span>
+                              <span className="font-mono text-slate-700 truncate max-w-[200px]" dir="ltr">
+                                {doc.originalFilename}
+                              </span>
+                            </>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-2 self-end sm:self-center">
-                    {renderStatusBadge(doc.verificationStatus)}
-                    <a
-                      href={doc.fileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-colors"
-                    >
-                      مشاهده
-                    </a>
+                    <div className="flex items-center gap-2 self-end sm:self-center">
+                      {renderStatusBadge(doc.verificationStatus)}
+                      
+                      <button
+                        type="button"
+                        onClick={() => handleDownload(doc)}
+                        disabled={isDownloading}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                        title={isS3 ? 'دریافت لینک دانلود امن' : 'مشاهده پیوند خارجی'}
+                      >
+                        {isDownloading ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Download className="w-3.5 h-3.5" />
+                        )}
+                        <span>{isS3 ? 'دانلود امن' : 'مشاهده'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(doc.id)}
+                        disabled={isDeleting}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-50"
+                        title="حذف سند"
+                      >
+                        {isDeleting ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-rose-600" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       </div>
 
-      {/* Simple Upload Modal */}
+      {/* Upload Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-lg w-full shadow-2xl space-y-4">
@@ -310,6 +465,34 @@ export const ProjectDocumentCenter: React.FC<ProjectDocumentCenterProps> = ({ pr
                 className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer"
               >
                 ✕
+              </button>
+            </div>
+
+            {/* Mode Selector Tabs */}
+            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setUploadMode('FILE')}
+                className={`py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                  uploadMode === 'FILE'
+                    ? 'bg-white text-blue-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <UploadCloud className="w-4 h-4" />
+                <span>بارگذاری فایل (امن)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setUploadMode('URL')}
+                className={`py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                  uploadMode === 'URL'
+                    ? 'bg-white text-blue-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Link className="w-4 h-4" />
+                <span>پیوند خارجی (Legacy)</span>
               </button>
             </div>
 
@@ -345,20 +528,63 @@ export const ProjectDocumentCenter: React.FC<ProjectDocumentCenterProps> = ({ pr
                 </select>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  نشانی / پیوند فایل سند
-                </label>
-                <input
-                  type="text"
-                  placeholder="https://... یا /documents/doc.pdf"
-                  value={uploadUrl}
-                  onChange={(e) => setUploadUrl(e.target.value)}
-                  dir="ltr"
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:ring-2 focus:ring-blue-500 text-left"
-                  required
-                />
-              </div>
+              {uploadMode === 'FILE' ? (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    انتخاب فایل (PDF تا ۱۵ مگابایت، تصاویر تا ۵ مگابایت)
+                  </label>
+                  <div className="border-2 border-dashed border-slate-200 hover:border-blue-400 rounded-xl p-4 text-center bg-slate-50/50 transition-colors">
+                    <input
+                      type="file"
+                      id="docFileInput"
+                      className="hidden"
+                      accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setSelectedFile(file);
+                        }
+                      }}
+                    />
+                    <label htmlFor="docFileInput" className="cursor-pointer block">
+                      <File className="w-8 h-8 text-blue-500 mx-auto mb-2" />
+                      <span className="text-xs font-bold text-blue-600 hover:text-blue-700 block">
+                        برای انتخاب فایل کلیک کنید
+                      </span>
+                      <span className="text-[11px] text-slate-400 mt-1 block">
+                        فرمت‌های مجاز: PDF, JPEG, PNG, WebP
+                      </span>
+                    </label>
+
+                    {selectedFile && (
+                      <div className="mt-3 p-2 bg-blue-50/70 border border-blue-100 rounded-lg flex items-center justify-between text-xs text-blue-900 font-mono" dir="ltr">
+                        <span className="truncate max-w-[240px]">{selectedFile.name}</span>
+                        <span className="text-slate-500 shrink-0 font-sans ml-2">
+                          {formatBytes(selectedFile.size)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    نشانی / پیوند فایل سند
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://..."
+                    value={uploadUrl}
+                    onChange={(e) => setUploadUrl(e.target.value)}
+                    dir="ltr"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:ring-2 focus:ring-blue-500 text-left"
+                    required
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    تنها پروتکل‌های امن http و https معتبر هستند.
+                  </p>
+                </div>
+              )}
 
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
@@ -371,10 +597,10 @@ export const ProjectDocumentCenter: React.FC<ProjectDocumentCenterProps> = ({ pr
                 <button
                   type="submit"
                   disabled={uploading}
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-2"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-50"
                 >
                   {uploading && <Loader2 className="w-4 h-4 animate-spin" />}
-                  <span>ثبت سند</span>
+                  <span>{uploadMode === 'FILE' ? 'بارگذاری در فضای ابری' : 'ثبت پیوند'}</span>
                 </button>
               </div>
             </form>

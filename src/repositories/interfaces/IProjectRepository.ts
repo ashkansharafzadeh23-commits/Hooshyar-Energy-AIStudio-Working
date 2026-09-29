@@ -10,7 +10,9 @@ export interface IProjectRepository {
   addMember(member: Omit<ProjectMember, "id" | "createdAt">): ProjectMember;
   
   getDocuments(projectId: string): ProjectDocument[];
+  getDocumentById(projectId: string, documentId: string): ProjectDocument | undefined;
   addDocument(doc: Omit<ProjectDocument, "id" | "createdAt">): ProjectDocument;
+  deleteDocument(projectId: string, documentId: string): boolean;
   
   getActivities(projectId: string): ProjectActivity[];
   addActivity(activity: Omit<ProjectActivity, "id" | "createdAt">): ProjectActivity;

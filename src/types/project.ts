@@ -101,6 +101,8 @@ export type ProjectDocumentType =
 
 export type DocumentVerificationStatus = 'NOT_REVIEWED' | 'PENDING' | 'VERIFIED' | 'REJECTED';
 
+export type DocumentStorageProvider = 'S3_COMPATIBLE' | 'EXTERNAL_URL';
+
 export interface ProjectDocument {
   id: string;
   projectId: string;
@@ -110,6 +112,13 @@ export interface ProjectDocument {
   version: number;
   verificationStatus: DocumentVerificationStatus;
   createdAt: string;
+  storageProvider?: DocumentStorageProvider;
+  storageKey?: string;
+  originalFilename?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  sha256?: string;
+  uploadedAt?: string;
 }
 
 export interface ProjectActivity {

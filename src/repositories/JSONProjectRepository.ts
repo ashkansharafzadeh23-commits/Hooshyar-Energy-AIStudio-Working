@@ -30,9 +30,17 @@ export class JSONProjectRepository implements IProjectRepository {
   getDocuments(projectId: string): ProjectDocument[] {
     return db.getProjectDocuments(projectId);
   }
+
+  getDocumentById(projectId: string, documentId: string): ProjectDocument | undefined {
+    return db.getProjectDocumentById(projectId, documentId);
+  }
   
   addDocument(doc: Omit<ProjectDocument, "id" | "createdAt">): ProjectDocument {
     return db.createProjectDocument(doc);
+  }
+
+  deleteDocument(projectId: string, documentId: string): boolean {
+    return db.deleteProjectDocument(projectId, documentId);
   }
   
   getActivities(projectId: string): ProjectActivity[] {

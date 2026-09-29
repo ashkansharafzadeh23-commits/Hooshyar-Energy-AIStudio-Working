@@ -728,6 +728,7 @@ export const db: any = {
   },
 
   getProjectDocuments: (projectId: string) => (readDB().projectDocuments || []).filter(d => d.projectId === projectId),
+  getProjectDocumentById: (projectId: string, documentId: string) => (readDB().projectDocuments || []).find(d => d.projectId === projectId && d.id === documentId),
   createProjectDocument: (doc: Omit<ProjectDocument, "id" | "createdAt">) => {
     const data = readDB();
     if (!data.projectDocuments) data.projectDocuments = [];
@@ -735,6 +736,17 @@ export const db: any = {
     data.projectDocuments.push(newDoc as ProjectDocument);
     writeDB(data);
     return newDoc as ProjectDocument;
+  },
+  deleteProjectDocument: (projectId: string, documentId: string): boolean => {
+    const data = readDB();
+    if (!data.projectDocuments) return false;
+    const initialLen = data.projectDocuments.length;
+    data.projectDocuments = data.projectDocuments.filter(d => !(d.projectId === projectId && d.id === documentId));
+    if (data.projectDocuments.length !== initialLen) {
+      writeDB(data);
+      return true;
+    }
+    return false;
   },
 
   getProjectActivities: (projectId: string) => (readDB().projectActivities || []).filter(a => a.projectId === projectId),
