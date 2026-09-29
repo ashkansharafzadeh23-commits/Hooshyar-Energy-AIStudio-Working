@@ -14,7 +14,8 @@ import {
   ShieldCheck,
   Plus,
   Wrench,
-  Box
+  Box,
+  Megaphone
 } from 'lucide-react';
 import { NotificationCenter } from '../NotificationCenter';
 import { ThemeToggle } from '../ThemeToggle';
@@ -337,14 +338,24 @@ export const DesktopHeader: React.FC = () => {
                     </Link>
                   )}
                   {isAdmin && (
-                    <Link
-                      to="/admin/solar-assets"
-                      onClick={() => setIsProfileOpen(false)}
-                      className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-50/70 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
-                    >
-                      <ShieldCheck size={14} className="text-amber-600 dark:text-amber-400" />
-                      <span>تأیید و بررسی پرونده‌ها (مدیریت)</span>
-                    </Link>
+                    <>
+                      <Link
+                        to="/admin/solar-assets"
+                        onClick={() => setIsProfileOpen(false)}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-50/70 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                      >
+                        <ShieldCheck size={14} className="text-amber-600 dark:text-amber-400" />
+                        <span>تأیید و بررسی پرونده‌ها (مدیریت)</span>
+                      </Link>
+                      <Link
+                        to="/admin/ads"
+                        onClick={() => setIsProfileOpen(false)}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-50/70 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                      >
+                        <Megaphone size={14} className="text-amber-600 dark:text-amber-400" />
+                        <span>مدیریت و تأیید آگهی‌ها</span>
+                      </Link>
+                    </>
                   )}
                 </div>
 

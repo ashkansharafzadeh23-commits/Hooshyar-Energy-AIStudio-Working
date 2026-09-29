@@ -16,7 +16,14 @@ let geminiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
   if (!geminiClient && process.env.GEMINI_API_KEY) {
     try {
-      geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      geminiClient = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
     } catch (e) {
       console.warn('Failed to initialize Gemini client:', e);
       geminiClient = null;
@@ -392,7 +399,7 @@ ${hasImages ? 'تصویر/تصاویر ارسالی از تجهیز یا قطع�
           const parts: any[] = [...imageParts, { text: prompt }];
 
           const aiPromise = ai.models.generateContent({
-            model: 'gemini-flash-latest',
+            model: 'gemini-3.8-flash',
             contents: { parts }
           });
 

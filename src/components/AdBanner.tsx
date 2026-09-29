@@ -2,67 +2,122 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ExternalLink, X, Info, Zap, ShieldCheck, TrendingUp, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 
-const MOCK_ADS = [
-  {
-    id: 1,
-    title: 'فروش ویژه پنل‌های خورشیدی ۵۵۰ وات',
-    subtitle: 'راندمان بالا همراه با ۱۰ سال گارانتی تعویض و خدمات پس از فروش',
-    image: 'https://images.unsplash.com/photo-1509391366360-120953a15443?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80',
-    link: '/vendor/vendor_001',
-    color: 'from-orange-600/90 to-amber-500/90',
-    icon: <Zap size={24} className="text-white" />,
-    badge: 'فروش ویژه'
-  },
-  {
-    id: 2,
-    title: 'خدمات تخصصی تعمیرات احمدی',
-    subtitle: 'سرویس و اورهال انواع ژنراتور و موتور برق با گارانتی ۶ ماهه',
-    image: 'https://images.unsplash.com/photo-1621905252507-b35492cc74b4?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80',
-    link: '#',
-    color: 'from-blue-700/90 to-blue-500/90',
-    icon: <ShieldCheck size={24} className="text-white" />,
-    badge: 'خدمات تخصصی'
-  },
-  {
-    id: 3,
-    title: 'باتری‌های ژل و لیتیومی صنعتی',
-    subtitle: 'بهترین قیمت بازار همراه با نصب رایگان در محل پروژه',
-    image: 'https://images.unsplash.com/photo-1593941707882-a5bba14938cb?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80',
-    link: '#',
-    color: 'from-emerald-700/90 to-green-500/90',
-    icon: <TrendingUp size={24} className="text-white" />,
-    badge: 'تخفیف محدود'
-  },
-  {
-    id: 4,
-    title: 'اینورترهای هیبریدی نسل جدید',
-    subtitle: 'مدیریت هوشمند انرژی برای مصارف صنعتی و خانگی',
-    image: 'https://images.unsplash.com/photo-1497435334941-8c899ee9e8e9?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80',
-    link: '#',
-    color: 'from-purple-700/90 to-fuchsia-500/90',
-    icon: <Sparkles size={24} className="text-white" />,
-    badge: 'محصول جدید'
-  }
+export interface DisplayAd {
+  id: string | number;
+  title: string;
+  subtitle: string;
+  image: string;
+  link: string;
+  color: string;
+  icon?: React.ReactNode;
+  badge: string;
+}
+
+const COLOR_PALETTES = [
+  'from-orange-600/90 to-amber-500/90',
+  'from-blue-700/90 to-blue-500/90',
+  'from-emerald-700/90 to-green-500/90',
+  'from-purple-700/90 to-fuchsia-500/90'
 ];
 
+function sanitizeAdLink(rawLink?: string): string {
+  if (!rawLink || typeof rawLink !== 'string') return '#';
+  const trimmed = rawLink.trim();
+  if (trimmed === '#' || trimmed.startsWith('/')) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return trimmed;
+    }
+  } catch {
+    return '#';
+  }
+  return '#';
+}
+
+function sanitizeAdImage(rawImg?: string): string {
+  if (!rawImg || typeof rawImg !== 'string') return '';
+  const trimmed = rawImg.trim();
+  if (trimmed.startsWith('data:') || trimmed.startsWith('javascript:')) return '';
+  if (trimmed.startsWith('/')) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return trimmed;
+    }
+  } catch {
+    return '';
+  }
+  return '';
+}
+
 export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | 'inline' | 'marquee' | 'hero' | 'sidebar' }) {
-  const [currentIndex, setCurrentIndex] = useState(Math.floor(Math.random() * MOCK_ADS.length));
+  const [ads, setAds] = useState<DisplayAd[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
-    if (!isVisible || layout === 'marquee') return;
+    let isMounted = true;
+    const fetchRealAds = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(`/api/ads/list?placement=${layout}`);
+        if (!res.ok) {
+          if (isMounted) {
+            setAds([]);
+            setLoading(false);
+          }
+          return;
+        }
+        const data = await res.json();
+        if (isMounted && data && Array.isArray(data.ads) && data.ads.length > 0) {
+          const mapped: DisplayAd[] = data.ads.map((ad: any, idx: number) => {
+            const icons = [<Zap key="1" size={24} className="text-white" />, <ShieldCheck key="2" size={24} className="text-white" />, <TrendingUp key="3" size={24} className="text-white" />, <Sparkles key="4" size={24} className="text-white" />];
+            return {
+              id: ad.id || `ad_${idx}`,
+              title: ad.title || 'آگهی همکاران',
+              subtitle: ad.description || ad.subtitle || 'پیشنهاد و خدمات ویژه تأمین‌کنندگان',
+              image: sanitizeAdImage(ad.imageUrl || ad.image) || 'https://images.unsplash.com/photo-1509391366360-120953a15443?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80',
+              link: sanitizeAdLink(ad.linkTo || ad.link),
+              color: COLOR_PALETTES[idx % COLOR_PALETTES.length],
+              icon: icons[idx % icons.length],
+              badge: ad.planId === 'ad_plan_gold' ? 'ویژه طلایی' : (ad.planId === 'ad_plan_silver' ? 'نقره‌ای' : 'آگهی ویژه')
+            };
+          });
+          setAds(mapped);
+          setCurrentIndex(0);
+        } else if (isMounted) {
+          setAds([]);
+        }
+      } catch (err) {
+        if (isMounted) setAds([]);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchRealAds();
+    return () => {
+      isMounted = false;
+    };
+  }, [layout]);
+
+  useEffect(() => {
+    if (!isVisible || layout === 'marquee' || ads.length <= 1) return;
     const timer = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % MOCK_ADS.length);
+      setCurrentIndex((prev) => (prev + 1) % ads.length);
     }, 8000);
     return () => clearInterval(timer);
-  }, [isVisible, layout]);
+  }, [isVisible, layout, ads.length]);
 
-  if (!isVisible) return null;
+  if (!isVisible || loading || ads.length === 0) return null;
 
-  const currentAd = MOCK_ADS[currentIndex];
+  const currentAd = ads[currentIndex] || ads[0];
+  if (!currentAd) return null;
 
-  const nextAd = () => setCurrentIndex((prev) => (prev + 1) % MOCK_ADS.length);
-  const prevAd = () => setCurrentIndex((prev) => (prev - 1 + MOCK_ADS.length) % MOCK_ADS.length);
+  const nextAd = () => setCurrentIndex((prev) => (prev + 1) % ads.length);
+  const prevAd = () => setCurrentIndex((prev) => (prev - 1 + ads.length) % ads.length);
 
   if (layout === 'marquee') {
     return (
@@ -70,7 +125,7 @@ export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | '
         <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-[#1A1D23] to-transparent z-10"></div>
         <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-[#1A1D23] to-transparent z-10"></div>
         <div className="flex whitespace-nowrap animate-[marquee_30s_linear_infinite] hover:[animation-play-state:paused]">
-          {[...MOCK_ADS, ...MOCK_ADS].map((ad, idx) => (
+          {[...ads, ...ads].map((ad, idx) => (
             <a key={idx} href={ad.link} className="flex items-center gap-3 mx-8 group">
               <span className="text-xs bg-white/20 px-2 py-0.5 rounded text-white/90">{ad.badge}</span>
               <span className="text-sm font-medium group-hover:text-blue-400 transition-colors">{ad.title} - {ad.subtitle}</span>
@@ -178,14 +233,16 @@ export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | '
           </motion.div>
         </AnimatePresence>
 
-        <div className="absolute bottom-6 right-8 flex gap-2 z-20">
-          <button onClick={prevAd} className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white hover:bg-white hover:text-gray-900 transition-colors border border-white/30">
-            <ChevronRight size={20} />
-          </button>
-          <button onClick={nextAd} className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white hover:bg-white hover:text-gray-900 transition-colors border border-white/30">
-            <ChevronLeft size={20} />
-          </button>
-        </div>
+        {ads.length > 1 && (
+          <div className="absolute bottom-6 right-8 flex gap-2 z-20">
+            <button onClick={prevAd} className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white hover:bg-white hover:text-gray-900 transition-colors border border-white/30">
+              <ChevronRight size={20} />
+            </button>
+            <button onClick={nextAd} className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white hover:bg-white hover:text-gray-900 transition-colors border border-white/30">
+              <ChevronLeft size={20} />
+            </button>
+          </div>
+        )}
         
         <div className="absolute top-4 left-4 bg-black/40 backdrop-blur-md text-white/80 text-xs px-2 py-1 rounded flex items-center gap-1 z-20">
           آگهی 
@@ -319,15 +376,17 @@ export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | '
         </motion.div>
       </AnimatePresence>
       
-      <div className="absolute bottom-4 right-1/2 translate-x-1/2 flex gap-2 z-20">
-        {MOCK_ADS.map((_, idx) => (
-          <button
-            key={idx}
-            onClick={() => setCurrentIndex(idx)}
-            className={`h-1.5 rounded-full transition-all duration-300 ${idx === currentIndex ? 'bg-white w-8 shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'bg-white/40 hover:bg-white/70 w-2'}`}
-          />
-        ))}
-      </div>
+      {ads.length > 1 && (
+        <div className="absolute bottom-4 right-1/2 translate-x-1/2 flex gap-2 z-20">
+          {ads.map((_, idx) => (
+            <button
+              key={idx}
+              onClick={() => setCurrentIndex(idx)}
+              className={`h-1.5 rounded-full transition-all duration-300 ${idx === currentIndex ? 'bg-white w-8 shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'bg-white/40 hover:bg-white/70 w-2'}`}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

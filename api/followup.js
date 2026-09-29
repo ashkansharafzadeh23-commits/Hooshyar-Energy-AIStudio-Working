@@ -1,4 +1,20 @@
+import { GoogleGenAI } from '@google/genai';
 import { runRuleEngine } from './analyze.js';
+
+let aiClient = null;
+function getAiClient() {
+  if (!aiClient && process.env.GEMINI_API_KEY) {
+    aiClient = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+  }
+  return aiClient;
+}
 
 const SYSTEM_PROMPT_EXTRACT = `تو فقط وظیفه استخراج داری، نه تحلیل یا محاسبه. پیام کاربر را بخوان و آن را به یک تغییر ساختاریافته (Patch) روی ورودی قبلی تبدیل کن. فقط از لوازم موجود در فهرست appliances-config پروژه استفاده کن (توان هرکدام از همان فهرست بیاید، هرگز عدد جدید اختراع نکن). اگر کاربر عدد دقیقی گفت (مثلاً "متراژ رو کن به ۴۰۰ متر")، همان عدد را در Patch بگذار. اگر پیام کاربر مبهم بود و نمی‌توانی مطمئن به یک تغییر مشخص برسی، به‌جای حدس زدن، در فیلد needsClarification یک سوال شفاف‌کننده بنویس. خروجی فقط یک JSON با این ساختار باشد، بدون متن اضافه:
 {
@@ -11,9 +27,7 @@ const SYSTEM_PROMPT_EXTRACT = `تو فقط وظیفه استخراج داری، 
 
 const SYSTEM_PROMPT_DIFF = `تو فقط تفاوت بین دو نتیجه محاسبه‌شده (که هر دو توسط Rule Engine ساخته شده‌اند، نه توسط تو) را به فارسی ساده توضیح می‌دهی. هرگز عددی که در ورودی نیامده تولید نکن. لحن دوستانه و مستقیم باشد، مثلاً: "با این تغییر، به ۲ پنل بیشتر (جمعاً ۱۶ پنل) و ۱.۱ کیلووات توان بیشتر نیاز دارید." خروجی فقط یک جمله یا دو جمله کوتاه فارسی باشد، بدون JSON.`;
 
-// A naive mock catalog to map appliance IDs if needed (if frontend sends a raw string instead of matching an ID, but let's assume LLM extracts reasonable IDs or we don't strictly enforce id-to-watt mapping here if we can rely on frontend previousInput, wait. The prompt says "فقط از لوازم موجود در فهرست appliances-config پروژه استفاده کن (توان هرکدام از همان فهرست بیاید...)"
-// Actually, I'll pass the appliances catalog to the LLM so it knows the IDs and watts.
-
+// A naive mock catalog to map appliance IDs if needed
 const APPLIANCES_CATALOG = [
   { id: 'fridge', name: 'یخچال', watt: 300, defaultHours: 24 },
   { id: 'split_ac', name: 'کولر گازی', watt: 2000, defaultHours: 8 },
@@ -35,31 +49,30 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.GEMINI_API_KEY) {
     return res.status(500).json({ reply: "کلید API تنظیم نشده است.", needsClarification: "کلید API تنظیم نشده است." });
+  }
+
+  const ai = getAiClient();
+  if (!ai) {
+    return res.status(500).json({ reply: "سرویس هوش مصنوعی در دسترس نیست." });
   }
 
   try {
     // 1. Extract Patch
-    const extractRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: `${SYSTEM_PROMPT_EXTRACT}` }] },
-        contents: [].map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-        generationConfig: {
-            temperature: 0.2,
-            responseMimeType: "application/json"
-        }
-      }),
+    const extractResponse = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: [
+        { role: 'user', parts: [{ text: `پیام کاربر:\n${message}\n\nورودی قبلی:\n${JSON.stringify(previousInput)}` }] }
+      ],
+      config: {
+        systemInstruction: SYSTEM_PROMPT_EXTRACT,
+        temperature: 0.2,
+        responseMimeType: "application/json"
+      }
     });
 
-    if (!extractRes.ok) throw new Error("Extract API failed");
-    const extractData = await extractRes.json();
-    let extractText = extractData.content[0].text;
-    
+    let extractText = extractResponse.text || "{}";
     // parse JSON
     const jsonMatch = extractText.match(/\{[\s\S]*\}/);
     if (jsonMatch) extractText = jsonMatch[0];
@@ -114,25 +127,23 @@ export default async function handler(req, res) {
     const updatedResult = ruleRes.engineResult;
 
     // 4. Generate Diff Summary
-    const diffRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: `${SYSTEM_PROMPT_DIFF}` }] },
-        contents: [].map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-        generationConfig: {
-            temperature: 0.2,
-            responseMimeType: "application/json"
-        }
-      }),
-    });
-
     let reply = "محاسبات با موفقیت بروزرسانی شد.";
-    if (diffRes.ok) {
-      const diffData = await diffRes.json();
-      reply = diffData.content[0].text;
+    try {
+      const diffResponse = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: [
+          { role: 'user', parts: [{ text: `نتیجه قبلی:\n${JSON.stringify(previousResult)}\n\nنتیجه جدید:\n${JSON.stringify(updatedResult)}` }] }
+        ],
+        config: {
+          systemInstruction: SYSTEM_PROMPT_DIFF,
+          temperature: 0.2
+        }
+      });
+      if (diffResponse.text) {
+        reply = diffResponse.text.trim();
+      }
+    } catch (diffErr) {
+      console.warn("Diff generation warning:", diffErr);
     }
 
     // Calculate diff for frontend

@@ -1,6 +1,13 @@
 import { GoogleGenAI } from '@google/genai';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    }
+  }
+});
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -20,6 +27,7 @@ Panel size: 2.2m x 1.1m.
 Row spacing: 0.5m. Column spacing: 0.1m.
 Generate a valid layout that centers the panels in this area (around 0,0).
 Max 40 panels to avoid overwhelming the JSON.
+
 Format exactly as JSON:
 {
   "recommendationText": "شرح کوتاه در مورد چیدمان پیشنهادی شما به زبان فارسی.",
@@ -30,7 +38,7 @@ Format exactly as JSON:
 Do not use markdown formatting, output pure JSON.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: { temperature: 0.1 }
     });

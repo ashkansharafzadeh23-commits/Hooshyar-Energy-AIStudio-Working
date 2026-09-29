@@ -33,6 +33,7 @@ import SolarAssetsList from './pages/solar-assets/AssetList';
 import SolarAssetDetail from './pages/solar-assets/AssetDetail';
 import MyProjects from './pages/solar-assets/MyProjects';
 import AdminReview from './pages/solar-assets/AdminReview';
+import AdminAdsReview from './pages/solar-assets/AdminAdsReview';
 import SolarAnalysisExperience from './pages/SolarAnalysisExperience';
 import MainLayout from './layouts/MainLayout';
 import { AppProvider } from './context/AppContext';
@@ -80,6 +81,7 @@ export default function App() {
               <Route path="/solar-assets/:id" element={<SolarAssetDetail />} />
               <Route path="/assets/:id" element={<SolarAssetDetail />} />
               <Route path="/admin/solar-assets" element={<AdminReview />} />
+              <Route path="/admin/ads" element={<AdminAdsReview />} />
               <Route path="/solar-planner" element={<SolarPlanner />} />
               <Route path="/target-select" element={<SolarAnalysisExperience />} />
               <Route path="/solar-analysis" element={<SolarAnalysisExperience />} />

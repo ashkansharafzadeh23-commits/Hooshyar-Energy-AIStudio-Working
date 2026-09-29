@@ -13,7 +13,8 @@ import {
   Wrench,
   Box,
   Briefcase,
-  ShieldCheck
+  ShieldCheck,
+  Megaphone
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -202,25 +203,47 @@ export const MobileBottomNav: React.FC = () => {
 
             {/* Action 6 (Conditional): Admin Review & Approval */}
             {isAdmin && (
-              <button
-                onClick={() => handleAction('/admin/solar-assets')}
-                className="w-full flex items-center justify-between p-4 rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/60 dark:bg-amber-950/20 hover:bg-amber-100/60 transition-all text-right group"
-              >
-                <div className="flex items-center gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                    <ShieldCheck size={22} />
+              <>
+                <button
+                  onClick={() => handleAction('/admin/solar-assets')}
+                  className="w-full flex items-center justify-between p-4 rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/60 dark:bg-amber-950/20 hover:bg-amber-100/60 transition-all text-right group"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                      <ShieldCheck size={22} />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                        تأیید و بررسی پرونده‌ها (مدیر سامانه)
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        بررسی فنی، استعلام و تأیید مدارک نیروگاه‌های ثبت‌شده
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
-                      تأیید و بررسی پرونده‌ها (مدیر سامانه)
-                    </h4>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      بررسی فنی، استعلام و تأیید مدارک نیروگاه‌های ثبت‌شده
-                    </p>
+                  <ArrowRight size={18} className="text-slate-400 rotate-180 group-hover:-translate-x-1 transition-transform shrink-0" />
+                </button>
+
+                <button
+                  onClick={() => handleAction('/admin/ads')}
+                  className="w-full flex items-center justify-between p-4 rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/60 dark:bg-amber-950/20 hover:bg-amber-100/60 transition-all text-right group mt-3"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                      <Megaphone size={22} />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                        مدیریت و تأیید آگهی‌های تبلیغاتی
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        بررسی و فعال‌سازی کمپین‌های تبلیغاتی همکاران
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <ArrowRight size={18} className="text-slate-400 rotate-180 group-hover:-translate-x-1 transition-transform shrink-0" />
-              </button>
+                  <ArrowRight size={18} className="text-slate-400 rotate-180 group-hover:-translate-x-1 transition-transform shrink-0" />
+                </button>
+              </>
             )}
           </div>
         </div>

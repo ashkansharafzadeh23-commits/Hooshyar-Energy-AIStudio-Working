@@ -1,19 +1,76 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Megaphone, Image as ImageIcon, Video, Link as LinkIcon, CheckCircle, CreditCard } from 'lucide-react';
+import { ArrowLeft, Megaphone, Image as ImageIcon, Video, Link as LinkIcon, CheckCircle, CreditCard, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
 
 export default function AdsPortal() {
   const navigate = useNavigate();
+  const { user, token, isAuthenticated } = useAuth();
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [adType, setAdType] = useState('banner'); // banner, video
+  const [selectedPlan, setSelectedPlan] = useState<'bronze' | 'silver' | 'gold'>('silver');
+  const [title, setTitle] = useState('');
+  const [linkTo, setLinkTo] = useState('');
+  const [imageUrl, setImageUrl] = useState('https://images.unsplash.com/photo-1509391366360-120953a15443?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80');
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitted(true);
-    setTimeout(() => {
-      navigate('/');
-    }, 3000);
+    setErrorMessage(null);
+
+    const authToken = token || localStorage.getItem('token');
+    if (!isAuthenticated && !authToken) {
+      setErrorMessage('جهت ثبت آگهی، ابتدا باید وارد حساب کاربری همکاران شوید.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const placementMap: Record<string, string> = {
+        bronze: 'sidebar',
+        silver: 'card',
+        gold: 'banner'
+      };
+
+      const planIdMap: Record<string, string> = {
+        bronze: 'ad_plan_basic',
+        silver: 'ad_plan_silver',
+        gold: 'ad_plan_gold'
+      };
+
+      const res = await fetch('/api/ads/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+        },
+        body: JSON.stringify({
+          title,
+          imageUrl,
+          linkTo: linkTo || undefined,
+          placement: placementMap[selectedPlan] || 'banner',
+          planId: planIdMap[selectedPlan] || 'ad_plan_basic',
+          startDate: new Date().toISOString(),
+          endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.message || 'خطا در ثبت آگهی');
+      }
+
+      setIsSubmitted(true);
+      setTimeout(() => {
+        navigate('/');
+      }, 3000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'خطا در برقراری ارتباط با سرور.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (isSubmitted) {
@@ -37,7 +94,6 @@ export default function AdsPortal() {
     <div className="min-h-screen bg-[#F7F8FA] font-Vazirmatn p-4 md:p-6 pb-24">
       <div className="max-w-3xl mx-auto space-y-6">
         <header className="flex items-center justify-between mb-8">
-          
           <h1 className="text-2xl sm:text-3xl font-black text-[#1A1D23] flex items-center gap-3">
             <div className="p-2 bg-purple-100 rounded-xl text-purple-600">
               <Megaphone size={24} />
@@ -50,6 +106,13 @@ export default function AdsPortal() {
           <div className="p-6 md:p-8">
             <p className="text-gray-600 mb-8">با ثبت بنر یا ویدیو تبلیغاتی، برند و خدمات خود را در معرض دید هزاران کاربر علاقه‌مند به سیستم‌های انرژی خورشیدی قرار دهید.</p>
             
+            {errorMessage && (
+              <div className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm font-bold flex items-center gap-2">
+                <AlertCircle size={18} className="shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-8">
               {/* Ad Type Selection */}
               <div className="grid grid-cols-2 gap-4">
@@ -89,12 +152,26 @@ export default function AdsPortal() {
               <div className="space-y-5">
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">عنوان تبلیغ</label>
-                  <input required type="text" className="w-full px-5 py-4 rounded-xl border border-gray-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all font-medium text-gray-800" placeholder="مثال: فروش ویژه پنل‌های ۵۵۰ وات با تخفیف پاییزه" />
+                  <input 
+                    required 
+                    type="text" 
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="w-full px-5 py-4 rounded-xl border border-gray-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all font-medium text-gray-800" 
+                    placeholder="مثال: فروش ویژه پنل‌های ۵۵۰ وات با تخفیف پاییزه" 
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">لینک ارجاع (اختیاری)</label>
                   <div className="relative">
-                    <input type="url" dir="ltr" className="w-full px-5 py-4 pl-12 rounded-xl border border-gray-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all font-medium text-gray-800 text-right" placeholder="https://..." />
+                    <input 
+                      type="url" 
+                      dir="ltr" 
+                      value={linkTo}
+                      onChange={(e) => setLinkTo(e.target.value)}
+                      className="w-full px-5 py-4 pl-12 rounded-xl border border-gray-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all font-medium text-gray-800 text-right" 
+                      placeholder="https://..." 
+                    />
                     <LinkIcon className="absolute left-4 top-4 text-gray-400" size={20} />
                   </div>
                 </div>
@@ -104,18 +181,27 @@ export default function AdsPortal() {
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-3">پلن نمایش</label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="border border-gray-200 rounded-2xl p-5 hover:border-purple-500 cursor-pointer transition-colors relative bg-white flex flex-col h-full">
+                  <div 
+                    onClick={() => setSelectedPlan('bronze')}
+                    className={`border rounded-2xl p-5 cursor-pointer transition-colors relative bg-white flex flex-col h-full ${selectedPlan === 'bronze' ? 'border-2 border-purple-600 bg-purple-50 shadow-md' : 'border-gray-200 hover:border-purple-500'}`}
+                  >
                     <h4 className="font-bold text-gray-800">برنزی</h4>
                     <p className="text-sm text-gray-500 mt-1 mb-4 flex-1">نمایش در صفحات داخلی و لیست همکاران</p>
                     <div className="font-black text-lg text-purple-700">۱۰,۰۰۰,۰۰۰ <span className="text-sm font-normal text-gray-500">تومان / ماه</span></div>
                   </div>
-                  <div className="border-2 border-purple-600 rounded-2xl p-5 cursor-pointer transition-colors relative bg-purple-50 shadow-md flex flex-col h-full">
+                  <div 
+                    onClick={() => setSelectedPlan('silver')}
+                    className={`border rounded-2xl p-5 cursor-pointer transition-colors relative flex flex-col h-full ${selectedPlan === 'silver' ? 'border-2 border-purple-600 bg-purple-50 shadow-md' : 'border-gray-200 hover:border-purple-500 bg-white'}`}
+                  >
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-xs font-bold px-3 py-1 rounded-full">پیشنهاد ویژه</div>
                     <h4 className="font-bold text-purple-900">نقره‌ای</h4>
                     <p className="text-sm text-purple-700/80 mt-1 mb-4 flex-1">نمایش در داشبورد تعمیرات و صفحه نتایج</p>
                     <div className="font-black text-lg text-purple-800">۱۵,۰۰۰,۰۰۰ <span className="text-sm font-normal text-purple-600">تومان / ماه</span></div>
                   </div>
-                  <div className="border border-gray-200 rounded-2xl p-5 hover:border-purple-500 cursor-pointer transition-colors relative bg-white flex flex-col h-full">
+                  <div 
+                    onClick={() => setSelectedPlan('gold')}
+                    className={`border rounded-2xl p-5 cursor-pointer transition-colors relative flex flex-col h-full ${selectedPlan === 'gold' ? 'border-2 border-purple-600 bg-purple-50 shadow-md' : 'border-gray-200 hover:border-purple-500 bg-white'}`}
+                  >
                     <h4 className="font-bold text-gray-800">طلایی</h4>
                     <p className="text-sm text-gray-500 mt-1 mb-4 flex-1">نمایش در صفحه اصلی، ابزار سه‌بعدی و نتایج (بالاترین شانس دیده شدن)</p>
                     <div className="font-black text-lg text-purple-700">۲۰,۰۰۰,۰۰۰ <span className="text-sm font-normal text-gray-500">تومان / ماه</span></div>
@@ -124,9 +210,13 @@ export default function AdsPortal() {
               </div>
 
               <div className="pt-6 border-t border-gray-100">
-                <button type="submit" className="w-full flex items-center justify-center gap-3 bg-gray-900 text-white py-5 rounded-2xl text-lg font-bold hover:bg-purple-700 transition-colors shadow-lg">
+                <button 
+                  type="submit" 
+                  disabled={submitting}
+                  className="w-full flex items-center justify-center gap-3 bg-gray-900 text-white py-5 rounded-2xl text-lg font-bold hover:bg-purple-700 transition-colors shadow-lg disabled:opacity-50"
+                >
                   <CreditCard size={24} />
-                  پرداخت و ثبت نهایی آگهی
+                  {submitting ? 'در حال ارسال اطلاعات...' : 'پرداخت و ثبت نهایی آگهی'}
                 </button>
               </div>
             </form>

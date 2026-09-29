@@ -92,7 +92,14 @@ export const aiExecutiveAssistantService = {
     if (apiKey) {
       try {
         const { GoogleGenAI } = await import('@google/genai');
-        const ai = new GoogleGenAI({ apiKey });
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: {
+            headers: {
+              'User-Agent': 'aistudio-build',
+            }
+          }
+        });
         
         const systemPrompt = `You are Hooshyar Energy's Executive Solar Portfolio AI Assistant.
 Analyze ONLY the verified factual data provided below.
@@ -117,7 +124,7 @@ STRICT RULES:
         const response = await externalCircuitBreakers.geminiAi.execute(async () => {
           return await executeWithTimeout(
             () => ai.models.generateContent({
-              model: 'gemini-2.5-flash',
+              model: 'gemini-3.8-flash',
               contents: prompt
             }),
             'GEMINI_AI',

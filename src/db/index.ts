@@ -140,6 +140,9 @@ export interface Ad {
   status: "pending_review" | "active" | "expired" | "rejected";
   planId: string;
   createdAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
 }
 
 export interface AnalysisHistory {
@@ -1146,6 +1149,27 @@ export const db: any = {
     const ads = readDB().ads.filter(a => a.status === "active");
     if (placement) return ads.filter(a => a.placement === placement);
     return ads;
+  },
+  getAllAds: (status?: string) => {
+    const ads = readDB().ads;
+    if (status) return ads.filter(a => a.status === status);
+    return ads;
+  },
+  getAdById: (id: string) => {
+    return readDB().ads.find(a => a.id === id) || null;
+  },
+  updateAdStatus: (id: string, status: "pending_review" | "active" | "expired" | "rejected", metadata?: { reviewedBy?: string; reviewedAt?: string; rejectionReason?: string }) => {
+    const data = readDB();
+    const idx = data.ads.findIndex(a => a.id === id);
+    if (idx !== -1) {
+      data.ads[idx].status = status;
+      if (metadata?.reviewedBy) data.ads[idx].reviewedBy = metadata.reviewedBy;
+      if (metadata?.reviewedAt) data.ads[idx].reviewedAt = metadata.reviewedAt;
+      if (metadata?.rejectionReason !== undefined) data.ads[idx].rejectionReason = metadata.rejectionReason;
+      writeDB(data);
+      return data.ads[idx];
+    }
+    return null;
   },
   createAd: (ad: Omit<Ad, "id" | "createdAt" | "status">) => {
     const data = readDB();

@@ -5,7 +5,14 @@ import { getSunHoursForCity } from '../lib/solarIrradiance.js';
 let aiClient = null;
 function getAiClient() {
   if (!aiClient && process.env.GEMINI_API_KEY) {
-    aiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    aiClient = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
   }
   return aiClient;
 }
@@ -106,7 +113,7 @@ Return your response strictly as a JSON object with this exact structure (no mar
         contents[0].parts.push({ text: visionPrompt });
 
         const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.8-flash',
           contents: contents,
           config: {
             temperature: 0.1
