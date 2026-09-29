@@ -27,14 +27,7 @@ import {
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 import { ProjectRFQ, EPCBid } from '../types/rfq.js';
 import { Organization } from '../types/organization.js';
-
-const mockData = [
-  { name: 'فروردین', projects: 2, income: 400 },
-  { name: 'اردیبهشت', projects: 3, income: 600 },
-  { name: 'خرداد', projects: 2, income: 500 },
-  { name: 'تیر', projects: 5, income: 900 },
-  { name: 'مرداد', projects: 4, income: 750 },
-];
+import { EnergyProject } from '../types/project.js';
 
 export default function ContractorDashboard() {
   const [activeTab, setActiveTab] = useState('rfqs');
@@ -47,6 +40,7 @@ export default function ContractorDashboard() {
   const [epcOrgs, setEpcOrgs] = useState<Organization[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState<string>('org_epc_001');
   const [myBids, setMyBids] = useState<EPCBid[]>([]);
+  const [contractorProjects, setContractorProjects] = useState<EnergyProject[]>([]);
   
   // Submit Bid Modal
   const [biddingRfq, setBiddingRfq] = useState<ProjectRFQ | null>(null);
@@ -96,6 +90,20 @@ export default function ContractorDashboard() {
       if (rfqRes.ok) {
         const rfqs = await rfqRes.json();
         setOpenRfqs(Array.isArray(rfqs) ? rfqs : []);
+      }
+
+      // Fetch contractor's submitted bids
+      const bidsRes = await fetch('/api/rfq/bids/my', { headers });
+      if (bidsRes.ok) {
+        const bids = await bidsRes.json();
+        setMyBids(Array.isArray(bids) ? bids : []);
+      }
+
+      // Fetch contractor's assigned/membered projects
+      const prjRes = await fetch('/api/projects', { headers });
+      if (prjRes.ok) {
+        const prjs = await prjRes.json();
+        setContractorProjects(Array.isArray(prjs) ? prjs : []);
       }
 
       // Fetch verified EPC orgs
@@ -578,33 +586,86 @@ export default function ContractorDashboard() {
                     <Briefcase size={20} />
                   </div>
                 </div>
-                <div className="text-3xl font-black text-gray-800">۲</div>
+                <div className="text-3xl font-black text-gray-800">
+                  {contractorProjects.filter(p => ['IN_PROGRESS', 'EPC_CONTRACT', 'INSTALLATION', 'EPC_SELECTED'].includes(p.status)).length}
+                </div>
               </div>
 
               <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-gray-600">امتیاز کیفی EPC</h3>
+                  <h3 className="font-bold text-gray-600">وضعیت احراز صلاحیت EPC</h3>
                   <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center">
-                    <Star size={20} />
+                    <ShieldCheck size={20} />
                   </div>
                 </div>
-                <div className="text-3xl font-black text-gray-800">۴.۸</div>
+                <div className="text-2xl font-black text-gray-800">
+                  {currentOrg?.verificationStatus === 'VERIFIED'
+                    ? 'تأییدشده'
+                    : currentOrg?.verificationStatus === 'REJECTED'
+                    ? 'رد شده'
+                    : currentOrg?.verificationStatus === 'NOT_VERIFIED'
+                    ? 'احراز نشده'
+                    : 'در انتظار بررسی'}
+                </div>
               </div>
             </div>
 
             <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-              <h3 className="font-bold text-gray-800 mb-6">روند درآمد و پروژه‌ها (شش ماه اخیر)</h3>
-              <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={mockData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                    <XAxis dataKey="name" stroke="#a0aec0" />
-                    <YAxis stroke="#a0aec0" />
-                    <Tooltip />
-                    <Area type="monotone" dataKey="income" stroke="#f59e0b" fill="#fef3c7" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+              <h3 className="font-bold text-gray-800 mb-6">روند ماهانه پیشنهادات و پروژه‌ها (شش ماه اخیر)</h3>
+              {(() => {
+                // Dynamically build real 6-month time series from persisted contractor projects and submitted bids
+                const monthNames = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
+                const now = new Date();
+                const past6Months = Array.from({ length: 6 }, (_, i) => {
+                  const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+                  const jDate = new Intl.DateTimeFormat('fa-IR', { month: 'long' }).format(d);
+                  return {
+                    name: jDate,
+                    year: d.getFullYear(),
+                    month: d.getMonth(),
+                    projects: 0,
+                    bids: 0
+                  };
+                });
+
+                contractorProjects.forEach(p => {
+                  const pDate = new Date(p.createdAt);
+                  const match = past6Months.find(m => m.year === pDate.getFullYear() && m.month === pDate.getMonth());
+                  if (match) match.projects += 1;
+                });
+
+                myBids.forEach(b => {
+                  const bDate = new Date(b.submittedAt);
+                  const match = past6Months.find(m => m.year === bDate.getFullYear() && m.month === bDate.getMonth());
+                  if (match) match.bids += 1;
+                });
+
+                const totalActivity = past6Months.reduce((sum, m) => sum + m.projects + m.bids, 0);
+
+                if (totalActivity === 0) {
+                  return (
+                    <div className="h-48 flex flex-col items-center justify-center text-gray-400 gap-2">
+                      <TrendingUp size={32} className="text-gray-300" />
+                      <p className="text-xs">هنوز داده‌های عملکردی برای نمایش نمودار ماهانه ثبت نشده است (صفر پروژه و پیشنهاد)</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="h-72 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={past6Months}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                        <XAxis dataKey="name" stroke="#a0aec0" />
+                        <YAxis stroke="#a0aec0" allowDecimals={false} />
+                        <Tooltip />
+                        <Area type="monotone" name="پیشنهادات ارسالی" dataKey="bids" stroke="#3b82f6" fill="#dbeafe" />
+                        <Area type="monotone" name="پروژه‌های اجرایی" dataKey="projects" stroke="#10b981" fill="#d1fae5" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })()}
             </div>
           </motion.div>
         )}

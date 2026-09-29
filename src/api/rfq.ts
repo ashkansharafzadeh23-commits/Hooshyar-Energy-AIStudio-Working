@@ -42,6 +42,31 @@ router.get('/project/:projectId', (req, res) => {
   res.json(visibleRfqs);
 });
 
+// 1.5 GET /api/rfq/bids/my
+// Returns all bids submitted by the current authenticated EPC contractor/user
+router.get('/bids/my', (req, res) => {
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const userOrg = getUserOrganization(user.id);
+  const orgId = userOrg?.id;
+
+  // Find all bids where epcOrganizationId matches user organization OR submittedBy is user.id
+  const allRfqs = rfqRepository.getAllRFQs();
+  const allBids: EPCBid[] = [];
+  
+  for (const rfq of allRfqs) {
+    const bids = rfqRepository.getBidsByRfqId(rfq.id);
+    for (const b of bids) {
+      if ((orgId && b.epcOrganizationId === orgId) || (b as any).submittedByUserId === user.id) {
+        allBids.push(b);
+      }
+    }
+  }
+
+  res.json(allBids);
+});
+
 // 2. GET /api/rfq/opportunities/open
 // For EPC Contractors to view RFQs open for bidding
 router.get('/opportunities/open', (req, res) => {
