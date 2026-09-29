@@ -57,6 +57,17 @@ export interface IntegrationsStatus {
   };
 }
 
+export interface ObjectStorageConfig {
+  endpoint?: string;
+  region: string;
+  bucket: string;
+  accessKey?: string;
+  secretKey?: string;
+  forcePathStyle: boolean;
+  signedUrlTtlSeconds: number;
+  isConfigured: boolean;
+}
+
 export interface EnvironmentConfig {
   env: AppEnvironment;
   isProduction: boolean;
@@ -67,6 +78,7 @@ export interface EnvironmentConfig {
   auth: AuthConfig;
   cors: CorsConfig;
   bodyLimit: string;
+  objectStorage: ObjectStorageConfig;
   integrations: IntegrationsStatus;
 }
 
@@ -204,6 +216,28 @@ export function validateEnvironment(customEnv?: NodeJS.ProcessEnv): ValidationRe
     }
   };
 
+  // 6. Object Storage Configuration (S3-Compatible)
+  const osBucket = envSource.OBJECT_STORAGE_BUCKET || '';
+  const osAccessKey = envSource.OBJECT_STORAGE_ACCESS_KEY || '';
+  const osSecretKey = envSource.OBJECT_STORAGE_SECRET_KEY || '';
+  const osRegion = envSource.OBJECT_STORAGE_REGION || 'us-east-1';
+  const osEndpoint = envSource.OBJECT_STORAGE_ENDPOINT || undefined;
+  const osForcePathStyle = envSource.OBJECT_STORAGE_FORCE_PATH_STYLE === 'true';
+  const osTtlSeconds = parseInt(envSource.OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS || '300', 10);
+
+  const osConfigured = Boolean(osBucket && osAccessKey && osSecretKey);
+
+  const objectStorage: ObjectStorageConfig = {
+    endpoint: osEndpoint,
+    region: osRegion,
+    bucket: osBucket,
+    accessKey: osAccessKey || undefined,
+    secretKey: osSecretKey || undefined,
+    forcePathStyle: osForcePathStyle,
+    signedUrlTtlSeconds: isNaN(osTtlSeconds) || osTtlSeconds <= 0 ? 300 : osTtlSeconds,
+    isConfigured: osConfigured
+  };
+
   const config: EnvironmentConfig = {
     env,
     isProduction,
@@ -214,6 +248,7 @@ export function validateEnvironment(customEnv?: NodeJS.ProcessEnv): ValidationRe
     auth,
     cors,
     bodyLimit: envSource.BODY_LIMIT || '10mb',
+    objectStorage,
     integrations
   };
 
