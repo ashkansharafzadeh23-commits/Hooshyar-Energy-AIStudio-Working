@@ -48,6 +48,7 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
   const [verifyActionPass, setVerifyActionPass] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
@@ -56,6 +57,37 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
       ...(token ? { Authorization: `Bearer ${token}` } : {})
     };
   };
+
+  // Helper to fetch signed download URL on demand
+  const fetchSignedUrl = async (att: CaseAttachment) => {
+    if (signedUrls[att.id]) return signedUrls[att.id];
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/cases/${caseId}/attachments/${att.id}/download`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.downloadUrl) {
+          setSignedUrls(prev => ({ ...prev, [att.id]: data.downloadUrl }));
+          return data.downloadUrl;
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching signed URL:', e);
+    }
+    return att.url || att.data || '';
+  };
+
+  useEffect(() => {
+    if (attachments.length > 0) {
+      attachments.forEach(att => {
+        if (att.storageProvider === 'S3_COMPATIBLE' || att.storageKey) {
+          fetchSignedUrl(att);
+        }
+      });
+    }
+  }, [attachments, caseId]);
 
   useEffect(() => {
     fetchCaseDetails();
@@ -484,7 +516,8 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
             {attachments.map((att, idx) => {
               const isPhoto = att.type === 'PHOTO' || (att.name && att.name.match(/\.(jpg|jpeg|png|webp)$/i));
               const isBill = att.type === 'BILL';
-              const hasUrl = !!(att.url || att.data);
+              const effectiveUrl = signedUrls[att.id] || (att.storageProvider === 'S3_COMPATIBLE' ? '' : (att.url || att.data || ''));
+              const hasUrl = Boolean(effectiveUrl);
 
               return (
                 <div key={att.id || idx} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col justify-between space-y-2.5">
@@ -532,7 +565,7 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
                   {isPhoto && hasUrl && (
                     <div className="w-full h-28 rounded-xl overflow-hidden bg-slate-200 border border-slate-200">
                       <img
-                        src={att.url || att.data}
+                        src={effectiveUrl}
                         alt={att.name}
                         className="w-full h-full object-cover"
                         onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
@@ -541,9 +574,9 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
                   )}
 
                   {/* Download / View link */}
-                  {hasUrl && (
+                  {hasUrl ? (
                     <a
-                      href={att.url || att.data}
+                      href={effectiveUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-[11px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 self-end pt-1"
@@ -551,7 +584,16 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
                       <span>مشاهده فایل</span>
                       <ExternalLink size={12} />
                     </a>
-                  )}
+                  ) : (att.storageProvider === 'S3_COMPATIBLE' || att.storageKey) ? (
+                    <button
+                      type="button"
+                      onClick={() => fetchSignedUrl(att)}
+                      className="text-[11px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 self-end pt-1"
+                    >
+                      <span>دریافت لینک امن</span>
+                      <ExternalLink size={12} />
+                    </button>
+                  ) : null}
                 </div>
               );
             })}

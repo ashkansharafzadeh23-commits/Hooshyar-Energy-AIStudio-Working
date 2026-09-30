@@ -19,8 +19,17 @@ import {
   MaintenanceAction,
   MaintenancePriority,
   MaintenanceStatus,
-  AssetMaintenanceHistoryItem
+  AssetMaintenanceHistoryItem,
+  CaseAttachment
 } from '../types/maintenance.js';
+import {
+  getFileStorageService,
+  handleMultipartUpload,
+  validateBinaryFile,
+  generateStorageKey,
+  sanitizeOriginalFilename,
+  FileValidationError
+} from '../storage/index.js';
 
 export const maintenanceRouter = express.Router();
 
@@ -1433,8 +1442,281 @@ maintenanceRouter.get(['/maintenance/:maintenanceCaseId/attachments', '/cases/:m
 });
 
 /**
+ * POST /api/maintenance/:maintenanceCaseId/attachments/upload, /api/cases/:maintenanceCaseId/attachments/upload
+ * Real multipart photo upload to S3-compatible private storage with binary validation and rollback on metadata failure.
+ */
+maintenanceRouter.post(
+  ['/maintenance/:maintenanceCaseId/attachments/upload', '/cases/:maintenanceCaseId/attachments/upload'],
+  handleMultipartUpload,
+  async (req: Request, res: Response) => {
+    const user = req.user;
+    if (!user || !user.id) {
+      return res.status(401).json({ error: 'احراز هویت الزامی است.' });
+    }
+
+    const caseId = getParam(req.params.maintenanceCaseId);
+    const mCase = maintenanceRepository.getCaseById(caseId);
+    if (!mCase) {
+      return res.status(404).json({ error: 'پرونده تعمیراتی یافت نشد.' });
+    }
+
+    const caseAccess = checkCaseAccess(mCase, user);
+    if (!caseAccess.allowed) {
+      return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
+    }
+
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'هیچ فایلی برای بارگذاری ارسال نشده است.' });
+    }
+
+    // Check storage configuration first (fail closed)
+    const storageService = getFileStorageService();
+    if (!storageService.isConfigured()) {
+      return res.status(503).json({
+        code: 'STORAGE_NOT_CONFIGURED',
+        error: 'سرویس ذخیره‌سازی ابری پیکربندی نشده است.'
+      });
+    }
+
+    // 1. Binary file validation: only JPEG, PNG, WebP allowed (max 5 MB)
+    let validationResult;
+    try {
+      validationResult = validateBinaryFile(file.buffer, file.originalname, file.mimetype, {
+        allowedTypes: ['IMAGE'],
+        maxImageSizeBytes: 5 * 1024 * 1024
+      });
+    } catch (err: any) {
+      if (err instanceof FileValidationError) {
+        return res.status(err.statusCode || 400).json({
+          code: err.code,
+          error: err.message
+        });
+      }
+      return res.status(400).json({
+        code: 'FILE_VALIDATION_ERROR',
+        error: err.message || 'اعتبارسنجی تصویر ناموفق بود.'
+      });
+    }
+
+    // 2. Generate secure non-guessable storage key (server-generated, no original filename)
+    const storageKey = generateStorageKey({
+      scope: 'maintenance',
+      entityId: caseId,
+      category: 'PHOTO',
+      extension: validationResult.extension
+    });
+
+    const sanitizedFilename = validationResult.sanitizedFilename || sanitizeOriginalFilename(file.originalname);
+
+    // 3. Upload object to private storage
+    try {
+      await storageService.putObject({
+        key: storageKey,
+        body: file.buffer,
+        contentType: validationResult.detectedMimeType,
+        contentLength: validationResult.sizeBytes,
+        metadata: {
+          caseId,
+          uploadedByUserId: user.id,
+          originalFilename: sanitizedFilename,
+          sha256: validationResult.checksumSha256
+        }
+      });
+    } catch (err: any) {
+      console.error('Storage putObject failed for maintenance photo:', err);
+      return res.status(502).json({
+        code: 'STORAGE_UPLOAD_FAILED',
+        error: 'خطا در بارگذاری تصویر به فضای ذخیره‌سازی ابری'
+      });
+    }
+
+    // 4. Persist metadata in DB with compensating rollback on failure
+    const attachmentId = `att-photo-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const newAttachment: CaseAttachment = {
+      id: attachmentId,
+      maintenanceCaseId: caseId,
+      name: sanitizedFilename,
+      originalFilename: sanitizedFilename,
+      type: 'PHOTO',
+      url: `/api/cases/${caseId}/attachments/${attachmentId}/download`,
+      storageProvider: 'S3_COMPATIBLE',
+      storageKey,
+      checksumSha256: validationResult.checksumSha256,
+      mimeType: validationResult.detectedMimeType,
+      sizeBytes: validationResult.sizeBytes,
+      status: 'UPLOADED',
+      uploadedBy: user.id,
+      uploadedAt: new Date().toISOString()
+    };
+
+    try {
+      const updatedAttachments = [...(mCase.attachments || []), newAttachment];
+      const updated = maintenanceRepository.updateCase(caseId, { attachments: updatedAttachments });
+      if (!updated) {
+        throw new Error('Failed to update maintenance case attachments in database');
+      }
+    } catch (persistErr: any) {
+      console.error('Photo metadata persistence failed, executing rollback delete:', persistErr);
+      try {
+        await storageService.deleteObject(storageKey);
+      } catch (cleanupErr) {
+        console.error('Compensating rollback delete failed for key:', storageKey, cleanupErr);
+      }
+      return res.status(500).json({
+        code: 'METADATA_PERSISTENCE_FAILED',
+        error: 'خطا در ذخیره‌سازی اطلاعات تصویر در پایگاه داده'
+      });
+    }
+
+    // Return safe attachment metadata (omit storageKey from client payload)
+    const { storageKey: _omittedKey, ...safeAttachment } = newAttachment as any;
+    return res.status(201).json(safeAttachment);
+  }
+);
+
+/**
+ * GET /api/maintenance/:maintenanceCaseId/attachments/:attachmentId/download, /api/cases/:maintenanceCaseId/attachments/:attachmentId/download
+ * Generate short-lived signed download URL for an authorized attachment.
+ */
+maintenanceRouter.get(
+  ['/maintenance/:maintenanceCaseId/attachments/:attachmentId/download', '/cases/:maintenanceCaseId/attachments/:attachmentId/download'],
+  async (req: Request, res: Response) => {
+    const user = req.user;
+    if (!user || !user.id) {
+      return res.status(401).json({ error: 'احراز هویت الزامی است.' });
+    }
+
+    const caseId = getParam(req.params.maintenanceCaseId);
+    const attachmentId = getParam(req.params.attachmentId);
+
+    const mCase = maintenanceRepository.getCaseById(caseId);
+    if (!mCase) {
+      return res.status(404).json({ error: 'پرونده تعمیراتی یافت نشد.' });
+    }
+
+    const caseAccess = checkCaseAccess(mCase, user);
+    if (!caseAccess.allowed) {
+      return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
+    }
+
+    const attachment = (mCase.attachments || []).find(a => a.id === attachmentId);
+    if (!attachment) {
+      return res.status(404).json({ error: 'پیوست مورد نظر یافت نشد.' });
+    }
+
+    // Cross-case verification
+    if (attachment.maintenanceCaseId && attachment.maintenanceCaseId !== caseId) {
+      return res.status(404).json({ error: 'پیوست متعلق به این پرونده نیست.' });
+    }
+
+    // Legacy external URL
+    if (attachment.storageProvider === 'EXTERNAL_URL' || (!attachment.storageProvider && !attachment.storageKey)) {
+      return res.json({
+        downloadUrl: attachment.url || '',
+        storageProvider: 'EXTERNAL_URL',
+        expiresIn: null
+      });
+    }
+
+    // S3-compatible private object download
+    const storageService = getFileStorageService();
+    if (!storageService.isConfigured()) {
+      return res.status(503).json({
+        code: 'STORAGE_NOT_CONFIGURED',
+        error: 'سرویس ذخیره‌سازی ابری پیکربندی نشده است.'
+      });
+    }
+
+    if (!attachment.storageKey) {
+      return res.status(404).json({ error: 'شناسه ذخیره‌سازی فایل یافت نشد.' });
+    }
+
+    try {
+      const signedUrl = await storageService.getSignedDownloadUrl({
+        key: attachment.storageKey
+      });
+
+      return res.json({
+        downloadUrl: signedUrl,
+        storageProvider: 'S3_COMPATIBLE',
+        expiresIn: 300
+      });
+    } catch (err: any) {
+      console.error('Error generating signed download URL for maintenance photo:', err);
+      return res.status(500).json({
+        code: 'SIGNED_URL_ERROR',
+        error: 'خطا در ایجاد لینک دانلود امن'
+      });
+    }
+  }
+);
+
+/**
+ * DELETE /api/maintenance/:maintenanceCaseId/attachments/:attachmentId, /api/cases/:maintenanceCaseId/attachments/:attachmentId
+ * Authorized deletion of an evidence attachment. S3 object deleted first.
+ */
+maintenanceRouter.delete(
+  ['/maintenance/:maintenanceCaseId/attachments/:attachmentId', '/cases/:maintenanceCaseId/attachments/:attachmentId'],
+  async (req: Request, res: Response) => {
+    const user = req.user;
+    if (!user || !user.id) {
+      return res.status(401).json({ error: 'احراز هویت الزامی است.' });
+    }
+
+    const caseId = getParam(req.params.maintenanceCaseId);
+    const attachmentId = getParam(req.params.attachmentId);
+
+    const mCase = maintenanceRepository.getCaseById(caseId);
+    if (!mCase) {
+      return res.status(404).json({ error: 'پرونده تعمیراتی یافت نشد.' });
+    }
+
+    const caseAccess = checkCaseAccess(mCase, user);
+    if (!caseAccess.allowed) {
+      return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
+    }
+
+    const attachment = (mCase.attachments || []).find(a => a.id === attachmentId);
+    if (!attachment) {
+      return res.status(404).json({ error: 'پیوست مورد نظر یافت نشد.' });
+    }
+
+    // Cross-case verification
+    if (attachment.maintenanceCaseId && attachment.maintenanceCaseId !== caseId) {
+      return res.status(404).json({ error: 'پیوست متعلق به این پرونده نیست.' });
+    }
+
+    // For S3_COMPATIBLE objects: delete object FIRST
+    if (attachment.storageProvider === 'S3_COMPATIBLE' && attachment.storageKey) {
+      const storageService = getFileStorageService();
+      if (storageService.isConfigured()) {
+        try {
+          await storageService.deleteObject(attachment.storageKey);
+        } catch (err: any) {
+          console.error('Failed to delete object from storage:', err);
+          return res.status(502).json({
+            code: 'STORAGE_DELETE_FAILED',
+            error: 'خطا در حذف فایل از فضای ذخیره‌سازی ابری'
+          });
+        }
+      }
+    }
+
+    // Remove metadata from case record
+    const updatedAttachments = (mCase.attachments || []).filter(a => a.id !== attachmentId);
+    const updated = maintenanceRepository.updateCase(caseId, { attachments: updatedAttachments });
+    if (!updated) {
+      return res.status(500).json({ error: 'خطا در حذف پیوست از پایگاه داده' });
+    }
+
+    return res.json({ success: true, id: attachmentId });
+  }
+);
+
+/**
  * POST /api/maintenance/:maintenanceCaseId/attachments, /api/cases/:maintenanceCaseId/attachments
- * Add an evidence attachment to a maintenance case
+ * Add a metadata / external URL attachment to a maintenance case with protocol enforcement.
  */
 maintenanceRouter.post(['/maintenance/:maintenanceCaseId/attachments', '/cases/:maintenanceCaseId/attachments'], (req: Request, res: Response) => {
   const caseId = getParam(req.params.maintenanceCaseId);
@@ -1448,17 +1730,33 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/attachments', '/cases/:
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
-  const { name, type, url, data, mimeType, sizeBytes, status, extractedData } = req.body;
+  const { name, type, url, mimeType, sizeBytes, status, extractedData } = req.body;
   if (!name) {
     return res.status(400).json({ error: 'نام فایل الزامی است.' });
   }
 
-  const newAttachment = {
+  // Validate URL protocol if provided for external URLs
+  let validatedUrl = '';
+  if (typeof url === 'string' && url.trim().length > 0) {
+    const trimmedUrl = url.trim();
+    try {
+      const parsed = new URL(trimmedUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return res.status(400).json({ error: 'تنها پروتکل‌های http و https برای لینک‌های خارجی مجاز هستند.' });
+      }
+      validatedUrl = trimmedUrl;
+    } catch {
+      return res.status(400).json({ error: 'فرمت آدرس اینترنتی (URL) نامعتبر است.' });
+    }
+  }
+
+  const newAttachment: CaseAttachment = {
     id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     maintenanceCaseId: caseId,
     name,
     type: type || 'PHOTO',
-    url: typeof url === 'string' && !url.startsWith('data:') ? url : '',
+    url: validatedUrl,
+    storageProvider: validatedUrl ? 'EXTERNAL_URL' : undefined,
     mimeType,
     sizeBytes,
     status: status || 'UPLOADED',

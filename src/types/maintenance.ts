@@ -228,6 +228,10 @@ export interface CaseAttachment {
   mimeType?: string;
   status?: 'UPLOADED' | 'PROCESSED' | 'FAILED' | 'UNVERIFIED' | 'NOT_PROVIDED' | 'EXTRACTION_AVAILABLE';
   extractedData?: any;
+  storageProvider?: 'S3_COMPATIBLE' | 'EXTERNAL_URL';
+  storageKey?: string;
+  checksumSha256?: string;
+  originalFilename?: string;
 }
 
 export interface MaintenanceCase {

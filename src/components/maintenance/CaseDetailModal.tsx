@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   Wrench, 
@@ -11,9 +11,12 @@ import {
   Plus, 
   Send,
   Loader2,
-  FileCheck
+  FileCheck,
+  Image as ImageIcon,
+  ExternalLink,
+  RefreshCw
 } from 'lucide-react';
-import { MaintenanceCase, MaintenanceAction, MaintenanceActionType } from '../../types/maintenance';
+import { MaintenanceCase, MaintenanceAction, MaintenanceActionType, CaseAttachment } from '../../types/maintenance';
 
 interface CaseDetailModalProps {
   mCase: MaintenanceCase | null;
@@ -56,6 +59,82 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({
 
   // Verification state
   const [isVerifying, setIsVerifying] = useState(false);
+
+  // Evidence Photos State
+  const [attachments, setAttachments] = useState<CaseAttachment[]>([]);
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+  const [loadingPhotos, setLoadingPhotos] = useState<Record<string, boolean>>({});
+  const [photoErrors, setPhotoErrors] = useState<Record<string, string>>({});
+  const [attachmentsLoading, setAttachmentsLoading] = useState(false);
+
+  // Fetch or sync attachments
+  useEffect(() => {
+    if (!mCase) return;
+    if (Array.isArray(mCase.attachments) && mCase.attachments.length > 0) {
+      setAttachments(mCase.attachments);
+    } else {
+      setAttachmentsLoading(true);
+      const token = localStorage.getItem('token');
+      fetch(`/api/cases/${mCase.id}/attachments`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      })
+        .then(res => res.ok ? res.json() : [])
+        .then(data => {
+          if (Array.isArray(data)) {
+            setAttachments(data);
+          }
+        })
+        .catch(err => console.error('Error fetching case attachments:', err))
+        .finally(() => setAttachmentsLoading(false));
+    }
+  }, [mCase?.id]);
+
+  // Request secure temporary signed download URL on demand
+  const fetchSignedUrl = async (att: CaseAttachment, forceRefresh = false) => {
+    if (!mCase) return '';
+    if (!forceRefresh && signedUrls[att.id]) return signedUrls[att.id];
+
+    setLoadingPhotos(prev => ({ ...prev, [att.id]: true }));
+    setPhotoErrors(prev => {
+      const next = { ...prev };
+      delete next[att.id];
+      return next;
+    });
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/cases/${mCase.id}/attachments/${att.id}/download`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.downloadUrl) {
+          setSignedUrls(prev => ({ ...prev, [att.id]: data.downloadUrl }));
+          return data.downloadUrl;
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setPhotoErrors(prev => ({ ...prev, [att.id]: err.error || 'عدم دسترسی به فایل یا خطا در دریافت لینک امن' }));
+      }
+    } catch {
+      setPhotoErrors(prev => ({ ...prev, [att.id]: 'خطا در ارتباط با سرور' }));
+    } finally {
+      setLoadingPhotos(prev => ({ ...prev, [att.id]: false }));
+    }
+    return '';
+  };
+
+  // Auto-fetch signed URLs for S3 photos
+  useEffect(() => {
+    const photos = attachments.filter(a => a.type === 'PHOTO');
+    photos.forEach(att => {
+      if (att.storageProvider === 'S3_COMPATIBLE' || att.storageKey) {
+        if (!signedUrls[att.id] && !loadingPhotos[att.id]) {
+          fetchSignedUrl(att);
+        }
+      }
+    });
+  }, [attachments]);
 
   if (!mCase) return null;
 
@@ -227,6 +306,111 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({
                     {mCase.downtimeMinutes || 0} دقیقه
                   </span>
                 </div>
+              </div>
+
+              {/* Evidence Photos Gallery */}
+              <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <ImageIcon size={15} className="text-blue-600" />
+                    <span>تصاویر و مستندات میدانی عیب‌یابی (Evidence Photos)</span>
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-500">
+                    {attachments.filter(a => a.type === 'PHOTO').length} تصویر
+                  </span>
+                </div>
+
+                {attachmentsLoading ? (
+                  <div className="py-6 text-center space-y-2">
+                    <Loader2 size={20} className="text-blue-600 animate-spin mx-auto" />
+                    <p className="text-[11px] text-slate-500">در حال دریافت تصاویر پیوست...</p>
+                  </div>
+                ) : attachments.filter(a => a.type === 'PHOTO').length === 0 ? (
+                  <p className="text-xs text-slate-400 bg-white p-3.5 rounded-xl border border-dashed border-slate-200 text-center">
+                    هیچ تصویر مستندی برای این پرونده ثبت نشده است.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {attachments.filter(a => a.type === 'PHOTO').map((att, idx) => {
+                      const isS3 = att.storageProvider === 'S3_COMPATIBLE' || Boolean(att.storageKey);
+                      const isLegacyUrl = !isS3 && Boolean(att.url) && (att.url.startsWith('http://') || att.url.startsWith('https://'));
+                      const effectiveUrl = isS3 ? signedUrls[att.id] : isLegacyUrl ? att.url : '';
+                      const isLoadingUrl = loadingPhotos[att.id];
+                      const errorMsg = photoErrors[att.id];
+
+                      return (
+                        <div key={att.id || idx} className="p-3 bg-white rounded-xl border border-slate-200 flex flex-col justify-between space-y-2 shadow-xs">
+                          <div className="flex items-start justify-between gap-1">
+                            <span className="text-xs font-bold text-slate-800 truncate block max-w-[160px]" title={att.name}>
+                              {att.name}
+                            </span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-blue-50 text-blue-700 shrink-0">
+                              {isS3 ? 'S3 خصوصی' : 'لینک خارجی'}
+                            </span>
+                          </div>
+
+                          <div className="w-full h-32 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center relative">
+                            {isLoadingUrl ? (
+                              <div className="flex flex-col items-center gap-1.5 text-slate-400">
+                                <Loader2 size={18} className="animate-spin text-blue-600" />
+                                <span className="text-[10px]">دریافت لینک امن...</span>
+                              </div>
+                            ) : errorMsg ? (
+                              <div className="p-2 text-center space-y-1">
+                                <AlertTriangle size={16} className="text-rose-500 mx-auto" />
+                                <p className="text-[10px] text-rose-600 leading-tight">{errorMsg}</p>
+                                <button
+                                  type="button"
+                                  onClick={() => fetchSignedUrl(att, true)}
+                                  className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1 mx-auto pt-1"
+                                >
+                                  <RefreshCw size={10} />
+                                  <span>تلاش مجدد</span>
+                                </button>
+                              </div>
+                            ) : effectiveUrl ? (
+                              <img
+                                src={effectiveUrl}
+                                alt={att.name}
+                                className="w-full h-full object-cover"
+                                onError={() => {
+                                  setPhotoErrors(prev => ({ ...prev, [att.id]: 'انقضای لینک یا خطای بارگذاری تصویر' }));
+                                }}
+                              />
+                            ) : (
+                              <div className="text-center p-2">
+                                <ImageIcon size={20} className="text-slate-300 mx-auto mb-1" />
+                                <button
+                                  type="button"
+                                  onClick={() => fetchSignedUrl(att, true)}
+                                  className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1 mx-auto"
+                                >
+                                  <RefreshCw size={10} />
+                                  <span>دریافت لینک امن</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[10px] text-slate-400 font-mono">
+                            <span>{att.sizeBytes ? `${Math.round(att.sizeBytes / 1024)} KB` : ''}</span>
+                            {effectiveUrl && (
+                              <a
+                                href={effectiveUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1"
+                              >
+                                <span>اندازه کامل</span>
+                                <ExternalLink size={11} />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}

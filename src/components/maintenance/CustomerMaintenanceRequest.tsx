@@ -66,7 +66,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
   const [priority, setPriority] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'>('MEDIUM');
 
   // Step 3: Photos & Documents
-  const [photos, setPhotos] = useState<{ id: string; name: string; preview: string; base64: string }[]>([]);
+  const [photos, setPhotos] = useState<{ id: string; name: string; preview: string; base64: string; file?: File; mimeType?: string; sizeBytes?: number }[]>([]);
   const [billDoc, setBillDoc] = useState<{
     name: string;
     preview?: string;
@@ -93,6 +93,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
   const [submitting, setSubmitting] = useState(false);
   const [createdCase, setCreatedCase] = useState<MaintenanceCase | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [photoUploadWarning, setPhotoUploadWarning] = useState<string | null>(null);
 
   const commonSymptoms = [
     { id: 'gen_drop', label: 'کاهش ناگهانی یا غیرعادی تولید برق', type: 'PANEL' },
@@ -166,6 +167,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
               name: file.name,
               preview: result,
               base64: base64Data,
+              file,
               mimeType: file.type || 'image/jpeg',
               sizeBytes: file.size
             }
@@ -316,6 +318,58 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
       }
 
       const caseData: MaintenanceCase = await res.json();
+
+      // Post-case creation: upload selected photos to private S3 storage
+      const token = localStorage.getItem('token');
+      let failedUploadCount = 0;
+
+      for (const p of photos) {
+        let fileToUpload: File | Blob | null = p.file || null;
+        if (!fileToUpload && p.base64) {
+          // If file object is not available, convert base64 to Blob
+          try {
+            const byteCharacters = atob(p.base64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            fileToUpload = new Blob([byteArray], { type: p.mimeType || 'image/jpeg' });
+          } catch {
+            fileToUpload = null;
+          }
+        }
+
+        if (fileToUpload) {
+          try {
+            const formData = new FormData();
+            formData.append('file', fileToUpload, p.name || 'photo.jpg');
+
+            const uploadRes = await fetch(`/api/cases/${caseData.id}/attachments/upload`, {
+              method: 'POST',
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+              body: formData
+            });
+
+            if (!uploadRes.ok) {
+              console.warn(`Photo upload failed for ${p.name}:`, uploadRes.status);
+              failedUploadCount++;
+            }
+          } catch (uploadErr) {
+            console.warn(`Error uploading photo ${p.name}:`, uploadErr);
+            failedUploadCount++;
+          }
+        }
+      }
+
+      if (failedUploadCount > 0) {
+        setPhotoUploadWarning(
+          `پرونده با موفقیت ثبت گردید، اما تعداد ${failedUploadCount} تصویر به دلیل خطای شبکه در فضای ابری ذخیره نشد. می‌توانید از بخش پیگیری پرونده مجدداً آنها را بارگذاری نمایید.`
+        );
+      } else {
+        setPhotoUploadWarning(null);
+      }
+
       setCreatedCase(caseData);
       onCaseCreated(caseData);
     } catch (e: any) {
@@ -386,6 +440,13 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
                 <UserCheck size={14} />
                 {createdCase.assignedTechnicianName}
               </span>
+            </div>
+          )}
+
+          {photoUploadWarning && (
+            <div className="p-3 bg-rose-50 rounded-xl border border-rose-200 text-[11px] text-rose-800 flex items-start gap-2">
+              <Info size={14} className="mt-0.5 shrink-0 text-rose-600" />
+              <span>{photoUploadWarning}</span>
             </div>
           )}
 

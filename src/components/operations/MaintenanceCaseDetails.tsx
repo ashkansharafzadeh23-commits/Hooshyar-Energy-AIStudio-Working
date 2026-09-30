@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   Wrench, 
@@ -14,9 +14,13 @@ import {
   Send,
   Plus,
   FileCheck2,
-  FileText
+  FileText,
+  Image as ImageIcon,
+  ExternalLink,
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
-import { MaintenanceCase, TechnicianMatch } from '../../types/maintenance';
+import { MaintenanceCase, TechnicianMatch, CaseAttachment } from '../../types/maintenance';
 import { formatCurrencyIRR, formatPersianNumber, toPersianDigits } from '../../utils/formatters';
 import { formatPersianDateTime } from './DataFreshnessIndicator';
 import { getMaintenancePriorityConfig, getMaintenanceStatusLabel, getMaintenanceCategoryLabel } from './MaintenanceCaseCard';
@@ -77,6 +81,82 @@ export const MaintenanceCaseDetails: React.FC<MaintenanceCaseDetailsProps> = ({
 
   const [verifyNotes, setVerifyNotes] = useState('');
   const [scheduleDateTime, setScheduleDateTime] = useState('');
+
+  // Evidence Photos State
+  const [attachments, setAttachments] = useState<CaseAttachment[]>([]);
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+  const [loadingPhotos, setLoadingPhotos] = useState<Record<string, boolean>>({});
+  const [photoErrors, setPhotoErrors] = useState<Record<string, string>>({});
+  const [attachmentsLoading, setAttachmentsLoading] = useState(false);
+
+  // Fetch or sync attachments
+  useEffect(() => {
+    if (!maintenanceCase) return;
+    if (Array.isArray(maintenanceCase.attachments) && maintenanceCase.attachments.length > 0) {
+      setAttachments(maintenanceCase.attachments);
+    } else {
+      setAttachmentsLoading(true);
+      const token = localStorage.getItem('token');
+      fetch(`/api/cases/${maintenanceCase.id}/attachments`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      })
+        .then(res => res.ok ? res.json() : [])
+        .then(data => {
+          if (Array.isArray(data)) {
+            setAttachments(data);
+          }
+        })
+        .catch(err => console.error('Error fetching case attachments in details:', err))
+        .finally(() => setAttachmentsLoading(false));
+    }
+  }, [maintenanceCase?.id]);
+
+  // Request secure temporary signed download URL on demand
+  const fetchSignedUrl = async (att: CaseAttachment, forceRefresh = false) => {
+    if (!maintenanceCase) return '';
+    if (!forceRefresh && signedUrls[att.id]) return signedUrls[att.id];
+
+    setLoadingPhotos(prev => ({ ...prev, [att.id]: true }));
+    setPhotoErrors(prev => {
+      const next = { ...prev };
+      delete next[att.id];
+      return next;
+    });
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/cases/${maintenanceCase.id}/attachments/${att.id}/download`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.downloadUrl) {
+          setSignedUrls(prev => ({ ...prev, [att.id]: data.downloadUrl }));
+          return data.downloadUrl;
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setPhotoErrors(prev => ({ ...prev, [att.id]: err.error || 'عدم دسترسی به فایل یا خطا در دریافت لینک امن' }));
+      }
+    } catch {
+      setPhotoErrors(prev => ({ ...prev, [att.id]: 'خطا در ارتباط با سرور' }));
+    } finally {
+      setLoadingPhotos(prev => ({ ...prev, [att.id]: false }));
+    }
+    return '';
+  };
+
+  // Auto-fetch signed URLs for S3 photos
+  useEffect(() => {
+    const photos = attachments.filter(a => a.type === 'PHOTO');
+    photos.forEach(att => {
+      if (att.storageProvider === 'S3_COMPATIBLE' || att.storageKey) {
+        if (!signedUrls[att.id] && !loadingPhotos[att.id]) {
+          fetchSignedUrl(att);
+        }
+      }
+    });
+  }, [attachments]);
 
   const prioConfig = getMaintenancePriorityConfig(maintenanceCase.priority);
   const statusConfig = getMaintenanceStatusLabel(maintenanceCase.status);
@@ -250,6 +330,111 @@ export const MaintenanceCaseDetails: React.FC<MaintenanceCaseDetailsProps> = ({
                     </span>
                   )}
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* Evidence Photos Gallery */}
+          <div className="bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <ImageIcon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <span>تصاویر و مستندات میدانی عیب‌یابی (Evidence Photos)</span>
+              </h4>
+              <span className="text-[11px] font-mono text-slate-400">
+                {attachments.filter(a => a.type === 'PHOTO').length} تصویر
+              </span>
+            </div>
+
+            {attachmentsLoading ? (
+              <div className="py-6 text-center space-y-2">
+                <Loader2 className="w-5 h-5 text-blue-600 animate-spin mx-auto" />
+                <p className="text-[11px] text-slate-500">در حال دریافت تصاویر پیوست...</p>
+              </div>
+            ) : attachments.filter(a => a.type === 'PHOTO').length === 0 ? (
+              <p className="text-xs text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-center">
+                هیچ تصویر مستندی برای این پرونده ثبت نشده است.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {attachments.filter(a => a.type === 'PHOTO').map((att, idx) => {
+                  const isS3 = att.storageProvider === 'S3_COMPATIBLE' || Boolean(att.storageKey);
+                  const isLegacyUrl = !isS3 && Boolean(att.url) && (att.url.startsWith('http://') || att.url.startsWith('https://'));
+                  const effectiveUrl = isS3 ? signedUrls[att.id] : isLegacyUrl ? att.url : '';
+                  const isLoadingUrl = loadingPhotos[att.id];
+                  const errorMsg = photoErrors[att.id];
+
+                  return (
+                    <div key={att.id || idx} className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-2 shadow-xs">
+                      <div className="flex items-start justify-between gap-1">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block max-w-[160px]" title={att.name}>
+                          {att.name}
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0">
+                          {isS3 ? 'S3 خصوصی' : 'لینک خارجی'}
+                        </span>
+                      </div>
+
+                      <div className="w-full h-32 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-hidden flex items-center justify-center relative">
+                        {isLoadingUrl ? (
+                          <div className="flex flex-col items-center gap-1.5 text-slate-400">
+                            <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                            <span className="text-[10px]">دریافت لینک امن...</span>
+                          </div>
+                        ) : errorMsg ? (
+                          <div className="p-2 text-center space-y-1">
+                            <AlertTriangle className="w-4 h-4 text-rose-500 mx-auto" />
+                            <p className="text-[10px] text-rose-600 dark:text-rose-400 leading-tight">{errorMsg}</p>
+                            <button
+                              type="button"
+                              onClick={() => fetchSignedUrl(att, true)}
+                              className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 mx-auto pt-1"
+                            >
+                              <RefreshCw className="w-2.5 h-2.5" />
+                              <span>تلاش مجدد</span>
+                            </button>
+                          </div>
+                        ) : effectiveUrl ? (
+                          <img
+                            src={effectiveUrl}
+                            alt={att.name}
+                            className="w-full h-full object-cover"
+                            onError={() => {
+                              setPhotoErrors(prev => ({ ...prev, [att.id]: 'انقضای لینک یا خطای بارگذاری تصویر' }));
+                            }}
+                          />
+                        ) : (
+                          <div className="text-center p-2">
+                            <ImageIcon className="w-5 h-5 text-slate-300 dark:text-slate-600 mx-auto mb-1" />
+                            <button
+                              type="button"
+                              onClick={() => fetchSignedUrl(att, true)}
+                              className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 mx-auto"
+                            >
+                              <RefreshCw className="w-2.5 h-2.5" />
+                              <span>دریافت لینک امن</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-400 font-mono">
+                        <span>{att.sizeBytes ? `${Math.round(att.sizeBytes / 1024)} KB` : ''}</span>
+                        {effectiveUrl && (
+                          <a
+                            href={effectiveUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 dark:text-blue-400 hover:underline font-bold flex items-center gap-1"
+                          >
+                            <span>اندازه کامل</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
