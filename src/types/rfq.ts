@@ -5,6 +5,40 @@ export type EpcBid = EPCBid;
 
 export type RFQVisibility = 'INVITED_ONLY' | 'VERIFIED_EPCS';
 
+export interface RFQDocument {
+  id: string;
+  rfqId: string;
+  name: string;
+  originalFilename?: string;
+  storageProvider: 'S3_COMPATIBLE' | 'EXTERNAL_URL';
+  storageKey?: string;
+  url?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  checksumSha256?: string;
+  uploadedByUserId: string;
+  uploadedAt: string;
+}
+
+export type BidDocumentCategory = 'TECHNICAL' | 'COMMERCIAL';
+
+export interface BidDocument {
+  id: string;
+  bidId: string;
+  rfqId: string;
+  category: BidDocumentCategory;
+  name: string;
+  originalFilename?: string;
+  storageProvider: 'S3_COMPATIBLE' | 'EXTERNAL_URL';
+  storageKey?: string;
+  url?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  checksumSha256?: string;
+  uploadedByUserId: string;
+  uploadedAt: string;
+}
+
 export interface ProjectRFQ {
   id: string;
   rfqCode: string; // RFQ-HSE-000001
@@ -20,6 +54,7 @@ export interface ProjectRFQ {
   technicalRequirements: string[];
   commercialRequirements: string[];
   requiredDocuments: string[];
+  documents?: RFQDocument[];
   invitedContractorIds?: string[];
   scopeDescription?: string;
   requiredGuarantees?: string[];
@@ -139,6 +174,7 @@ export interface EPCBid {
   };
   technicalDocuments: string[];
   commercialDocuments: string[];
+  documents?: BidDocument[];
   technicalCompliance: TechnicalComplianceStatus;
   complianceNotes?: string;
   riskFlags: BidRiskFlag[];

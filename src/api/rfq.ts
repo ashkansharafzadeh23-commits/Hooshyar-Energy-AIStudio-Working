@@ -7,11 +7,46 @@ import { compareBids, scoreBid } from '../services/rfqScoringService.js';
 import { validateTransition } from '../services/projectLifecycleService.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { organizationRepository } from '../repositories/organizationRepository.js';
-import { EPCBid, ProjectRFQ } from '../types/rfq.js';
+import { EPCBid, ProjectRFQ, RFQDocument, BidDocument, BidDocumentCategory } from '../types/rfq.js';
 import { idempotencyMiddleware } from '../reliability/idempotency.js';
+import { getFileStorageService } from '../storage/index.js';
+import { validateBinaryFile, sanitizeOriginalFilename } from '../storage/fileValidator.js';
+import { generateStorageKey } from '../storage/storageKeyGenerator.js';
+import { handleMultipartUpload } from '../storage/uploadMiddleware.js';
+import { FileValidationError } from '../storage/StorageErrors.js';
 
 const router = express.Router();
 router.use(verifyAuthToken);
+
+// Helper to validate legacy document strings against dangerous executable schemes
+function validateLegacyDocumentStrings(docs: any[]): { isValid: boolean; error?: string } {
+  if (!Array.isArray(docs)) return { isValid: true };
+  for (const item of docs) {
+    if (typeof item !== 'string') continue;
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+    
+    // Check if the string looks like a URI scheme or URL
+    const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed) || trimmed.startsWith('//');
+    if (hasScheme) {
+      try {
+        const parsed = new URL(trimmed);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return {
+            isValid: false,
+            error: 'تنها پروتکل‌های http و https برای لینک‌های اسناد مجاز هستند.'
+          };
+        }
+      } catch {
+        return {
+          isValid: false,
+          error: 'فرمت آدرس اینترنتی (URL) سند نامعتبر است.'
+        };
+      }
+    }
+  }
+  return { isValid: true };
+}
 
 // Helper to check EPC organization for current user
 function getUserOrganization(userId: string) {
@@ -449,16 +484,6 @@ router.post('/:rfqId/bids', (req, res) => {
     epcOrgId = newOrg?.id;
   }
 
-  // Check if this EPC already has a bid on this RFQ
-  const existingBids = rfqRepository.getBidsByRfqId(rfq.id);
-  const previousBid = existingBids.find(b => b.epcOrganizationId === epcOrgId);
-  if (previousBid) {
-    return res.status(400).json({ 
-      error: "شما قبلاً یک پیشنهاد برای این استعلام ثبت کرده‌اید. لطفاً از بخش ویرایش پیشنهاد (Revision) استفاده نمایید.",
-      existingBidId: previousBid.id 
-    });
-  }
-
   const {
     status = 'SUBMITTED',
     currency = 'IRR',
@@ -478,6 +503,25 @@ router.post('/:rfqId/bids', (req, res) => {
     technicalCompliance = 'COMPLIANT',
     complianceNotes
   } = req.body;
+
+  const techValidation = validateLegacyDocumentStrings(technicalDocuments);
+  if (!techValidation.isValid) {
+    return res.status(400).json({ error: techValidation.error });
+  }
+  const commValidation = validateLegacyDocumentStrings(commercialDocuments);
+  if (!commValidation.isValid) {
+    return res.status(400).json({ error: commValidation.error });
+  }
+
+  // Check if this EPC already has a bid on this RFQ
+  const existingBids = rfqRepository.getBidsByRfqId(rfq.id);
+  const previousBid = existingBids.find(b => b.epcOrganizationId === epcOrgId);
+  if (previousBid) {
+    return res.status(400).json({ 
+      error: "شما قبلاً یک پیشنهاد برای این استعلام ثبت کرده‌اید. لطفاً از بخش ویرایش پیشنهاد (Revision) استفاده نمایید.",
+      existingBidId: previousBid.id 
+    });
+  }
 
   const bidCode = generateBidCode();
 
@@ -598,6 +642,15 @@ router.put('/bids/:bidId', (req, res) => {
     complianceNotes,
     status
   } = req.body;
+
+  if (technicalDocuments) {
+    const v = validateLegacyDocumentStrings(technicalDocuments);
+    if (!v.isValid) return res.status(400).json({ error: v.error });
+  }
+  if (commercialDocuments) {
+    const v = validateLegacyDocumentStrings(commercialDocuments);
+    if (!v.isValid) return res.status(400).json({ error: v.error });
+  }
 
   const nextRevNumber = (bid.currentRevisionNumber || 1) + 1;
 
@@ -915,6 +968,678 @@ router.post('/:rfqId/select-epc', (req, res) => {
     winningBid,
     newProjectStatus: 'EPC_SELECTED'
   });
+});
+
+// ==========================================
+// STAGE 12.3E.1 — SECURE RFQ & BID DOCUMENTS
+// ==========================================
+
+function isUserRfqOwnerOrAdmin(rfq: ProjectRFQ, user: any): boolean {
+  if (!user || !user.id) return false;
+  if (user.role === 'admin') return true;
+  const project = projectRepository.findById(rfq.projectId);
+  return Boolean(project && project.ownerId === user.id);
+}
+
+function canUserViewRfq(rfq: ProjectRFQ, user: any): boolean {
+  if (!user || !user.id) return false;
+  if (user.role === 'admin') return true;
+
+  const project = projectRepository.findById(rfq.projectId);
+  if (project && project.ownerId === user.id) {
+    return true;
+  }
+
+  // RFQs in DRAFT or CANCELLED are private to project owner
+  if (rfq.status === 'DRAFT' || rfq.status === 'CANCELLED') {
+    return false;
+  }
+
+  // An EPC organization can view open/published RFQs
+  const userOrg = getUserOrganization(user.id);
+  if (!userOrg) {
+    return false;
+  }
+
+  if (rfq.visibility === 'INVITED_ONLY') {
+    const invitations = rfqRepository.getInvitations(rfq.id);
+    return invitations.some(i => i.epcOrganizationId === userOrg.id);
+  }
+
+  return true;
+}
+
+function canUserAccessBid(rfq: ProjectRFQ, bid: EPCBid, user: any): { allowed: boolean; status?: number; error?: string } {
+  if (!user || !user.id) {
+    return { allowed: false, status: 401, error: 'احراز هویت الزامی است.' };
+  }
+  if (user.role === 'admin') {
+    return { allowed: true };
+  }
+
+  // Project owner
+  const project = projectRepository.findById(rfq.projectId);
+  if (project && project.ownerId === user.id) {
+    return { allowed: true };
+  }
+
+  // Owning EPC organization
+  const userOrg = getUserOrganization(user.id);
+  if (userOrg && userOrg.id === bid.epcOrganizationId) {
+    return { allowed: true };
+  }
+
+  return {
+    allowed: false,
+    status: 403,
+    error: 'عدم دسترسی به اسناد این پیشنهاد قیمت'
+  };
+}
+
+function canModifyBidDocuments(rfq: ProjectRFQ, bid: EPCBid): { allowed: boolean; error?: string } {
+  if (rfq.status === 'AWARDED' || rfq.status === 'CLOSED' || rfq.status === 'CANCELLED') {
+    return {
+      allowed: false,
+      error: 'امکان بارگذاری یا تغییر اسناد پس از بسته‌شدن یا واگذاری استعلام وجود ندارد.'
+    };
+  }
+  if (bid.status === 'SELECTED' || bid.status === 'REJECTED' || bid.status === 'ACCEPTED' || bid.status === 'WITHDRAWN') {
+    return {
+      allowed: false,
+      error: 'امکان ویرایش اسناد این پیشنهاد به دلیل وضعیت نهایی آن وجود ندارد.'
+    };
+  }
+  return { allowed: true };
+}
+
+// Pre-upload auth middleware: ensures unauthorized callers DO NOT trigger multipart file handling
+const authorizeRfqOwnerUpload = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const user = req.user;
+  if (!user || !user.id) return res.status(401).json({ error: "احراز هویت الزامی است." });
+
+  const rfqId = String(req.params.rfqId);
+  const rfq = rfqRepository.findRFQById(rfqId);
+  if (!rfq) return res.status(404).json({ error: "استعلام یافت نشد" });
+
+  const isOwner = isUserRfqOwnerOrAdmin(rfq, user);
+  if (!isOwner) {
+    return res.status(403).json({ error: "تنها کارفرمای پروژه یا مدیر سیستم مجاز به بارگذاری اسناد استعلام است." });
+  }
+
+  (req as any).rfq = rfq;
+  next();
+};
+
+const authorizeBidOwnerUpload = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const user = req.user;
+  if (!user || !user.id) return res.status(401).json({ error: "احراز هویت الزامی است." });
+
+  const rfqId = String(req.params.rfqId);
+  const bidId = String(req.params.bidId);
+  const rfq = rfqRepository.findRFQById(rfqId);
+  if (!rfq) return res.status(404).json({ error: "استعلام یافت نشد" });
+
+  const bid = rfqRepository.getBidById(bidId);
+  if (!bid) return res.status(404).json({ error: "پیشنهاد یافت نشد" });
+
+  if (bid.rfqId !== rfq.id) {
+    return res.status(404).json({ error: "پیشنهاد متعلق به این استعلام نیست." });
+  }
+
+  const userOrg = getUserOrganization(user.id);
+  const isBidOwner = userOrg && userOrg.id === bid.epcOrganizationId;
+  if (!isBidOwner) {
+    return res.status(403).json({ error: "تنها پیمانکار ارائه‌دهنده این پیشنهاد مجاز به بارگذاری اسناد آن است." });
+  }
+
+  const modCheck = canModifyBidDocuments(rfq, bid);
+  if (!modCheck.allowed) {
+    return res.status(400).json({ error: modCheck.error });
+  }
+
+  (req as any).rfq = rfq;
+  (req as any).bid = bid;
+  (req as any).userOrg = userOrg;
+  next();
+};
+
+/**
+ * POST /api/rfq/:rfqId/documents/upload
+ * RFQ owner uploads project specification/document
+ */
+router.post(
+  '/:rfqId/documents/upload',
+  authorizeRfqOwnerUpload,
+  handleMultipartUpload,
+  async (req: express.Request, res: express.Response) => {
+    const user = req.user;
+    const rfq: ProjectRFQ = (req as any).rfq;
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'هیچ فایلی برای بارگذاری ارسال نشده است.' });
+    }
+
+    const storageService = getFileStorageService();
+    if (!storageService.isConfigured()) {
+      return res.status(503).json({
+        code: 'STORAGE_NOT_CONFIGURED',
+        error: 'سرویس ذخیره‌سازی ابری پیکربندی نشده است.'
+      });
+    }
+
+    let validationResult;
+    try {
+      validationResult = validateBinaryFile(file.buffer, file.originalname, file.mimetype, {
+        allowedTypes: ['PDF', 'IMAGE'],
+        maxPdfSizeBytes: 15 * 1024 * 1024,
+        maxImageSizeBytes: 5 * 1024 * 1024
+      });
+    } catch (err: any) {
+      if (err instanceof FileValidationError) {
+        return res.status(err.statusCode || 400).json({
+          code: err.code,
+          error: err.message
+        });
+      }
+      return res.status(400).json({
+        code: 'FILE_VALIDATION_ERROR',
+        error: err.message || 'اعتبارسنجی سند ناموفق بود.'
+      });
+    }
+
+    const storageKey = generateStorageKey({
+      scope: 'rfq',
+      entityId: rfq.id,
+      category: 'DOCUMENT',
+      extension: validationResult.extension
+    });
+
+    const sanitizedFilename = validationResult.sanitizedFilename || sanitizeOriginalFilename(file.originalname);
+
+    try {
+      await storageService.putObject({
+        key: storageKey,
+        body: file.buffer,
+        contentType: validationResult.detectedMimeType,
+        contentLength: validationResult.sizeBytes,
+        metadata: {
+          rfqId: rfq.id,
+          uploadedByUserId: user.id,
+          originalFilename: sanitizedFilename,
+          sha256: validationResult.checksumSha256
+        }
+      });
+    } catch (err: any) {
+      console.error('Storage putObject failed for RFQ document:', err);
+      return res.status(502).json({
+        code: 'STORAGE_UPLOAD_FAILED',
+        error: 'خطا در بارگذاری فایل به فضای ذخیره‌سازی ابری'
+      });
+    }
+
+    const docId = `rfq-doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const newDoc: RFQDocument = {
+      id: docId,
+      rfqId: rfq.id,
+      name: sanitizedFilename,
+      originalFilename: sanitizedFilename,
+      storageProvider: 'S3_COMPATIBLE',
+      storageKey,
+      url: `/api/rfq/${rfq.id}/documents/${docId}/download`,
+      mimeType: validationResult.detectedMimeType,
+      sizeBytes: validationResult.sizeBytes,
+      checksumSha256: validationResult.checksumSha256,
+      uploadedByUserId: user.id,
+      uploadedAt: new Date().toISOString()
+    };
+
+    try {
+      const updatedDocs = [...(rfq.documents || []), newDoc];
+      const updated = rfqRepository.updateRFQ(rfq.id, { documents: updatedDocs });
+      if (!updated) {
+        throw new Error('Failed to update RFQ documents in database');
+      }
+    } catch (persistErr: any) {
+      console.error('RFQ document metadata persistence failed, executing rollback delete:', persistErr);
+      try {
+        await storageService.deleteObject(storageKey);
+      } catch (cleanupErr) {
+        console.error('Compensating rollback delete failed for RFQ doc key:', storageKey, cleanupErr);
+      }
+      return res.status(500).json({
+        code: 'METADATA_PERSISTENCE_FAILED',
+        error: 'خطا در ذخیره‌سازی اطلاعات سند در پایگاه داده'
+      });
+    }
+
+    const { storageKey: _omittedKey, ...safeDoc } = newDoc as any;
+    return res.status(201).json(safeDoc);
+  }
+);
+
+/**
+ * GET /api/rfq/:rfqId/documents
+ * List metadata of RFQ documents
+ */
+router.get('/:rfqId/documents', (req, res) => {
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const rfq = rfqRepository.findRFQById(req.params.rfqId);
+  if (!rfq) return res.status(404).json({ error: "استعلام یافت نشد" });
+
+  if (!canUserViewRfq(rfq, user)) {
+    return res.status(403).json({ error: "عدم دسترسی به اسناد این استعلام" });
+  }
+
+  const safeDocs = (rfq.documents || []).map(({ storageKey, ...d }: any) => d);
+  return res.json(safeDocs);
+});
+
+/**
+ * GET /api/rfq/:rfqId/documents/:documentId/download
+ * Generate short-lived signed download URL for RFQ document
+ */
+router.get('/:rfqId/documents/:documentId/download', async (req, res) => {
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const rfq = rfqRepository.findRFQById(req.params.rfqId);
+  if (!rfq) return res.status(404).json({ error: "استعلام یافت نشد" });
+
+  if (!canUserViewRfq(rfq, user)) {
+    return res.status(403).json({ error: "عدم دسترسی به اسناد این استعلام" });
+  }
+
+  const doc = (rfq.documents || []).find(d => d.id === req.params.documentId);
+  if (!doc) {
+    return res.status(404).json({ error: "سند مورد نظر یافت نشد" });
+  }
+
+  if (doc.rfqId && doc.rfqId !== rfq.id) {
+    return res.status(404).json({ error: "سند متعلق به این استعلام نیست" });
+  }
+
+  if (doc.storageProvider === 'EXTERNAL_URL' || (!doc.storageProvider && !doc.storageKey)) {
+    return res.json({
+      downloadUrl: doc.url || '',
+      storageProvider: 'EXTERNAL_URL',
+      expiresIn: null
+    });
+  }
+
+  const storageService = getFileStorageService();
+  if (!storageService.isConfigured()) {
+    return res.status(503).json({
+      code: 'STORAGE_NOT_CONFIGURED',
+      error: 'سرویس ذخیره‌سازی ابری پیکربندی نشده است.'
+    });
+  }
+
+  if (!doc.storageKey) {
+    return res.status(404).json({ error: "شناسه ذخیره‌سازی فایل یافت نشد" });
+  }
+
+  try {
+    const signedUrl = await storageService.getSignedDownloadUrl({ key: doc.storageKey });
+    return res.json({
+      downloadUrl: signedUrl,
+      storageProvider: 'S3_COMPATIBLE',
+      expiresIn: 300
+    });
+  } catch (err: any) {
+    console.error('Error generating signed download URL for RFQ doc:', err);
+    return res.status(500).json({
+      code: 'SIGNED_URL_ERROR',
+      error: 'خطا در ایجاد لینک دانلود امن'
+    });
+  }
+});
+
+/**
+ * DELETE /api/rfq/:rfqId/documents/:documentId
+ * Authorized deletion of RFQ document (S3 object deleted first)
+ */
+router.delete('/:rfqId/documents/:documentId', async (req, res) => {
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const rfq = rfqRepository.findRFQById(req.params.rfqId);
+  if (!rfq) return res.status(404).json({ error: "استعلام یافت نشد" });
+
+  if (!isUserRfqOwnerOrAdmin(rfq, user)) {
+    return res.status(403).json({ error: "تنها کارفرمای پروژه یا مدیر سیستم مجاز به حذف اسناد استعلام است." });
+  }
+
+  const doc = (rfq.documents || []).find(d => d.id === req.params.documentId);
+  if (!doc) {
+    return res.status(404).json({ error: "سند مورد نظر یافت نشد" });
+  }
+
+  if (doc.rfqId && doc.rfqId !== rfq.id) {
+    return res.status(404).json({ error: "سند متعلق به این استعلام نیست" });
+  }
+
+  if (doc.storageProvider === 'S3_COMPATIBLE' && doc.storageKey) {
+    const storageService = getFileStorageService();
+    if (storageService.isConfigured()) {
+      try {
+        await storageService.deleteObject(doc.storageKey);
+      } catch (err: any) {
+        console.error('Failed to delete RFQ doc from storage:', err);
+        return res.status(502).json({
+          code: 'STORAGE_DELETE_FAILED',
+          error: 'خطا در حذف فایل از فضای ذخیره‌سازی ابری'
+        });
+      }
+    }
+  }
+
+  const updatedDocs = (rfq.documents || []).filter(d => d.id !== req.params.documentId);
+  rfqRepository.updateRFQ(rfq.id, { documents: updatedDocs });
+  return res.json({ success: true, id: req.params.documentId });
+});
+
+/**
+ * POST /api/rfq/:rfqId/bids/:bidId/documents/upload
+ * Submitting EPC uploads TECHNICAL or COMMERCIAL proposal document
+ */
+router.post(
+  '/:rfqId/bids/:bidId/documents/upload',
+  authorizeBidOwnerUpload,
+  handleMultipartUpload,
+  async (req: express.Request, res: express.Response) => {
+    const user = req.user;
+    const rfq: ProjectRFQ = (req as any).rfq;
+    const bid: EPCBid = (req as any).bid;
+    const file = req.file;
+
+    const rawCategory = (req.body?.category || req.query?.category || '').toString().trim().toUpperCase();
+    if (rawCategory !== 'TECHNICAL' && rawCategory !== 'COMMERCIAL') {
+      return res.status(400).json({
+        code: 'INVALID_CATEGORY',
+        error: 'دسته‌بندی سند الزامی است و تنها می‌تواند TECHNICAL یا COMMERCIAL باشد.'
+      });
+    }
+    const category: BidDocumentCategory = rawCategory;
+
+    if (!file) {
+      return res.status(400).json({ error: 'هیچ فایلی برای بارگذاری ارسال نشده است.' });
+    }
+
+    const storageService = getFileStorageService();
+    if (!storageService.isConfigured()) {
+      return res.status(503).json({
+        code: 'STORAGE_NOT_CONFIGURED',
+        error: 'سرویس ذخیره‌سازی ابری پیکربندی نشده است.'
+      });
+    }
+
+    let validationResult;
+    try {
+      validationResult = validateBinaryFile(file.buffer, file.originalname, file.mimetype, {
+        allowedTypes: ['PDF', 'IMAGE'],
+        maxPdfSizeBytes: 15 * 1024 * 1024,
+        maxImageSizeBytes: 5 * 1024 * 1024
+      });
+    } catch (err: any) {
+      if (err instanceof FileValidationError) {
+        return res.status(err.statusCode || 400).json({
+          code: err.code,
+          error: err.message
+        });
+      }
+      return res.status(400).json({
+        code: 'FILE_VALIDATION_ERROR',
+        error: err.message || 'اعتبارسنجی سند ناموفق بود.'
+      });
+    }
+
+    const storageKey = generateStorageKey({
+      scope: 'bids',
+      entityId: bid.id,
+      category,
+      extension: validationResult.extension
+    });
+
+    const sanitizedFilename = validationResult.sanitizedFilename || sanitizeOriginalFilename(file.originalname);
+
+    try {
+      await storageService.putObject({
+        key: storageKey,
+        body: file.buffer,
+        contentType: validationResult.detectedMimeType,
+        contentLength: validationResult.sizeBytes,
+        metadata: {
+          bidId: bid.id,
+          rfqId: rfq.id,
+          category,
+          uploadedByUserId: user.id,
+          originalFilename: sanitizedFilename,
+          sha256: validationResult.checksumSha256
+        }
+      });
+    } catch (err: any) {
+      console.error('Storage putObject failed for bid document:', err);
+      return res.status(502).json({
+        code: 'STORAGE_UPLOAD_FAILED',
+        error: 'خطا در بارگذاری فایل به فضای ذخیره‌سازی ابری'
+      });
+    }
+
+    const docId = `bid-doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const newDoc: BidDocument = {
+      id: docId,
+      bidId: bid.id,
+      rfqId: rfq.id,
+      category,
+      name: sanitizedFilename,
+      originalFilename: sanitizedFilename,
+      storageProvider: 'S3_COMPATIBLE',
+      storageKey,
+      url: `/api/rfq/${rfq.id}/bids/${bid.id}/documents/${docId}/download`,
+      mimeType: validationResult.detectedMimeType,
+      sizeBytes: validationResult.sizeBytes,
+      checksumSha256: validationResult.checksumSha256,
+      uploadedByUserId: user.id,
+      uploadedAt: new Date().toISOString()
+    };
+
+    try {
+      const updatedDocuments = [...(bid.documents || []), newDoc];
+      const updatedTechnical = category === 'TECHNICAL'
+        ? Array.from(new Set([...(bid.technicalDocuments || []), sanitizedFilename]))
+        : (bid.technicalDocuments || []);
+      const updatedCommercial = category === 'COMMERCIAL'
+        ? Array.from(new Set([...(bid.commercialDocuments || []), sanitizedFilename]))
+        : (bid.commercialDocuments || []);
+
+      const updated = rfqRepository.updateBid(bid.id, {
+        documents: updatedDocuments,
+        technicalDocuments: updatedTechnical,
+        commercialDocuments: updatedCommercial
+      });
+      if (!updated) {
+        throw new Error('Failed to update bid in database');
+      }
+    } catch (persistErr: any) {
+      console.error('Bid document metadata persistence failed, executing rollback delete:', persistErr);
+      try {
+        await storageService.deleteObject(storageKey);
+      } catch (cleanupErr) {
+        console.error('Compensating rollback delete failed for bid doc key:', storageKey, cleanupErr);
+      }
+      return res.status(500).json({
+        code: 'METADATA_PERSISTENCE_FAILED',
+        error: 'خطا در ذخیره‌سازی اطلاعات سند در پایگاه داده'
+      });
+    }
+
+    const { storageKey: _omittedKey, ...safeDoc } = newDoc as any;
+    return res.status(201).json(safeDoc);
+  }
+);
+
+/**
+ * GET /api/rfq/:rfqId/bids/:bidId/documents
+ * List metadata of Bid documents (confidential to bid-owning EPC and RFQ owner)
+ */
+router.get('/:rfqId/bids/:bidId/documents', (req, res) => {
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const rfq = rfqRepository.findRFQById(req.params.rfqId);
+  if (!rfq) return res.status(404).json({ error: "استعلام یافت نشد" });
+
+  const bid = rfqRepository.getBidById(req.params.bidId);
+  if (!bid) return res.status(404).json({ error: "پیشنهاد یافت نشد" });
+
+  if (bid.rfqId !== rfq.id) {
+    return res.status(404).json({ error: "پیشنهاد متعلق به این استعلام نیست" });
+  }
+
+  const access = canUserAccessBid(rfq, bid, user);
+  if (!access.allowed) {
+    return res.status(access.status || 403).json({ error: access.error });
+  }
+
+  const safeDocs = (bid.documents || []).map(({ storageKey, ...d }: any) => d);
+  return res.json(safeDocs);
+});
+
+/**
+ * GET /api/rfq/:rfqId/bids/:bidId/documents/:documentId/download
+ * Generate short-lived signed download URL for Bid document
+ */
+router.get('/:rfqId/bids/:bidId/documents/:documentId/download', async (req, res) => {
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const rfq = rfqRepository.findRFQById(req.params.rfqId);
+  if (!rfq) return res.status(404).json({ error: "استعلام یافت نشد" });
+
+  const bid = rfqRepository.getBidById(req.params.bidId);
+  if (!bid) return res.status(404).json({ error: "پیشنهاد یافت نشد" });
+
+  if (bid.rfqId !== rfq.id) {
+    return res.status(404).json({ error: "پیشنهاد متعلق به این استعلام نیست" });
+  }
+
+  const access = canUserAccessBid(rfq, bid, user);
+  if (!access.allowed) {
+    return res.status(access.status || 403).json({ error: access.error });
+  }
+
+  const doc = (bid.documents || []).find(d => d.id === req.params.documentId);
+  if (!doc) {
+    return res.status(404).json({ error: "سند مورد نظر یافت نشد" });
+  }
+
+  if (doc.bidId !== bid.id || (doc.rfqId && doc.rfqId !== rfq.id)) {
+    return res.status(404).json({ error: "سند متعلق به این پیشنهاد یا استعلام نیست" });
+  }
+
+  if (doc.storageProvider === 'EXTERNAL_URL' || (!doc.storageProvider && !doc.storageKey)) {
+    return res.json({
+      downloadUrl: doc.url || '',
+      storageProvider: 'EXTERNAL_URL',
+      expiresIn: null
+    });
+  }
+
+  const storageService = getFileStorageService();
+  if (!storageService.isConfigured()) {
+    return res.status(503).json({
+      code: 'STORAGE_NOT_CONFIGURED',
+      error: 'سرویس ذخیره‌سازی ابری پیکربندی نشده است.'
+    });
+  }
+
+  if (!doc.storageKey) {
+    return res.status(404).json({ error: "شناسه ذخیره‌سازی فایل یافت نشد" });
+  }
+
+  try {
+    const signedUrl = await storageService.getSignedDownloadUrl({ key: doc.storageKey });
+    return res.json({
+      downloadUrl: signedUrl,
+      storageProvider: 'S3_COMPATIBLE',
+      expiresIn: 300
+    });
+  } catch (err: any) {
+    console.error('Error generating signed download URL for bid doc:', err);
+    return res.status(500).json({
+      code: 'SIGNED_URL_ERROR',
+      error: 'خطا در ایجاد لینک دانلود امن'
+    });
+  }
+});
+
+/**
+ * DELETE /api/rfq/:rfqId/bids/:bidId/documents/:documentId
+ * Authorized deletion of Bid document by owning EPC (S3 object deleted first)
+ */
+router.delete('/:rfqId/bids/:bidId/documents/:documentId', async (req, res) => {
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const rfq = rfqRepository.findRFQById(req.params.rfqId);
+  if (!rfq) return res.status(404).json({ error: "استعلام یافت نشد" });
+
+  const bid = rfqRepository.getBidById(req.params.bidId);
+  if (!bid) return res.status(404).json({ error: "پیشنهاد یافت نشد" });
+
+  if (bid.rfqId !== rfq.id) {
+    return res.status(404).json({ error: "پیشنهاد متعلق به این استعلام نیست" });
+  }
+
+  const userOrg = getUserOrganization(user.id);
+  const isBidOwner = userOrg && userOrg.id === bid.epcOrganizationId;
+  if (!isBidOwner) {
+    return res.status(403).json({ error: "تنها پیمانکار ارائه‌دهنده این پیشنهاد مجاز به حذف اسناد آن است." });
+  }
+
+  const modCheck = canModifyBidDocuments(rfq, bid);
+  if (!modCheck.allowed) {
+    return res.status(400).json({ error: modCheck.error });
+  }
+
+  const doc = (bid.documents || []).find(d => d.id === req.params.documentId);
+  if (!doc) {
+    return res.status(404).json({ error: "سند مورد نظر یافت نشد" });
+  }
+
+  if (doc.bidId !== bid.id || (doc.rfqId && doc.rfqId !== rfq.id)) {
+    return res.status(404).json({ error: "سند متعلق به این پیشنهاد یا استعلام نیست" });
+  }
+
+  if (doc.storageProvider === 'S3_COMPATIBLE' && doc.storageKey) {
+    const storageService = getFileStorageService();
+    if (storageService.isConfigured()) {
+      try {
+        await storageService.deleteObject(doc.storageKey);
+      } catch (err: any) {
+        console.error('Failed to delete bid doc from storage:', err);
+        return res.status(502).json({
+          code: 'STORAGE_DELETE_FAILED',
+          error: 'خطا در حذف فایل از فضای ذخیره‌سازی ابری'
+        });
+      }
+    }
+  }
+
+  const updatedDocs = (bid.documents || []).filter(d => d.id !== req.params.documentId);
+  const remainingDocNames = updatedDocs.map(d => d.name);
+  const updatedTechnical = (bid.technicalDocuments || []).filter(name => remainingDocNames.includes(name) || !doc.name || name !== doc.name);
+  const updatedCommercial = (bid.commercialDocuments || []).filter(name => remainingDocNames.includes(name) || !doc.name || name !== doc.name);
+
+  rfqRepository.updateBid(bid.id, {
+    documents: updatedDocs,
+    technicalDocuments: updatedTechnical,
+    commercialDocuments: updatedCommercial
+  });
+
+  return res.json({ success: true, id: req.params.documentId });
 });
 
 export default router;
