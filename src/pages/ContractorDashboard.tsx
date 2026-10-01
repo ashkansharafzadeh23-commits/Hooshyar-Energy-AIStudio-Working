@@ -28,6 +28,10 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tool
 import { ProjectRFQ, EPCBid } from '../types/rfq.js';
 import { Organization } from '../types/organization.js';
 import { EnergyProject } from '../types/project.js';
+import { RFQDocumentsManager } from '../components/rfq/RFQDocumentsManager.js';
+import { BidDocumentsManager } from '../components/rfq/BidDocumentsManager.js';
+import { rfqDocumentClient, executeBidSubmissionWorkflow } from '../services/rfqDocumentClient.js';
+import { validateClientFile, formatFileSize } from '../utils/documentPresentation.js';
 
 export default function ContractorDashboard() {
   const [activeTab, setActiveTab] = useState('rfqs');
@@ -55,6 +59,12 @@ export default function ContractorDashboard() {
   const [bidNotes, setBidNotes] = useState('تجهیزات طبق آخرین استانداردهای فنی مهندسی با گارانتی تعویض و بیمه مسئولیت تحویل خواهد شد.');
   const [submittingBid, setSubmittingBid] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  // Secure Documents UI State
+  const [expandedRfqDocsId, setExpandedRfqDocsId] = useState<string | null>(null);
+  const [expandedBidDocsId, setExpandedBidDocsId] = useState<string | null>(null);
+  const [selectedTechFiles, setSelectedTechFiles] = useState<File[]>([]);
+  const [selectedCommFiles, setSelectedCommFiles] = useState<File[]>([]);
 
   // Revise Bid Modal
   const [revisingBid, setRevisingBid] = useState<EPCBid | null>(null);
@@ -124,6 +134,8 @@ export default function ContractorDashboard() {
 
   const handleOpenBidModal = (rfq: ProjectRFQ) => {
     setBiddingRfq(rfq);
+    setSelectedTechFiles([]);
+    setSelectedCommFiles([]);
     // Sensible defaults based on RFQ
     if (rfq.commercialTerms?.minWarrantyYears) {
       setBidWarrantyYears(rfq.commercialTerms.minWarrantyYears);
@@ -154,27 +166,40 @@ export default function ContractorDashboard() {
         notes: bidNotes
       };
 
-      const res = await fetch(`/api/rfq/${biddingRfq.id}/bids`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      const result = await executeBidSubmissionWorkflow({
+        rfqId: biddingRfq.id,
+        bidPayload: payload,
+        techFiles: selectedTechFiles,
+        commFiles: selectedCommFiles,
+        createBidApi: async (rfqId, body) => {
+          const res = await fetch(`/api/rfq/${rfqId}/bids`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify(body)
+          });
+          const data = await res.json();
+          return {
+            ok: res.ok,
+            status: res.status,
+            data: res.ok ? data : undefined,
+            error: !res.ok ? data?.error : undefined
+          };
         },
-        body: JSON.stringify(payload)
+        uploadBidDocApi: (rfqId, bidId, cat, file) => rfqDocumentClient.uploadBidDocument(rfqId, bidId, cat, file)
       });
 
-      if (res.ok) {
-        const newBid = await res.json();
-        setMyBids(prev => [newBid, ...prev]);
+      if (result.bidCreated) {
+        await loadEpcData();
         setBiddingRfq(null);
-        setFeedbackMessage({
-          type: 'success',
-          text: `پیشنهاد شما با کد رسمی ${newBid.bidCode} با موفقیت ثبت شد! امتیاز اولیه: ${newBid.score?.totalScore?.toFixed(1) || '-'}/۱۰۰`
-        });
+        setSelectedTechFiles([]);
+        setSelectedCommFiles([]);
+        setFeedbackMessage(result.feedbackMessage);
         setActiveTab('my_bids');
       } else {
-        const err = await res.json();
-        setFeedbackMessage({ type: 'error', text: err.error || 'خطا در ثبت پیشنهاد' });
+        setFeedbackMessage(result.feedbackMessage);
       }
     } catch (err) {
       setFeedbackMessage({ type: 'error', text: 'خطا در برقراری ارتباط با سرور' });
@@ -393,45 +418,66 @@ export default function ContractorDashboard() {
                       key={rfq.id} 
                       className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-6"
                     >
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
-                            {rfq.rfqCode}
-                          </span>
-                          <span className="text-xs px-3 py-1 rounded-full font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            مناقصه باز (RFQ_OPEN)
-                          </span>
-                        </div>
-                        <h3 className="text-lg font-black text-gray-900">{rfq.title}</h3>
-                        <p className="text-xs text-gray-600 line-clamp-2 max-w-2xl leading-relaxed">
-                          {rfq.scopeDescription}
-                        </p>
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
+                              {rfq.rfqCode}
+                            </span>
+                            <span className="text-xs px-3 py-1 rounded-full font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              مناقصه باز (RFQ_OPEN)
+                            </span>
+                          </div>
+                          <h3 className="text-lg font-black text-gray-900">{rfq.title}</h3>
+                          <p className="text-xs text-gray-600 line-clamp-2 max-w-2xl leading-relaxed">
+                            {rfq.scopeDescription}
+                          </p>
 
-                        <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 pt-1">
-                          <span className="flex items-center gap-1">
-                            <Clock size={14} className="text-amber-500" />
-                            مهلت ارسال: {deadlineDate}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <ShieldCheck size={14} className="text-emerald-500" />
-                            حداقل گارانتی: {rfq.commercialTerms?.minWarrantyYears || 5} سال
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Zap size={14} className="text-blue-500" />
-                            راندمان پنل: حداقل ۲۱٪ (Tier 1)
-                          </span>
+                          <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 pt-1">
+                            <span className="flex items-center gap-1">
+                              <Clock size={14} className="text-amber-500" />
+                              مهلت ارسال: {deadlineDate}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <ShieldCheck size={14} className="text-emerald-500" />
+                              حداقل گارانتی: {rfq.commercialTerms?.minWarrantyYears || 5} سال
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Zap size={14} className="text-blue-500" />
+                              راندمان پنل: حداقل ۲۱٪ (Tier 1)
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedRfqDocsId(expandedRfqDocsId === rfq.id ? null : rfq.id)}
+                            className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors"
+                          >
+                            <FileText size={15} />
+                            {expandedRfqDocsId === rfq.id ? 'بستن اسناد استعلام' : 'مشاهده اسناد استعلام'}
+                          </button>
+
+                          <button 
+                            onClick={() => handleOpenBidModal(rfq)}
+                            className="bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md flex items-center gap-2 transition-colors"
+                          >
+                            <Send size={16} />
+                            ارسال پیشنهاد EPC
+                          </button>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3 shrink-0">
-                        <button 
-                          onClick={() => handleOpenBidModal(rfq)}
-                          className="bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md flex items-center gap-2 transition-colors"
-                        >
-                          <Send size={16} />
-                          ارسال پیشنهاد EPC
-                        </button>
-                      </div>
+                      {expandedRfqDocsId === rfq.id && (
+                        <div className="pt-4 border-t border-gray-100">
+                          <RFQDocumentsManager
+                            rfqId={rfq.id}
+                            isOwner={false}
+                            requiredDocuments={rfq.requiredDocuments || []}
+                          />
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -545,6 +591,32 @@ export default function ContractorDashboard() {
                               </div>
                             ))}
                           </div>
+                        </div>
+                      )}
+
+                      {/* BID DOCUMENTS MANAGEMENT */}
+                      <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedBidDocsId(expandedBidDocsId === bid.id ? null : bid.id)}
+                          className="text-xs font-bold text-amber-600 hover:text-amber-700 flex items-center gap-1.5 transition-colors"
+                        >
+                          <FileText size={15} />
+                          {expandedBidDocsId === bid.id ? 'بستن مدیریت اسناد پیشنهاد' : 'مدیریت و مشاهده اسناد پیشنهاد (فنی و تجاری)'}
+                        </button>
+                      </div>
+
+                      {expandedBidDocsId === bid.id && (
+                        <div className="pt-3 border-t border-gray-100">
+                          <BidDocumentsManager
+                            rfqId={bid.rfqId}
+                            bidId={bid.id}
+                            isBidOwner={true}
+                            canModify={bid.status !== 'ACCEPTED' && bid.status !== 'REJECTED' && bid.status !== 'WITHDRAWN'}
+                            legacyTechnical={bid.technicalDocuments || []}
+                            legacyCommercial={bid.commercialDocuments || []}
+                            onDocumentChange={loadEpcData}
+                          />
                         </div>
                       )}
                     </div>

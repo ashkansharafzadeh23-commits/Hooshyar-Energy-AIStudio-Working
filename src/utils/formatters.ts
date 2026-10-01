@@ -142,6 +142,11 @@ export function formatJalaliDate(
 }
 
 /**
+ * Backward compatibility alias for formatJalaliDate
+ */
+export const formatPersianDate = formatJalaliDate;
+
+/**
  * Translates technical role identifiers to professional Persian labels.
  */
 export function formatRoleLabel(role: string | null | undefined): string {

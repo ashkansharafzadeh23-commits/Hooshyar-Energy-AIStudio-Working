@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { ProjectRFQ } from '../../../types/rfq.js';
 import { Organization } from '../../../types/organization.js';
+import { RFQDocumentsManager } from '../../../components/rfq/RFQDocumentsManager.js';
 
 interface RFQTabProps {
   projectId: string;
@@ -451,6 +452,13 @@ export default function RFQTab({ projectId, project, onNavigateToBids, onProject
               )}
             </div>
           </div>
+
+          {/* SECURE RFQ DOCUMENTS & REQUIRED DOCUMENTS */}
+          <RFQDocumentsManager 
+            rfqId={rfq.id}
+            isOwner={true}
+            requiredDocuments={rfq.requiredDocuments || []}
+          />
 
           {/* EPC CONTRACTOR INVITATIONS */}
           <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">

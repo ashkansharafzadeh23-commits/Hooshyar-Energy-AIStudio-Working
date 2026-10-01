@@ -16,6 +16,7 @@ import {
   FileCheck
 } from 'lucide-react';
 import { EPCBid, ProjectRFQ } from '../../../types/rfq.js';
+import { BidDocumentsManager } from '../../../components/rfq/BidDocumentsManager.js';
 
 interface BidsTabProps {
   projectId: string;
@@ -513,6 +514,21 @@ export default function BidsTab({ projectId, project, onProjectUpdate }: BidsTab
                       </div>
                     </div>
                   </div>
+
+                  {/* SECURE BID DOCUMENTS (TECHNICAL & COMMERCIAL) */}
+                  {rfq && (
+                    <div className="pt-2">
+                      <h4 className="font-bold text-gray-800 mb-2">اسناد و ضمائم مهندسی و مالی پیشنهاد:</h4>
+                      <BidDocumentsManager
+                        rfqId={rfq.id}
+                        bidId={b.id}
+                        isBidOwner={false}
+                        canModify={false}
+                        legacyTechnical={b.technicalDocuments || []}
+                        legacyCommercial={b.commercialDocuments || []}
+                      />
+                    </div>
+                  )}
 
                   {/* REVISION HISTORY */}
                   {b.revisions && b.revisions.length > 0 && (
