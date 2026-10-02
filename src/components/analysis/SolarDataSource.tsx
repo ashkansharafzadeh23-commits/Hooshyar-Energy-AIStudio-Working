@@ -54,9 +54,9 @@ export const SolarDataSource: React.FC<SolarDataSourceProps> = ({
         <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
           <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">پایگاه داده تابش</div>
           <div className="font-bold text-xs text-zinc-800 dark:text-zinc-200">
-            {isDirectNasa 
-              ? 'پایگاه ماهواره‌ای ناسا (NASA POWER)' 
-              : (isUserProvided ? 'ساعات تابش موثر اعلامی کاربر' : 'داده مرجع امکان‌سنجی')}
+            {isDirectNasa ? (
+              <span>پایگاه ماهواره‌ای <span dir="ltr" className="font-mono font-bold">NASA POWER</span></span>
+            ) : (isUserProvided ? 'ساعات تابش موثر اعلامی کاربر' : 'داده مرجع امکان‌سنجی')}
           </div>
         </div>
 
@@ -65,16 +65,21 @@ export const SolarDataSource: React.FC<SolarDataSourceProps> = ({
           <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">وضعیت ارتباط و صحه‌گذاری</div>
           <div className={`font-bold text-xs ${isDirectNasa ? 'text-emerald-600 dark:text-emerald-400' : (isUserProvided ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-400')}`}>
             {isDirectNasa 
-              ? 'داده برخط دریافت‌شده از ماهواره ناسا (تأییدشده)' 
-              : (isUserProvided ? 'ثبت مستقیم توسط کاربر (نیازمند صحه‌گذاری نهایی EPC)' : 'برآورد مرجع')}
+              ? 'داده برخط ماهواره‌ای (تأییدشده)' 
+              : (isUserProvided ? 'ثبت مستقیم توسط کاربر (نیازمند صحه‌گذاری EPC)' : 'برآورد مرجع')}
           </div>
         </div>
 
         {/* Radiation Metric */}
         <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
           <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">میانگین ساعات آفتابی موثر</div>
-          <div className="font-bold text-xs text-zinc-800 dark:text-zinc-200">
-            {peakSunHours ? `${peakSunHours.toFixed(1)} ساعت/روز (Peak Sun Hours)` : 'داده در دسترس نیست'}
+          <div className="font-bold text-xs text-zinc-800 dark:text-zinc-200 flex items-baseline gap-1">
+            {peakSunHours ? (
+              <>
+                <span dir="ltr" className="font-mono">{peakSunHours.toFixed(1)}</span>
+                <span className="text-[10px] font-normal text-zinc-500">ساعت/روز (PSH)</span>
+              </>
+            ) : 'داده در دسترس نیست'}
           </div>
         </div>
       </div>
