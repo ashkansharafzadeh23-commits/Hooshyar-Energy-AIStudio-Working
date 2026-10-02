@@ -1,8 +1,6 @@
-import React from "react";
-import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { Phone, ArrowLeft, KeySquare, Loader2 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import React, { useState } from 'react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { Phone, ArrowLeft, KeySquare, Loader2, ShieldCheck, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function CustomerLogin() {
@@ -23,7 +21,7 @@ export default function CustomerLogin() {
     e.preventDefault();
     setError(null);
     if (phone.length < 10) {
-      setError('لطفاً یک شماره موبایل معتبر وارد کنید.');
+      setError('لطفاً یک شماره موبایل معتبر ۱۰ رقمی وارد کنید.');
       return;
     }
 
@@ -76,115 +74,157 @@ export default function CustomerLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] flex items-center justify-center p-4" style={{
-      backgroundImage: `url('https://images.unsplash.com/photo-1509391366360-2e959784a276?q=80&w=2072&auto=format&fit=crop')`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-    }}>
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
-
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 relative z-10"
-      >
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 rounded-2xl overflow-hidden mx-auto mb-4 border border-gray-100 shadow-sm">
+    <div className="w-full max-w-md">
+      {/* Architectural Card Surface */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm p-6 sm:p-8">
+        
+        {/* Header */}
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 rounded-2xl overflow-hidden mx-auto mb-4 border border-slate-200 dark:border-slate-800 shadow-xs bg-amber-500/10 flex items-center justify-center">
             <img 
               src="/src/assets/images/solar_app_logo_1786611269806.jpg" 
-              alt="هوشیار انرژی - لوگو" 
-              className="w-full h-full object-cover scale-[1.35] transition-transform"
+              alt="هوشیار انرژی" 
+              className="w-full h-full object-cover scale-125"
+              onError={(e) => {
+                (e.target as HTMLElement).style.display = 'none';
+              }}
             />
           </div>
-          <h1 className="text-2xl font-black text-[#1A1D23] mb-2">
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight mb-2">
             ورود به هوشیار انرژی
           </h1>
-          <p className="text-[#5A6072] text-sm">
-            {step === 'phone' ? 'برای استفاده از خدمات، شماره موبایل خود را وارد کنید.' : 'کد پیامک شده به شماره خود را وارد کنید.'}
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+            {step === 'phone' 
+              ? 'برای دسترسی به پیشخوان، پروژه‌ها و امکان‌سنجی، شماره موبایل خود را وارد نمایید.' 
+              : `کد پیامک‌شده به شماره ${phone} را وارد نمایید.`}
           </p>
         </div>
 
+        {/* Error Alert */}
         {error && (
-          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl text-center">
+          <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-medium text-center">
             {error}
           </div>
         )}
 
+        {/* Step 1: Phone */}
         {step === 'phone' ? (
           <form onSubmit={handlePhoneSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-[#1A1D23] mb-1.5">شماره موبایل</label>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 text-right">
+                شماره موبایل
+              </label>
               <div className="relative">
                 <input 
                   type="tel" 
                   required
+                  autoFocus
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="w-full border-2 border-[#E4E7EC] rounded-xl pl-4 pr-10 py-3 text-sm focus:outline-none focus:border-[#1F9254] transition-colors" 
-                  placeholder="0912..."
+                  className="w-full min-h-[44px] h-11 px-3.5 py-2.5 pl-10 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/20 transition-all text-left" 
+                  placeholder="09123456789"
                   dir="ltr"
                 />
+                <Phone size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               </div>
+              <p className="text-[11px] text-slate-400 mt-1 text-right">
+                کد یک‌بار مصرف ورود (OTP) برای این شماره پیامک خواهد شد.
+              </p>
             </div>
 
             <button 
               type="submit" 
               disabled={loading}
-              className="w-full py-3.5 bg-[#1A1D23] text-white rounded-xl text-sm font-black hover:bg-black transition-colors mt-6 shadow-[0_4px_12px_rgba(0,0,0,0.15)] flex justify-center items-center gap-2 disabled:opacity-50"
+              className="w-full min-h-[44px] py-2.5 px-4 bg-[#0284C7] hover:bg-[#0369A1] active:bg-[#075985] text-white rounded-xl text-sm font-bold shadow-xs hover:shadow-sm transition-all flex justify-center items-center gap-2 disabled:opacity-50 cursor-pointer"
             >
               {loading ? (
                 <Loader2 size={18} className="animate-spin" />
               ) : (
                 <>
-                  ارسال کد تایید
-                  <ArrowLeft size={18} />
+                  <span>ارسال کد تأیید</span>
+                  <ArrowLeft size={16} />
                 </>
               )}
             </button>
           </form>
         ) : (
+          /* Step 2: OTP */
           <form onSubmit={handleOtpSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-[#1A1D23] mb-1.5">کد تایید (۴ رقم)</label>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 text-right">
+                کد تأیید ۴ رقمی
+              </label>
               <div className="relative">
-                <KeySquare size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5A6072]" />
                 <input 
                   type="text" 
                   required
+                  autoFocus
+                  maxLength={4}
                   value={otp}
                   onChange={(e) => setOtp(e.target.value)}
-                  maxLength={4}
-                  className="w-full border-2 border-[#E4E7EC] rounded-xl pl-4 pr-10 py-3 text-sm focus:outline-none focus:border-[#1F9254] transition-colors text-center font-bold tracking-widest text-lg" 
+                  className="w-full min-h-[44px] h-12 px-4 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-center text-xl font-mono font-bold tracking-widest text-slate-900 dark:text-slate-100 focus:outline-none focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/20 transition-all" 
                   placeholder="- - - -"
                   dir="ltr"
                 />
+                <KeySquare size={18} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               </div>
             </div>
 
             <button 
               type="submit" 
               disabled={loading}
-              className="w-full py-3.5 bg-[#1F9254] text-white rounded-xl text-sm font-black hover:bg-[#167643] transition-colors mt-6 shadow-[0_4px_12px_rgba(31,146,84,0.3)] flex justify-center items-center gap-2 disabled:opacity-50"
+              className="w-full min-h-[44px] py-2.5 px-4 bg-[#059669] hover:bg-[#047857] text-white rounded-xl text-sm font-bold shadow-xs transition-all flex justify-center items-center gap-2 disabled:opacity-50 cursor-pointer"
             >
               {loading ? (
                 <Loader2 size={18} className="animate-spin" />
               ) : (
                 <>
-                  ورود به سیستم
-                  <ArrowLeft size={18} />
+                  <span>تأیید و ورود به سامانه</span>
+                  <ArrowLeft size={16} />
                 </>
               )}
             </button>
+
             <button
               type="button"
-              onClick={() => setStep('phone')}
-              className="w-full py-2 text-sm text-[#5A6072] hover:text-[#1A1D23] transition-colors font-medium"
+              onClick={() => { setStep('phone'); setError(null); }}
+              className="w-full py-2 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors font-medium text-center"
             >
               ویرایش شماره موبایل
             </button>
           </form>
         )}
-      </motion.div>
+
+        {/* Partner Ecosystem Gateways */}
+        <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 text-center">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+            ورود همکاران و متخصصان:
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+            <Link 
+              to="/contractor-auth" 
+              className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-[#0284C7] dark:hover:text-blue-400 transition-colors font-medium"
+            >
+              شرکت‌های EPC
+            </Link>
+            <span className="text-slate-300 dark:text-slate-700">·</span>
+            <Link 
+              to="/vendor-auth" 
+              className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-[#0284C7] dark:hover:text-blue-400 transition-colors font-medium"
+            >
+              تأمین‌کنندگان
+            </Link>
+            <span className="text-slate-300 dark:text-slate-700">·</span>
+            <Link 
+              to="/technician-auth" 
+              className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-[#0284C7] dark:hover:text-blue-400 transition-colors font-medium"
+            >
+              تعمیرکاران
+            </Link>
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }

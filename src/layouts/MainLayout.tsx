@@ -3,9 +3,11 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { DesktopHeader } from '../components/navigation/DesktopHeader';
 import { MobileBottomNav } from '../components/navigation/MobileBottomNav';
 import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 
 export default function MainLayout() {
   const { state } = useAppContext();
+  const { isAuthenticated } = useAuth();
   const location = useLocation();
 
   // Determine if on a calculation wizard step
@@ -31,6 +33,16 @@ export default function MainLayout() {
 
   const wizardInfo = isWizardFlow ? getWizardStepInfo() : null;
 
+  const isPublicOrAuthPath = [
+    '/',
+    '/customer-login',
+    '/contractor-auth',
+    '/vendor-auth',
+    '/technician-auth'
+  ].includes(location.pathname);
+
+  const shouldPadBottomForNav = isAuthenticated && !isPublicOrAuthPath;
+
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC] dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased transition-colors" dir="rtl">
       {/* Global Unified Header */}
@@ -41,7 +53,7 @@ export default function MainLayout() {
         <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xs border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-8 py-2.5">
           <div className="max-w-5xl mx-auto flex items-center justify-between gap-4 text-xs">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
+              <span className="w-2 h-2 rounded-full bg-[#0284C7]" />
               <span className="text-slate-500 dark:text-slate-400 font-medium">تحلیل هوشمند انرژی:</span>
               <span className="font-bold text-slate-800 dark:text-slate-200">{wizardInfo.label}</span>
               {state.city && (
@@ -57,7 +69,7 @@ export default function MainLayout() {
               </span>
               <div className="w-20 sm:w-28 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-amber-500 transition-all duration-300 rounded-full"
+                  className="h-full bg-[#0284C7] transition-all duration-300 rounded-full"
                   style={{ width: `${(wizardInfo.step / wizardInfo.total) * 100}%` }}
                 />
               </div>
@@ -66,12 +78,12 @@ export default function MainLayout() {
         </div>
       )}
 
-      {/* Main Page Content - with bottom padding on mobile so MobileBottomNav never overlaps */}
-      <main className="flex-1 w-full pb-24 md:pb-10">
+      {/* Main Page Content */}
+      <main className={`flex-1 w-full ${shouldPadBottomForNav ? 'pb-24 md:pb-10' : 'pb-10'}`}>
         <Outlet />
       </main>
 
-      {/* Persistent Mobile Bottom Navigation (Visible below md / 768px) */}
+      {/* Mobile Bottom Navigation (Only rendered when user is authenticated & on app pages) */}
       <MobileBottomNav />
 
       {/* Clean Technical Context Footer on Analysis Results */}

@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, UserCircle, Phone, Lock, MapPin, Briefcase, Award, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, UserCircle, Phone, Lock, MapPin, Briefcase, Award, AlertCircle, CheckCircle2, Loader2, Wrench } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { AdBanner } from '../components/AdBanner';
 
 export default function TechnicianAuth() {
   const navigate = useNavigate();
@@ -70,7 +68,7 @@ export default function TechnicianAuth() {
         }
 
         login(data.token, data.user);
-        setSuccessMsg('ثبت‌نام با موفقیت انجام شد. حساب کاربری شما ایجاد گردید و پرونده کارشناسی جهت بررسی در صف ثبت شد.');
+        setSuccessMsg('ثبت‌نام با موفقیت انجام شد. حساب کاربری ایجاد گردید.');
         setTimeout(() => {
           navigate('/technician-dashboard');
         }, 1200);
@@ -83,133 +81,213 @@ export default function TechnicianAuth() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] dark:bg-zinc-950 font-sans p-4 md:p-6 pb-24">
-      <div className="max-w-2xl mx-auto space-y-6 pt-10">
-        <header className="flex items-center justify-between mb-8">
-          <Link to="/partners" className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white font-medium transition-colors">
-            <ArrowLeft size={18} />
-            بازگشت به همکاران
-          </Link>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-            <UserCircle className="text-emerald-600" />
-            کارشناسان و تعمیرکاران فنی خورشیدی
-          </h1>
-        </header>
+    <div className="w-full max-w-xl">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm p-6 sm:p-8">
         
-        <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-slate-200 dark:border-zinc-800 overflow-hidden">
-          {/* Tabs */}
-          <div className="flex border-b border-slate-100 dark:border-zinc-800">
-            <button 
-              type="button"
-              onClick={() => { setIsLogin(true); setError(null); }}
-              className={`flex-1 py-4 font-bold text-center transition-colors relative ${isLogin ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 hover:text-slate-700 dark:text-zinc-400'}`}
-            >
-              ورود به حساب
-              {isLogin && <motion.div layoutId="tech_tab" className="absolute bottom-0 left-0 right-0 h-1 bg-emerald-600 rounded-t-full" />}
-            </button>
-            <button 
-              type="button"
-              onClick={() => { setIsLogin(false); setError(null); }}
-              className={`flex-1 py-4 font-bold text-center transition-colors relative ${!isLogin ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 hover:text-slate-700 dark:text-zinc-400'}`}
-            >
-              ثبت‌نام کارشناس
-              {!isLogin && <motion.div layoutId="tech_tab" className="absolute bottom-0 left-0 right-0 h-1 bg-emerald-600 rounded-t-full" />}
-            </button>
+        {/* Brand & Context Header */}
+        <div className="text-center mb-6">
+          <div className="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/60 text-[#0284C7] dark:text-blue-400 mx-auto mb-3 flex items-center justify-center shadow-xs">
+            <Wrench size={28} />
           </div>
-          
-          <div className="p-6 md:p-8">
-            {error && (
-              <div className="mb-6 p-4 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-400 flex items-center gap-2 text-sm">
-                <AlertCircle size={18} className="shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
-
-            {successMsg && (
-              <div className="mb-6 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-400 flex items-center gap-2 text-sm">
-                <CheckCircle2 size={18} className="shrink-0" />
-                <span>{successMsg}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {!isLogin && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-zinc-300 mb-2">نام و نام خانوادگی</label>
-                    <input required name="name" value={formData.name} onChange={handleChange} type="text" className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 focus:border-emerald-500 outline-none transition-all font-medium text-slate-800 dark:text-zinc-100" placeholder="مثال: علی احمدی" />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-zinc-300 mb-2">تخصص خورشیدی اصلی</label>
-                    <div className="relative">
-                      <select required name="profession" value={formData.profession} onChange={handleChange} className="w-full px-4 py-3 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 focus:border-emerald-500 outline-none transition-all font-medium text-slate-800 dark:text-zinc-100 appearance-none">
-                        <option value="متخصص سیستم‌های فتوولتائیک و پنل">متخصص سیستم‌های فتوولتائیک و پنل</option>
-                        <option value="اینورتر و سیستم‌های الکترونیک قدرت">اینورتر و سیستم‌های الکترونیک قدرت</option>
-                        <option value="باتری و سیستم‌های ذخیره‌ساز انرژی">باتری و سیستم‌های ذخیره‌ساز انرژی</option>
-                        <option value="تابلو برق، حفاظت و اتوماسیون خورشیدی">تابلو برق، حفاظت و اتوماسیون خورشیدی</option>
-                        <option value="پایش برخط و عیب‌یابی نیروگاهی">پایش برخط و عیب‌یابی نیروگاهی</option>
-                        <option value="سرویس و نگهداری دوره‌ای نیروگاه خورشیدی">سرویس و نگهداری دوره‌ای نیروگاه خورشیدی</option>
-                      </select>
-                      <Briefcase className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-zinc-300 mb-2">سابقه کار در حوزه خورشیدی (سال)</label>
-                    <div className="relative">
-                      <input name="experience" value={formData.experience} onChange={handleChange} type="number" min="0" max="50" className="w-full px-4 py-3 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 focus:border-emerald-500 outline-none transition-all font-medium text-slate-800 dark:text-zinc-100" placeholder="مثال: 5" />
-                      <Award className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-zinc-300 mb-2">شهر و استان فعالیت</label>
-                    <div className="relative">
-                      <input required name="city" value={formData.city} onChange={handleChange} type="text" className="w-full px-4 py-3 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 focus:border-emerald-500 outline-none transition-all font-medium text-slate-800 dark:text-zinc-100" placeholder="مثال: تهران" />
-                      <MapPin className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
-                    </div>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-bold text-slate-700 dark:text-zinc-300 mb-2">توضیحات و سوابق کاری</label>
-                    <textarea name="bio" value={formData.bio} onChange={handleChange} rows={3} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 focus:border-emerald-500 outline-none transition-all font-medium text-slate-800 dark:text-zinc-100 resize-none" placeholder="توضیحات درباره سوابق، پروژه‌های نصب و گواهینامه‌های حرفه‌ای..."></textarea>
-                  </div>
-                </div>
-              )}
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-zinc-300 mb-2">شماره موبایل</label>
-                  <div className="relative">
-                    <input required name="phone" value={formData.phone} onChange={handleChange} type="tel" dir="ltr" className="w-full px-4 py-3 pl-10 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 focus:border-emerald-500 outline-none transition-all font-medium text-slate-800 dark:text-zinc-100 text-right" placeholder="0912..." />
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-zinc-300 mb-2">رمز عبور</label>
-                  <div className="relative">
-                    <input required name="password" value={formData.password} onChange={handleChange} type="password" dir="ltr" className="w-full px-4 py-3 pl-10 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 focus:border-emerald-500 outline-none transition-all font-medium text-slate-800 dark:text-zinc-100 text-right" placeholder="********" />
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4">
-                <button 
-                  type="submit" 
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 bg-emerald-600 text-white py-3.5 rounded-xl text-base font-bold hover:bg-emerald-700 transition-colors shadow-md disabled:opacity-50"
-                >
-                  {loading ? 'در حال پردازش...' : (isLogin ? 'ورود به پنل کارشناسی' : 'ثبت اطلاعات کارشناس')}
-                </button>
-              </div>
-            </form>
-          </div>
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
+            ورود و ثبت‌نام متخصصان تعمیرات و نگهداری
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+            مأموریت‌های میدانی، عیب‌یابی تجهیزات، پایش سلامت و ثبت گزارش‌های فنی
+          </p>
         </div>
+
+        {/* Tab Switcher */}
+        <div className="flex p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl mb-6">
+          <button 
+            type="button"
+            onClick={() => { setIsLogin(true); setError(null); }}
+            className={`flex-1 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+              isLogin 
+                ? 'bg-white dark:bg-slate-900 text-[#0284C7] dark:text-blue-400 shadow-xs' 
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            ورود کارشناس
+          </button>
+          <button 
+            type="button"
+            onClick={() => { setIsLogin(false); setError(null); }}
+            className={`flex-1 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+              !isLogin 
+                ? 'bg-white dark:bg-slate-900 text-[#0284C7] dark:text-blue-400 shadow-xs' 
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            ثبت‌نام کارشناس جدید
+          </button>
+        </div>
+
+        {/* Alerts */}
+        {error && (
+          <div className="mb-6 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 flex items-center gap-2 text-xs">
+            <AlertCircle size={16} className="shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="mb-6 p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 flex items-center gap-2 text-xs font-medium">
+            <CheckCircle2 size={16} className="shrink-0" />
+            <span>{successMsg}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {!isLogin && (
+            <div className="space-y-4">
+              <div>
+                <label className="label-he">نام و نام خانوادگی کارشناس</label>
+                <input 
+                  required 
+                  name="name" 
+                  value={formData.name} 
+                  onChange={handleChange} 
+                  type="text" 
+                  className="input-he" 
+                  placeholder="مثال: مهندس علی حسینی" 
+                />
+              </div>
+
+              <div>
+                <label className="label-he">تخصص خورشیدی اصلی</label>
+                <div className="relative">
+                  <select 
+                    required 
+                    name="profession" 
+                    value={formData.profession} 
+                    onChange={handleChange} 
+                    className="input-he pr-9 appearance-none"
+                  >
+                    <option value="متخصص سیستم‌های فتوولتائیک و پنل">متخصص سیستم‌های فتوولتائیک و پنل</option>
+                    <option value="اینورتر و سیستم‌های الکترونیک قدرت">اینورتر و سیستم‌های الکترونیک قدرت</option>
+                    <option value="باتری و سیستم‌های ذخیره‌ساز انرژی">باتری و سیستم‌های ذخیره‌ساز انرژی</option>
+                    <option value="تابلو برق، حفاظت و اتوماسیون خورشیدی">تابلو برق، حفاظت و اتوماسیون خورشیدی</option>
+                    <option value="پایش برخط و عیب‌یابی نیروگاهی">پایش برخط و عیب‌یابی نیروگاهی</option>
+                    <option value="سرویس و نگهداری دوره‌ای نیروگاه خورشیدی">سرویس و نگهداری دوره‌ای نیروگاه خورشیدی</option>
+                  </select>
+                  <Briefcase className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="label-he">سابقه کار در حوزه خورشیدی (سال)</label>
+                  <div className="relative">
+                    <input 
+                      name="experience" 
+                      value={formData.experience} 
+                      onChange={handleChange} 
+                      type="number" 
+                      min="0" 
+                      max="50" 
+                      className="input-he pr-9" 
+                      placeholder="مثال: 5" 
+                    />
+                    <Award className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label-he">شهر و استان فعالیت</label>
+                  <div className="relative">
+                    <input 
+                      required 
+                      name="city" 
+                      value={formData.city} 
+                      onChange={handleChange} 
+                      type="text" 
+                      className="input-he pr-9" 
+                      placeholder="مثال: اصفهان" 
+                    />
+                    <MapPin className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="label-he">سوابق فنی و مدارک حرفه‌ای</label>
+                <textarea 
+                  name="bio" 
+                  value={formData.bio} 
+                  onChange={handleChange} 
+                  rows={2} 
+                  className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/20 transition-all resize-none" 
+                  placeholder="سوابق اجرایی، گواهینامه‌های فنی‌وحرفه‌ای، دوره‌های نصب و نظارت..."
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="label-he">شماره موبایل</label>
+              <div className="relative">
+                <input 
+                  required 
+                  name="phone" 
+                  value={formData.phone} 
+                  onChange={handleChange} 
+                  type="tel" 
+                  dir="ltr" 
+                  className="input-he pl-9 text-left" 
+                  placeholder="0912..." 
+                />
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+              </div>
+            </div>
+            
+            <div>
+              <label className="label-he">رمز عبور</label>
+              <div className="relative">
+                <input 
+                  required 
+                  name="password" 
+                  value={formData.password} 
+                  onChange={handleChange} 
+                  type="password" 
+                  dir="ltr" 
+                  className="input-he pl-9 text-left" 
+                  placeholder="********" 
+                />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="btn-he-primary w-full"
+            >
+              {loading ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <>
+                  <span>{isLogin ? 'ورود به پنل کارشناسی' : 'ثبت اطلاعات کارشناس در سامانه'}</span>
+                  <ArrowLeft size={16} />
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+
+        <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+          <Link to="/customer-login" className="hover:text-[#0284C7] transition-colors">
+            ورود مالکان و کارفرمایان
+          </Link>
+          <Link to="/contractor-auth" className="hover:text-[#0284C7] transition-colors">
+            ورود شرکت‌های EPC
+          </Link>
+        </div>
+
       </div>
-      <div className="mt-8"><AdBanner layout="card" /></div>
     </div>
   );
 }

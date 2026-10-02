@@ -36,6 +36,7 @@ import AdminReview from './pages/solar-assets/AdminReview';
 import AdminAdsReview from './pages/solar-assets/AdminAdsReview';
 import SolarAnalysisExperience from './pages/SolarAnalysisExperience';
 import MainLayout from './layouts/MainLayout';
+import AuthLayout from './layouts/AuthLayout';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
@@ -58,65 +59,72 @@ export default function App() {
         <AuthProvider>
           <BrowserRouter>
             <Routes>
+              {/* Public Landing Page */}
               <Route path="/" element={<Landing />} />
-              <Route element={<MainLayout />}>
-              <Route path="/customer-login" element={<CustomerLogin />} />
-              <Route path="/user-dashboard" element={<UserDashboard />} />
-              <Route path="/dashboard" element={<UserDashboard />} />
-              <Route path="/projects" element={<UserDashboard />} />
-              <Route path="/projects/:id" element={<ProjectDetail />} />
-              <Route path="/projects/:id/proposal" element={<ProjectProposal />} />
-              <Route path="/investment-hub" element={<InvestmentHub />} />
-              <Route path="/investment-hub/opportunities" element={<OpportunitiesList />} />
-              <Route path="/investment-hub/opportunities/:id" element={<OpportunityDetail />} />
-              <Route path="/investment-hub/investor-profile" element={<InvestorProfileSetup />} />
-              <Route path="/investment-hub/matches" element={<MyMatches />} />
-              <Route path="/enterprise/portfolio" element={<PortfolioDashboard />} />
-              <Route path="/portfolio" element={<PortfolioDashboard />} />
 
-              <Route path="/powerplant-setup" element={<PowerPlantSetup />} />
-              <Route path="/solar-assets" element={<SolarAssetsList />} />
-              <Route path="/assets" element={<SolarAssetsList />} />
-              <Route path="/solar-assets/my-projects" element={<MyProjects />} />
-              <Route path="/solar-assets/:id" element={<SolarAssetDetail />} />
-              <Route path="/assets/:id" element={<SolarAssetDetail />} />
-              <Route path="/admin/solar-assets" element={<AdminReview />} />
-              <Route path="/admin/ads" element={<AdminAdsReview />} />
-              <Route path="/solar-planner" element={<SolarPlanner />} />
-              <Route path="/target-select" element={<SolarAnalysisExperience />} />
-              <Route path="/solar-analysis" element={<SolarAnalysisExperience />} />
-              <Route path="/legacy-target-select" element={<Home />} />
-              <Route path="/location-type" element={<LocationTypePage />} />
-              <Route path="/area-city" element={<AreaCityPage />} />
-              <Route path="/checklist" element={<ChecklistPage />} />
-              <Route path="/consumption" element={<ConsumptionPage />} />
-              <Route path="/recommendation" element={<RecommendationPage />} />
-              <Route path="/result" element={<ResultPage />} />
-              <Route path="/sellers" element={<SellersList />} />
-              <Route path="/vendors" element={<VendorsList />} />
-              <Route path="/marketplace" element={<ContractorsList />} />
-              <Route path="/contractors" element={<ContractorsList />} />
-              <Route path="/epc/:id" element={<ContractorPublicProfile />} />
-              <Route path="/partners" element={<PartnersHub />} />
-              <Route path="/contractor-auth" element={<ContractorAuth />} />
-              <Route path="/contractor-dashboard" element={<ContractorDashboard />} />
-              <Route path="/ads-portal" element={<AdsPortal />} />
-              <Route path="/ads/portal" element={<AdsPortal />} />
-              <Route path="/smart-maintenance" element={<SmartMaintenance />} />
-              <Route path="/maintenance" element={<SmartMaintenance />} />
-              <Route path="/technicians" element={<TechniciansList />} />
-              <Route path="/technician-auth" element={<TechnicianAuth />} />
-              <Route path="/technician-dashboard" element={<TechnicianDashboard />} />
-              <Route path="/professionals/:id" element={<TechnicianPublicProfile />} />
-              <Route path="/vendor-auth" element={<VendorAuth />} />
-              <Route path="/technicians-list" element={<TechniciansList />} />
-            <Route path="/vendor/:id" element={<VendorStorefront />} />
-            <Route path="/vendor-portal/*" element={<VendorPortal />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
-    </ToastProvider>
-  </AppProvider>
+              {/* Dedicated Authentication Route Shell (Zero customer bottom navigation) */}
+              <Route element={<AuthLayout />}>
+                <Route path="/customer-login" element={<CustomerLogin />} />
+                <Route path="/contractor-auth" element={<ContractorAuth />} />
+                <Route path="/vendor-auth" element={<VendorAuth />} />
+                <Route path="/technician-auth" element={<TechnicianAuth />} />
+              </Route>
+
+              {/* Main Application & Workspace Shell */}
+              <Route element={<MainLayout />}>
+                <Route path="/user-dashboard" element={<UserDashboard />} />
+                <Route path="/dashboard" element={<UserDashboard />} />
+                <Route path="/projects" element={<UserDashboard />} />
+                <Route path="/projects/:id" element={<ProjectDetail />} />
+                <Route path="/projects/:id/proposal" element={<ProjectProposal />} />
+                <Route path="/investment-hub" element={<InvestmentHub />} />
+                <Route path="/investment-hub/opportunities" element={<OpportunitiesList />} />
+                <Route path="/investment-hub/opportunities/:id" element={<OpportunityDetail />} />
+                <Route path="/investment-hub/investor-profile" element={<InvestorProfileSetup />} />
+                <Route path="/investment-hub/matches" element={<MyMatches />} />
+                <Route path="/enterprise/portfolio" element={<PortfolioDashboard />} />
+                <Route path="/portfolio" element={<PortfolioDashboard />} />
+
+                <Route path="/powerplant-setup" element={<PowerPlantSetup />} />
+                <Route path="/solar-assets" element={<SolarAssetsList />} />
+                <Route path="/assets" element={<SolarAssetsList />} />
+                <Route path="/solar-assets/my-projects" element={<MyProjects />} />
+                <Route path="/solar-assets/:id" element={<SolarAssetDetail />} />
+                <Route path="/assets/:id" element={<SolarAssetDetail />} />
+                <Route path="/admin/solar-assets" element={<AdminReview />} />
+                <Route path="/admin/ads" element={<AdminAdsReview />} />
+                <Route path="/solar-planner" element={<SolarPlanner />} />
+                <Route path="/target-select" element={<SolarAnalysisExperience />} />
+                <Route path="/solar-analysis" element={<SolarAnalysisExperience />} />
+                <Route path="/legacy-target-select" element={<Home />} />
+                <Route path="/location-type" element={<LocationTypePage />} />
+                <Route path="/area-city" element={<AreaCityPage />} />
+                <Route path="/checklist" element={<ChecklistPage />} />
+                <Route path="/consumption" element={<ConsumptionPage />} />
+                <Route path="/recommendation" element={<RecommendationPage />} />
+                <Route path="/result" element={<ResultPage />} />
+                <Route path="/sellers" element={<SellersList />} />
+                <Route path="/vendors" element={<VendorsList />} />
+                <Route path="/marketplace" element={<ContractorsList />} />
+                <Route path="/contractors" element={<ContractorsList />} />
+                <Route path="/epc/:id" element={<ContractorPublicProfile />} />
+                <Route path="/partners" element={<PartnersHub />} />
+                <Route path="/contractor-dashboard" element={<ContractorDashboard />} />
+                <Route path="/ads-portal" element={<AdsPortal />} />
+                <Route path="/ads/portal" element={<AdsPortal />} />
+                <Route path="/smart-maintenance" element={<SmartMaintenance />} />
+                <Route path="/maintenance" element={<SmartMaintenance />} />
+                <Route path="/technicians" element={<TechniciansList />} />
+                <Route path="/technician-dashboard" element={<TechnicianDashboard />} />
+                <Route path="/professionals/:id" element={<TechnicianPublicProfile />} />
+                <Route path="/technicians-list" element={<TechniciansList />} />
+                <Route path="/vendor/:id" element={<VendorStorefront />} />
+                <Route path="/vendor-portal/*" element={<VendorPortal />} />
+              </Route>
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+      </ToastProvider>
+    </AppProvider>
   );
 }
