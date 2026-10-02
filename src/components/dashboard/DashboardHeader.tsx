@@ -28,7 +28,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
       case 'CUSTOMER':
       case 'OWNER':
         return {
-          label: 'تحلیل و ایجاد پروژه جدید',
+          label: 'شروع پروژه جدید',
           to: '/target-select',
           icon: Plus,
           primary: true
@@ -81,7 +81,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         };
       default:
         return {
-          label: 'محاسبه پتانسیل خورشیدی',
+          label: 'شروع پروژه جدید',
           to: '/target-select',
           icon: Plus,
           primary: true
@@ -120,8 +120,8 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         </p>
       </div>
 
-      {/* Role-Aware Primary Quick Action */}
-      <div className="flex flex-wrap items-center gap-2 pt-1 md:pt-0">
+      {/* Role-Aware Primary Quick Action (Desktop only; mobile shows ONE prominent CTA below greeting) */}
+      <div className="hidden md:flex flex-wrap items-center gap-2 pt-1 md:pt-0">
         <Link
           to={quickAction.to}
           className={`inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-sm transition-colors shadow-xs min-h-[44px] ${

@@ -50,7 +50,7 @@ export const ActiveProjects: React.FC<ActiveProjectsProps> = ({
           )}
           <Link
             to="/target-select"
-            className="hidden sm:inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-950/60 px-3 py-1.5 rounded-xl border border-amber-200 dark:border-amber-800 transition-colors min-h-[44px]"
+            className="hidden sm:inline-flex items-center gap-1.5 text-xs font-bold text-[#0284C7] dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-950/60 px-3 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800 transition-colors min-h-[44px]"
           >
             <Plus size={14} />
             <span>پروژه جدید</span>

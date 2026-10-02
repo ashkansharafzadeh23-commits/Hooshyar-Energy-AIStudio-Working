@@ -38,17 +38,35 @@ const STATUS_MAP: Record<string, { label: string; bg: string; text: string; bord
     text: 'text-blue-700 dark:text-blue-300',
     border: 'border-blue-200 dark:border-blue-800'
   },
+  ANALYSIS: {
+    label: 'تحلیل اولیه',
+    bg: 'bg-blue-50 dark:bg-blue-950/40',
+    text: 'text-blue-700 dark:text-blue-300',
+    border: 'border-blue-200 dark:border-blue-800'
+  },
   FEASIBILITY_READY: {
     label: 'تایید امکان‌سنجی',
     bg: 'bg-blue-50 dark:bg-blue-950/40',
     text: 'text-blue-700 dark:text-blue-300',
     border: 'border-blue-200 dark:border-blue-800'
   },
+  READY_FOR_RFQ: {
+    label: 'آماده انتشار استعلام',
+    bg: 'bg-amber-50 dark:bg-amber-950/40',
+    text: 'text-amber-800 dark:text-amber-300',
+    border: 'border-amber-300 dark:border-amber-700'
+  },
   RFQ_DRAFT: {
     label: 'پیش‌نویس استعلام EPC',
     bg: 'bg-amber-50 dark:bg-amber-950/40',
     text: 'text-amber-700 dark:text-amber-300',
     border: 'border-amber-200 dark:border-amber-800'
+  },
+  RFQ_OPEN: {
+    label: 'استعلام فعال (RFQ)',
+    bg: 'bg-amber-50 dark:bg-amber-950/40',
+    text: 'text-amber-800 dark:text-amber-300',
+    border: 'border-amber-300 dark:border-amber-700'
   },
   RFQ_PUBLISHED: {
     label: 'مناقصه فعال',
@@ -57,13 +75,25 @@ const STATUS_MAP: Record<string, { label: string; bg: string; text: string; bord
     border: 'border-amber-300 dark:border-amber-700'
   },
   BIDS_RECEIVED: {
-    label: 'در حال ارزیابی پیشنهادات',
+    label: 'پیشنهادها دریافت شد',
     bg: 'bg-amber-100 dark:bg-amber-900/40',
     text: 'text-amber-900 dark:text-amber-200',
     border: 'border-amber-300 dark:border-amber-700'
   },
+  EPC_SELECTED: {
+    label: 'پیمانکار انتخاب شد',
+    bg: 'bg-indigo-50 dark:bg-indigo-950/40',
+    text: 'text-indigo-700 dark:text-indigo-300',
+    border: 'border-indigo-200 dark:border-indigo-800'
+  },
   CONTRACTOR_SELECTED: {
     label: 'پیمانکار تعیین شد',
+    bg: 'bg-indigo-50 dark:bg-indigo-950/40',
+    text: 'text-indigo-700 dark:text-indigo-300',
+    border: 'border-indigo-200 dark:border-indigo-800'
+  },
+  CONTRACTING: {
+    label: 'عقد قرارداد',
     bg: 'bg-indigo-50 dark:bg-indigo-950/40',
     text: 'text-indigo-700 dark:text-indigo-300',
     border: 'border-indigo-200 dark:border-indigo-800'
@@ -73,6 +103,12 @@ const STATUS_MAP: Record<string, { label: string; bg: string; text: string; bord
     bg: 'bg-indigo-50 dark:bg-indigo-950/40',
     text: 'text-indigo-700 dark:text-indigo-300',
     border: 'border-indigo-200 dark:border-indigo-800'
+  },
+  FINANCING: {
+    label: 'تأمین مالی',
+    bg: 'bg-sky-50 dark:bg-sky-950/40',
+    text: 'text-sky-700 dark:text-sky-300',
+    border: 'border-sky-200 dark:border-sky-800'
   },
   FINANCING_PENDING: {
     label: 'در انتظار تأمین مالی',
@@ -109,6 +145,12 @@ const STATUS_MAP: Record<string, { label: string; bg: string; text: string; bord
     bg: 'bg-emerald-50 dark:bg-emerald-950/40',
     text: 'text-emerald-700 dark:text-emerald-300',
     border: 'border-emerald-300 dark:border-emerald-700'
+  },
+  MAINTENANCE: {
+    label: 'پایش و نگهداری',
+    bg: 'bg-blue-50 dark:bg-blue-950/40',
+    text: 'text-blue-700 dark:text-blue-300',
+    border: 'border-blue-200 dark:border-blue-800'
   },
   STALLED: {
     label: 'نیازمند پیگیری / راکد',

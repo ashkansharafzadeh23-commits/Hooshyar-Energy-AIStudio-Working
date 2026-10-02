@@ -66,34 +66,34 @@ export const RoleSummary: React.FC<RoleSummaryProps> = ({
         </span>
       </div>
 
-      <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-${Math.min(validMetrics.length, 4)} gap-3`}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
         {validMetrics.map((metric) => {
           const MetricIcon = metric.icon || Zap;
           return (
             <div
               key={metric.id}
-              className="p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs flex flex-col justify-between gap-3"
+              className="p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs flex flex-col justify-between gap-1.5 sm:gap-2.5 transition-all"
             >
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-400 line-clamp-1">
                   {metric.label}
                 </span>
                 <DataTruthBadge type={metric.provenance} size="sm" />
               </div>
 
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
+              <div className="flex items-baseline gap-1 my-0.5">
+                <span className="text-lg sm:text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight tabular-nums">
                   {metric.value}
                 </span>
                 {metric.unit && (
-                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 dark:text-slate-400">
                     {metric.unit}
                   </span>
                 )}
               </div>
 
               {metric.subtext && (
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800/80 pt-2">
+                <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800/80 pt-1.5 truncate">
                   {metric.subtext}
                 </p>
               )}

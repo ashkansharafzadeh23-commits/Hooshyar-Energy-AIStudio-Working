@@ -37,7 +37,7 @@ export const AnalysisStepLayout: React.FC<AnalysisStepLayoutProps> = ({
       <div className="mb-6 sm:mb-8 text-right">
         {/* Step Indicator */}
         <div className="flex items-center justify-between gap-4 mb-3">
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-blue-50 dark:bg-blue-950/40 text-[#0284C7] dark:text-blue-300 border border-blue-200 dark:border-blue-800">
             مرحله {currentStep} از {totalSteps}
           </span>
           <div className="flex gap-1.5" aria-hidden="true">
@@ -46,10 +46,10 @@ export const AnalysisStepLayout: React.FC<AnalysisStepLayoutProps> = ({
                 key={idx}
                 className={`h-1.5 rounded-full transition-all duration-300 ${
                   idx + 1 === currentStep
-                    ? 'w-7 bg-amber-500'
+                    ? 'w-7 bg-[#0284C7]'
                     : idx + 1 < currentStep
-                    ? 'w-3.5 bg-amber-300 dark:bg-amber-700'
-                    : 'w-3.5 bg-zinc-200 dark:bg-zinc-800'
+                    ? 'w-3.5 bg-emerald-500'
+                    : 'w-3.5 bg-slate-200 dark:bg-slate-800'
                 }`}
               />
             ))}
@@ -57,11 +57,11 @@ export const AnalysisStepLayout: React.FC<AnalysisStepLayoutProps> = ({
         </div>
 
         {/* Step Titles */}
-        <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-zinc-50 mb-1.5 tracking-tight">
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mb-1.5 tracking-tight">
           {stepTitle}
         </h2>
         {stepDescription && (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400 font-normal leading-relaxed">
+          <p className="text-sm text-slate-600 dark:text-slate-400 font-normal leading-relaxed">
             {stepDescription}
           </p>
         )}
@@ -80,12 +80,12 @@ export const AnalysisStepLayout: React.FC<AnalysisStepLayoutProps> = ({
       </motion.div>
 
       {/* Action Footer (Desktop & Mobile Friendly, Min 44px touch targets) */}
-      <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-3 sticky bottom-0 bg-zinc-50/90 dark:bg-zinc-950/90 backdrop-blur-md pb-4 z-10">
+      <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 sticky bottom-0 bg-[#F8FAFC]/95 dark:bg-slate-950/95 backdrop-blur-md pb-4 z-10">
         {showPrev && onPrev ? (
           <button
             type="button"
             onClick={onPrev}
-            className="min-h-[44px] px-5 py-2.5 rounded-xl font-medium text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200/70 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1.5 border border-zinc-300 dark:border-zinc-700 cursor-pointer"
+            className="min-h-[44px] px-5 py-2.5 rounded-xl font-medium text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 border border-slate-300 dark:border-slate-700 cursor-pointer"
           >
             <ArrowRight size={16} />
             <span>{prevLabel}</span>
@@ -101,13 +101,13 @@ export const AnalysisStepLayout: React.FC<AnalysisStepLayoutProps> = ({
             disabled={isNextDisabled || isNextLoading}
             className={`min-h-[44px] px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all cursor-pointer ${
               isNextDisabled || isNextLoading
-                ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed border border-transparent'
-                : 'bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-zinc-950 shadow-sm'
+                ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-transparent'
+                : 'bg-[#0284C7] hover:bg-[#0369A1] active:bg-[#075985] text-white shadow-xs'
             }`}
           >
             {isNextLoading ? (
               <span className="flex items-center gap-2">
-                <span className="w-4 h-4 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 <span>در حال پردازش...</span>
               </span>
             ) : (

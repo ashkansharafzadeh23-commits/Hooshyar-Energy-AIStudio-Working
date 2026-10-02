@@ -899,73 +899,120 @@ export default function UserDashboard() {
 
   return (
     <PageContainer maxWidth="wide" className="space-y-8">
-      {/* 1. Greeting & Context Header */}
+      {/* 1. Greeting & Context Header (A. Welcome / Command area) */}
       <DashboardHeader
         user={user}
         activeRole={activeRole}
         activeOrganization={activeOrganization}
       />
 
-      {/* 2. Specialized Engineering & Maintenance Quick Tools */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 gap-4" aria-label="ابزارهای تخصصی خورشیدی">
+      {/* Mobile-Only Prominent Primary CTA (B. Primary CTA on mobile) */}
+      <div className="md:hidden">
         <Link
-          to="/solar-planner"
-          className="p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-amber-400 dark:hover:border-amber-500/50 hover:shadow-md transition-all flex items-center justify-between group"
+          to="/target-select"
+          className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl font-bold text-sm bg-[#0284C7] hover:bg-[#0369A1] active:bg-[#075985] text-white shadow-xs transition-all min-h-[48px]"
         >
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-amber-500/10 dark:bg-amber-400/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-              <Box size={24} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
-                  طراحی سه‌بعدی پنل خورشیدی
-                </h3>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                  شبیه‌ساز ۳D
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                چیدمان سه‌بعدی پنل‌ها بر روی پشت‌بام، تنظیم شیب و محاسبه تحلیل سایه‌اندازی
-              </p>
-            </div>
-          </div>
-          <ArrowRight size={18} className="text-slate-400 rotate-180 group-hover:-translate-x-1 transition-transform shrink-0" />
+          <Plus size={18} />
+          <span>شروع پروژه جدید</span>
+          <ArrowLeft size={16} />
         </Link>
+      </div>
 
-        <Link
-          to="/smart-maintenance"
-          className="p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-400 dark:hover:border-blue-500/50 hover:shadow-md transition-all flex items-center justify-between group"
-        >
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-blue-500/10 dark:bg-blue-400/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-              <Wrench size={24} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                  تعمیرات و نگهداری هوشمند
-                </h3>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
-                  سرویس و عیب‌یابی
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                ثبت خرابی تجهیزات، پایش سلامت نیروگاه و ارتباط با متخصصان نگهداری
-              </p>
-            </div>
-          </div>
-          <ArrowRight size={18} className="text-slate-400 rotate-180 group-hover:-translate-x-1 transition-transform shrink-0" />
-        </Link>
-      </section>
-
-      {/* When user is completely new (0 projects & 0 assets), render helpful onboarding first */}
+      {/* When user is completely new (0 projects & 0 assets), render helpful focused onboarding */}
       {isNewUser ? (
         <div className="space-y-8">
           <NewUserOnboarding activeRole={activeRole} />
           
-          {/* Still render Attention Center (which shows clean empty state: No urgent items) */}
+          {/* Still render Attention Center (shows calm empty state: «در حال حاضر اقدامی از طرف شما لازم نیست.») */}
           <AttentionCenter items={attentionItems} />
+
+          {/* Quick Tools */}
+          <section className="space-y-3" aria-label="ابزارهای پیشخوان">
+            <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200">
+              <Wrench size={18} className="text-[#0284C7] dark:text-blue-400" />
+              <h2 className="text-base sm:text-lg font-bold">ابزارها و خدمات عملیاتی</h2>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <Link
+                to="/smart-maintenance"
+                className="p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-400 dark:hover:border-blue-500/50 hover:shadow-md transition-all flex flex-col justify-between group min-h-[140px]"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-[#0284C7] dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Wrench size={20} />
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-[#0284C7] dark:text-blue-300">
+                      سرویس و عیب‌یابی
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-[#0284C7] dark:group-hover:text-blue-400 transition-colors">
+                    تعمیرات و نگهداری هوشمند
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    ثبت مشکل، تحلیل تصویر و پیگیری درخواست تعمیر و نگهداری
+                  </p>
+                </div>
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-bold text-[#0284C7] dark:text-blue-400">
+                  <span>ورود به نگهداری هوشمند</span>
+                  <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
+                </div>
+              </Link>
+
+              <Link
+                to="/solar-planner"
+                className="p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-amber-400 dark:hover:border-amber-500/50 hover:shadow-md transition-all flex flex-col justify-between group min-h-[140px]"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 dark:bg-amber-400/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Box size={20} />
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">
+                      شبیه‌ساز ۳D
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                    طراحی سه‌بعدی پنل خورشیدی
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    چیدمان سه‌بعدی پنل‌ها، تنظیم شیب و محاسبه سایه‌اندازی
+                  </p>
+                </div>
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-bold text-amber-600 dark:text-amber-400">
+                  <span>ورود به شبیه‌ساز</span>
+                  <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
+                </div>
+              </Link>
+
+              <Link
+                to="/contractors"
+                className="p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-emerald-400 dark:hover:border-emerald-500/50 hover:shadow-md transition-all flex flex-col justify-between group min-h-[140px]"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Briefcase size={20} />
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
+                      شبکه مجریان
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                    پیمانکاران و استعلام قیمت (RFQ)
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    بررسی رزومه پیمانکاران ارزیابی‌شده و استعلام قیمت احداث
+                  </p>
+                </div>
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                  <span>مشاهده شبکه پیمانکاران</span>
+                  <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
+                </div>
+              </Link>
+            </div>
+          </section>
 
           {/* Role Summary */}
           <RoleSummary
@@ -974,27 +1021,123 @@ export default function UserDashboard() {
           />
         </div>
       ) : (
-        <div className="space-y-8">
-          {/* 3. Attention Center (Highest priority section: «نیازمند توجه شما») */}
-          <AttentionCenter items={attentionItems} />
+        /* Operational Hierarchy for Existing Customers (Projects first → actions → metrics → tools) */
+        <div className="flex flex-col gap-6 sm:gap-8">
+          {/* A. Primary Project Workspace (Prioritized Early on Mobile) */}
+          <div className="order-1 md:order-2">
+            <ActiveProjects projects={projects} maxDisplay={5} />
+          </div>
 
-          {/* 4. Next Actions (Deterministic lifecycle steps: «اقدام‌های بعدی») */}
-          <NextActions actions={nextActions} />
+          {/* B. Action-Required Area (Attention Center & Next Actions) */}
+          <div className="order-2 md:order-3 space-y-6">
+            <AttentionCenter items={attentionItems} />
+            <NextActions actions={nextActions} />
+          </div>
 
-          {/* 5. Active Projects (Compact project cards: «پروژه‌های فعال») */}
-          <ActiveProjects projects={projects} maxDisplay={5} />
+          {/* C. Portfolio Summary (Desktop: Top overview / Mobile: Compact 2x2 metrics) */}
+          <div className="order-3 md:order-1">
+            <RoleSummary
+              activeRole={activeRole}
+              metrics={roleMetrics}
+            />
+          </div>
 
-          {/* 6. Operational Assets (ONLY rendered if user has operational assets!) */}
-          <OperationalAssets assets={assets} />
+          {/* D. Quick Tools & Operations (Secondary to projects) */}
+          <section className="order-4 md:order-4 space-y-3" aria-label="ابزارهای عملیاتی پیشخوان">
+            <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200">
+              <Wrench size={18} className="text-[#0284C7] dark:text-blue-400" />
+              <h2 className="text-base sm:text-lg font-bold">ابزارها و خدمات عملیاتی</h2>
+            </div>
 
-          {/* 7. Role-Specific Summary (Max 4 verified metrics: «خلاصه شاخص‌ها») */}
-          <RoleSummary
-            activeRole={activeRole}
-            metrics={roleMetrics}
-          />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
+              {/* Dedicated Smart Maintenance Card */}
+              <Link
+                to="/smart-maintenance"
+                className="p-4 sm:p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-400 dark:hover:border-blue-500/50 hover:shadow-md transition-all flex flex-col justify-between group min-h-[130px] sm:min-h-[140px]"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-[#0284C7] dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Wrench size={18} />
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-[#0284C7] dark:text-blue-300">
+                      سرویس و عیب‌یابی
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-[#0284C7] dark:group-hover:text-blue-400 transition-colors">
+                    تعمیرات و نگهداری هوشمند
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">
+                    ثبت مشکل، تحلیل تصویر و پیگیری درخواست تعمیر و نگهداری
+                  </p>
+                </div>
+                <div className="pt-2.5 sm:pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-bold text-[#0284C7] dark:text-blue-400">
+                  <span>ورود به نگهداری هوشمند</span>
+                  <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
+                </div>
+              </Link>
 
-          {/* 8. Recent Activity (Real activity logs: «فعالیت‌های اخیر») */}
-          <RecentActivity activities={activities} />
+              {/* 3D Solar Planner */}
+              <Link
+                to="/solar-planner"
+                className="p-4 sm:p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-amber-400 dark:hover:border-amber-500/50 hover:shadow-md transition-all flex flex-col justify-between group min-h-[130px] sm:min-h-[140px]"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-500/10 dark:bg-amber-400/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Box size={18} />
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">
+                      شبیه‌ساز ۳D
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                    طراحی سه‌بعدی پنل خورشیدی
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">
+                    چیدمان سه‌بعدی پنل‌ها، تنظیم شیب و محاسبه سایه‌اندازی
+                  </p>
+                </div>
+                <div className="pt-2.5 sm:pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-bold text-amber-600 dark:text-amber-400">
+                  <span>ورود به شبیه‌ساز</span>
+                  <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
+                </div>
+              </Link>
+
+              {/* EPC Contractor Marketplace & RFQs */}
+              <Link
+                to="/contractors"
+                className="p-4 sm:p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-emerald-400 dark:hover:border-emerald-500/50 hover:shadow-md transition-all flex flex-col justify-between group min-h-[130px] sm:min-h-[140px]"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Briefcase size={18} />
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
+                      شبکه مجریان
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                    پیمانکاران و استعلام قیمت (RFQ)
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">
+                    بررسی رزومه پیمانکاران ارزیابی‌شده و استعلام قیمت احداث
+                  </p>
+                </div>
+                <div className="pt-2.5 sm:pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                  <span>مشاهده شبکه پیمانکاران</span>
+                  <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
+                </div>
+              </Link>
+            </div>
+          </section>
+
+          {/* F. Operational Assets & Recent Activity */}
+          <div className="order-6 md:order-5 space-y-8">
+            <OperationalAssets assets={assets} />
+            <RecentActivity activities={activities} />
+          </div>
         </div>
       )}
 

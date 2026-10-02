@@ -51,6 +51,7 @@ import PortfolioDashboard from './pages/enterprise/PortfolioDashboard';
 import PartnersHub from './pages/PartnersHub';
 import TechnicianPublicProfile from './pages/technician/PublicProfile';
 import ContractorPublicProfile from './pages/ContractorPublicProfile';
+import CustomerDashboardPreview from './pages/dev/CustomerDashboardPreview';
 
 export default function App() {
   return (
@@ -59,6 +60,11 @@ export default function App() {
         <AuthProvider>
           <BrowserRouter>
             <Routes>
+              {/* Development-Only QA Visual Preview Route (Guarded by import.meta.env.DEV) */}
+              {import.meta.env.DEV && (
+                <Route path="/dev/customer-dashboard-preview" element={<CustomerDashboardPreview />} />
+              )}
+
               {/* Public Landing Page */}
               <Route path="/" element={<Landing />} />
 

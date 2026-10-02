@@ -138,20 +138,25 @@ export const NewUserOnboarding: React.FC<NewUserOnboardingProps> = ({
       case 'OWNER':
       default:
         return {
-          title: 'مدیریت و احداث پروژه‌های انرژی خورشیدی',
-          description: 'هوشیار انرژی چرخه کامل احداث، بهره‌برداری، تعمیرات و نگهداری تجهیزات خورشیدی را مدیریت می‌کند.',
+          title: 'اولین پروژه خورشیدی خود را شروع کنید',
+          description: 'اطلاعات اولیه پروژه را وارد کنید تا امکان‌سنجی فنی و اقتصادی آغاز شود.',
           icon: Sun,
+          steps: [
+            { step: '۱', label: 'ثبت اطلاعات پروژه' },
+            { step: '۲', label: 'دریافت تحلیل فنی و اقتصادی' },
+            { step: '۳', label: 'ادامه به مناقصه و انتخاب مجری' }
+          ],
           primaryAction: {
-            title: 'شروع تحلیل هوشمند انرژی خورشیدی',
-            description: 'محاسبه مساحت، تابش خورشیدی، برآورد ظرفیت نیروگاه و دوره بازگشت سرمایه',
+            title: 'شروع امکان‌سنجی و طراحی پروژه',
+            description: 'محاسبه مساحت، برآورد ظرفیت نیروگاه، درآمدزایی و دوره بازگشت سرمایه',
             href: '/target-select',
-            actionText: 'شروع تحلیل انرژی'
+            actionText: 'شروع پروژه'
           },
           secondaryAction: {
-            title: 'تعمیرات و نگهداری هوشمند تجهیزات',
-            description: 'ثبت خرابی تجهیزات، بارگذاری تصویر، عیبیابی هوشمند و ارتباط با تعمیرکار متخصص',
+            title: 'نگهداری هوشمند',
+            description: 'ثبت مشکل، تحلیل تصویر و پیگیری درخواست تعمیر و نگهداری',
             href: '/smart-maintenance',
-            actionText: 'ثبت درخواست تعمیرات'
+            actionText: 'ورود به نگهداری هوشمند'
           }
         };
     }
@@ -185,9 +190,9 @@ export const NewUserOnboarding: React.FC<NewUserOnboardingProps> = ({
       {/* Action Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-6">
         {/* Primary Action Card */}
-        <div className="flex flex-col justify-between p-5 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/30 dark:bg-amber-950/20 shadow-xs">
-          <div className="space-y-2">
-            <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/60 px-2 py-0.5 rounded-md inline-block">
+        <div className="flex flex-col justify-between p-5 rounded-2xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/30 dark:bg-blue-950/20 shadow-xs">
+          <div className="space-y-3">
+            <span className="text-[11px] font-bold text-blue-800 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/60 px-2.5 py-0.5 rounded-md inline-block">
               گام پیشنهادی اول
             </span>
             <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
@@ -196,12 +201,28 @@ export const NewUserOnboarding: React.FC<NewUserOnboardingProps> = ({
             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
               {config.primaryAction.description}
             </p>
+
+            {(config as any).steps && (
+              <div className="pt-2 space-y-1.5 border-t border-blue-100 dark:border-blue-900/40">
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">مراحل ایجاد پروژه:</span>
+                <ol className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                  {((config as any).steps as { step: string; label: string }[]).map((s) => (
+                    <li key={s.step} className="flex items-center gap-2">
+                      <span className="w-4 h-4 rounded-full bg-blue-100 dark:bg-blue-900/80 text-[#0284C7] dark:text-blue-300 font-bold text-[10px] flex items-center justify-center shrink-0">
+                        {s.step}
+                      </span>
+                      <span>{s.label}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
           </div>
 
           <div className="pt-5 mt-2">
             <Link
               to={config.primaryAction.href}
-              className="inline-flex items-center justify-center gap-2 w-full px-5 py-2.5 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-600 text-slate-950 dark:bg-amber-400 dark:hover:bg-amber-500 transition-colors shadow-xs min-h-[44px]"
+              className="inline-flex items-center justify-center gap-2 w-full px-5 py-2.5 rounded-xl font-bold text-sm bg-[#0284C7] hover:bg-[#0369A1] text-white transition-colors shadow-xs min-h-[44px]"
             >
               <span>{config.primaryAction.actionText}</span>
               <ArrowLeft size={16} />
