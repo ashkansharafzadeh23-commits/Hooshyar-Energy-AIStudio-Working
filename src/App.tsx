@@ -54,6 +54,7 @@ import ContractorPublicProfile from './pages/ContractorPublicProfile';
 import CustomerDashboardPreview from './pages/dev/CustomerDashboardPreview';
 import EngineeringResultPreview from './pages/dev/EngineeringResultPreview';
 import RfqBidPreview from './pages/dev/RfqBidPreview';
+import PartnerExperiencePreview from './pages/dev/PartnerExperiencePreview';
 
 export default function App() {
   return (
@@ -68,6 +69,7 @@ export default function App() {
                   <Route path="/dev/customer-dashboard-preview" element={<CustomerDashboardPreview />} />
                   <Route path="/dev/engineering-result-preview" element={<EngineeringResultPreview />} />
                   <Route path="/dev/rfq-bid-preview" element={<RfqBidPreview />} />
+                  <Route path="/dev/partner-experience-preview" element={<PartnerExperiencePreview />} />
                 </>
               )}
 
