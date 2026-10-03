@@ -236,7 +236,7 @@ export const RFQDocumentsManager: React.FC<RFQDocumentsManagerProps> = ({
         <div className="text-center py-10 px-4 border border-dashed border-gray-200 rounded-xl bg-gray-50/50">
           <FileText size={32} className="mx-auto text-gray-300 mb-2" />
           <p className="text-xs font-bold text-gray-500">
-            هنوز فایلی برای این درخواست پیشنهاد بارگذاری نشده است.
+            هنوز سندی برای این بخش بارگذاری نشده است.
           </p>
           {isOwner && (
             <p className="text-[11px] text-gray-400 mt-1">
@@ -273,11 +273,11 @@ export const RFQDocumentsManager: React.FC<RFQDocumentsManagerProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     onClick={() => handleDownload(doc)}
                     disabled={isDownloading}
-                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors text-xs font-bold flex items-center gap-1"
+                    className="min-h-[44px] px-3 py-2 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors text-xs font-bold flex items-center gap-1.5 border border-blue-200"
                     title="دانلود امن سند"
                   >
                     {isDownloading ? (
@@ -285,14 +285,15 @@ export const RFQDocumentsManager: React.FC<RFQDocumentsManagerProps> = ({
                     ) : (
                       <Download size={16} />
                     )}
-                    <span className="hidden sm:inline">دانلود</span>
+                    <span>دانلود امن</span>
                   </button>
 
                   {isOwner && (
                     <button
                       onClick={() => setDocToDelete(doc)}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      className="min-h-[44px] min-w-[44px] p-2.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-200 flex items-center justify-center cursor-pointer"
                       title="حذف سند"
+                      aria-label="حذف سند"
                     >
                       <Trash2 size={16} />
                     </button>

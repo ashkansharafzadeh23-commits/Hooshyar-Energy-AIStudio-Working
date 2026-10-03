@@ -13,37 +13,59 @@ import {
   Zap, 
   Users,
   Eye,
-  ExternalLink
+  MapPin,
+  HelpCircle,
+  FileCheck2,
+  XCircle,
+  ArrowLeft
 } from 'lucide-react';
-import { ProjectRFQ } from '../../../types/rfq.js';
+import { ProjectRFQ, RFQStatus } from '../../../types/rfq.js';
 import { Organization } from '../../../types/organization.js';
 import { RFQDocumentsManager } from '../../../components/rfq/RFQDocumentsManager.js';
+import { PersianConfirmModal } from '../../../components/common/PersianConfirmModal.js';
+import { formatJalaliDate, formatSolarCapacity } from '../../../utils/formatters.js';
 
 interface RFQTabProps {
   projectId: string;
   project: any;
   onNavigateToBids?: () => void;
   onProjectUpdate?: () => void;
+  previewMode?: boolean;
+  initialRfq?: ProjectRFQ | null;
 }
 
-export default function RFQTab({ projectId, project, onNavigateToBids, onProjectUpdate }: RFQTabProps) {
-  const [rfq, setRfq] = useState<ProjectRFQ | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function RFQTab({ 
+  projectId, 
+  project, 
+  onNavigateToBids, 
+  onProjectUpdate,
+  previewMode = false,
+  initialRfq = null
+}: RFQTabProps) {
+  const [rfq, setRfq] = useState<ProjectRFQ | null>(initialRfq);
+  const [bidsCount, setBidsCount] = useState<number>(0);
+  const [loading, setLoading] = useState(!previewMode);
   const [epcOrgs, setEpcOrgs] = useState<Organization[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
 
   // RFQ Creation Form State
-  const [title, setTitle] = useState(`استعلام احداث و اجرای EPC نیروگاه خورشیدی ${project.title || ''}`);
+  const [title, setTitle] = useState(`استعلام احداث و اجرای EPC نیروگاه خورشیدی ${project?.title || ''}`);
   const [scopeDescription, setScopeDescription] = useState('طراحی مهندسی، تأمین تجهیزات استاندارد Tier 1، نصب، تست، راه‌اندازی و اتصال به شبکه سراسری بر اساس استانداردهای ساتبا و توانیر.');
   const [deadlineDays, setDeadlineDays] = useState(21);
   const [minWarrantyYears, setMinWarrantyYears] = useState(5);
   const [requiredGuarantees, setRequiredGuarantees] = useState('ضمانت‌نامه بانکی حسن انجام کار ۵٪ و ضمانت راندمان تولید انرژی سالیانه (PR)');
 
   useEffect(() => {
+    if (previewMode) {
+      if (initialRfq) setRfq(initialRfq);
+      setLoading(false);
+      return;
+    }
     loadData();
-  }, [projectId]);
+  }, [projectId, previewMode, initialRfq]);
 
   const loadData = async () => {
     setLoading(true);
@@ -57,9 +79,22 @@ export default function RFQTab({ projectId, project, onNavigateToBids, onProject
       if (rfqRes.ok) {
         const rfqs = await rfqRes.json();
         if (Array.isArray(rfqs) && rfqs.length > 0) {
-          setRfq(rfqs[0]);
+          const currentRfq = rfqs[0];
+          setRfq(currentRfq);
+
+          // Fetch bids count
+          try {
+            const bidsRes = await fetch(`/api/rfq/${currentRfq.id}/bids`, { headers });
+            if (bidsRes.ok) {
+              const bidsData = await bidsRes.json();
+              setBidsCount(Array.isArray(bidsData) ? bidsData.length : 0);
+            }
+          } catch {
+            setBidsCount(0);
+          }
         } else {
           setRfq(null);
+          setBidsCount(0);
         }
       }
 
@@ -142,7 +177,7 @@ export default function RFQTab({ projectId, project, onNavigateToBids, onProject
       if (res.ok) {
         const updated = await res.json();
         setRfq(updated);
-        setActionMessage({ type: 'success', text: 'استعلام با موفقیت منتشر شد و پروژه به وضعیت «استعلام فعال (RFQ_OPEN)» منتقل شد.' });
+        setActionMessage({ type: 'success', text: 'استعلام با موفقیت منتشر شد و در انتظار دریافت پیشنهادات پیمانکاران است.' });
         if (onProjectUpdate) onProjectUpdate();
       } else {
         const err = await res.json();
@@ -155,9 +190,8 @@ export default function RFQTab({ projectId, project, onNavigateToBids, onProject
     }
   };
 
-  const handleCloseRFQ = async () => {
+  const handleCloseRFQConfirm = async () => {
     if (!rfq) return;
-    if (!confirm('آیا از بستن مهلت دریافت پیشنهادات اطمینان دارید؟')) return;
     setSubmitting(true);
     setActionMessage(null);
     try {
@@ -170,7 +204,8 @@ export default function RFQTab({ projectId, project, onNavigateToBids, onProject
       if (res.ok) {
         const updated = await res.json();
         setRfq(updated);
-        setActionMessage({ type: 'success', text: 'استعلام بسته شد. پیشنهادات دریافتی آماده ارزیابی نهایی هستند.' });
+        setIsCloseModalOpen(false);
+        setActionMessage({ type: 'success', text: 'استعلام بسته شد. پیشنهادات دریافتی آماده ارزیابی و انتخاب نهایی هستند.' });
       } else {
         const err = await res.json();
         setActionMessage({ type: 'error', text: err.error || 'خطا در بستن استعلام' });
@@ -208,9 +243,62 @@ export default function RFQTab({ projectId, project, onNavigateToBids, onProject
     }
   };
 
+  // Human-readable Persian mapping for RFQ statuses (never expose raw enums)
+  const getStatusBadge = (status: RFQStatus) => {
+    switch (status) {
+      case 'DRAFT':
+        return (
+          <span className="text-xs px-3 py-1 rounded-full font-bold bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+            پیش‌نویس (منتشر نشده)
+          </span>
+        );
+      case 'PUBLISHED':
+      case 'OPEN':
+        return (
+          <span className="text-xs px-3 py-1 rounded-full font-bold bg-blue-50 text-[#0284C7] dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-[#0284C7] animate-pulse" />
+            منتشر شده (در حال دریافت پیشنهاد)
+          </span>
+        );
+      case 'CLOSED':
+        return (
+          <span className="text-xs px-3 py-1 rounded-full font-bold bg-slate-100 text-slate-800 dark:bg-zinc-800 dark:text-zinc-200 border border-slate-200 dark:border-zinc-700">
+            بسته شده (پایان مهلت)
+          </span>
+        );
+      case 'AWARDED':
+        return (
+          <span className="text-xs px-3 py-1 rounded-full font-bold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5">
+            <CheckCircle2 size={13} />
+            مجری انتخاب شده
+          </span>
+        );
+      case 'CANCELLED':
+        return (
+          <span className="text-xs px-3 py-1 rounded-full font-bold bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+            لغو شده
+          </span>
+        );
+      default:
+        return (
+          <span className="text-xs px-3 py-1 rounded-full font-bold bg-slate-100 text-slate-700">
+            نامشخص
+          </span>
+        );
+    }
+  };
+
+  const locationText = project?.location?.city 
+    ? (project.location.province ? `${project.location.province}، ${project.location.city}` : project.location.city)
+    : (project?.location?.address || 'ثبت نشده');
+
+  const capacityText = project?.targetCapacityKw 
+    ? formatSolarCapacity(project.targetCapacityKw)
+    : 'ثبت نشده';
+
   if (loading) {
     return (
-      <div className="bg-white p-12 rounded-2xl border border-gray-200 text-center font-bold text-gray-500">
+      <div className="bg-white dark:bg-zinc-900 p-12 rounded-2xl border border-slate-200 dark:border-zinc-800 text-center font-bold text-slate-500">
         در حال بارگذاری اطلاعات استعلام...
       </div>
     );
@@ -219,7 +307,7 @@ export default function RFQTab({ projectId, project, onNavigateToBids, onProject
   return (
     <div className="space-y-6" dir="rtl">
       {actionMessage && (
-        <div className={`p-4 rounded-xl flex items-center gap-3 border ${actionMessage.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-red-50 text-red-800 border-red-200'}`}>
+        <div className={`p-4 rounded-xl flex items-center gap-3 border ${actionMessage.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800' : 'bg-red-50 text-red-800 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800'}`}>
           {actionMessage.type === 'success' ? <CheckCircle2 size={20} className="text-emerald-600 shrink-0" /> : <AlertCircle size={20} className="text-red-600 shrink-0" />}
           <span className="text-sm font-bold">{actionMessage.text}</span>
         </div>
@@ -227,17 +315,18 @@ export default function RFQTab({ projectId, project, onNavigateToBids, onProject
 
       {/* NO RFQ CREATED YET */}
       {!rfq && !isCreating && (
-        <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm text-center py-16">
-          <div className="w-20 h-20 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+        <div className="bg-white dark:bg-zinc-900 p-8 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-sm text-center py-16">
+          <div className="w-20 h-20 bg-blue-50 dark:bg-blue-950/40 text-[#0284C7] rounded-2xl flex items-center justify-center mx-auto mb-4">
             <FileText size={40} />
           </div>
-          <h3 className="text-xl font-black text-gray-900 mb-2">هنوز استعلام قیمتی (RFQ) ایجاد نشده است</h3>
-          <p className="text-gray-500 text-sm max-w-lg mx-auto mb-6 leading-relaxed">
-            برای دریافت پیشنهادات فنی و مالی از پیمانکاران EPC تایید صلاحیت شده، اسناد استعلام پروژه را تنظیم و منتشر کنید.
+          <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 mb-2">هنوز استعلام قیمتی (RFQ) برای این پروژه ایجاد نشده است</h3>
+          <p className="text-slate-500 dark:text-slate-400 text-sm max-w-lg mx-auto mb-6 leading-relaxed">
+            برای دریافت پیشنهادات فنی و مالی از پیمانکاران EPC تایید صلاحیت شده، اسناد استعلام پروژه را تنظیم و منتشر فرمایید.
           </p>
           <button 
+            type="button"
             onClick={() => setIsCreating(true)}
-            className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-md inline-flex items-center gap-2"
+            className="bg-[#0284C7] hover:bg-[#0369A1] text-white px-6 py-3 rounded-xl font-bold transition-colors shadow-md inline-flex items-center gap-2 min-h-[44px] cursor-pointer"
           >
             <Plus size={18} />
             تنظیم و صدور استعلام EPC
@@ -247,16 +336,16 @@ export default function RFQTab({ projectId, project, onNavigateToBids, onProject
 
       {/* CREATE RFQ FORM */}
       {!rfq && isCreating && (
-        <div className="bg-white p-6 sm:p-8 rounded-2xl border border-gray-200 shadow-sm">
-          <div className="flex items-center justify-between pb-6 border-b border-gray-100 mb-6">
+        <div className="bg-white dark:bg-zinc-900 p-6 sm:p-8 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-sm">
+          <div className="flex items-center justify-between pb-6 border-b border-slate-100 dark:border-zinc-800 mb-6">
             <div>
-              <h2 className="text-xl font-black text-gray-900">صدور استعلام قیمت و صلاحیت EPC (RFQ)</h2>
-              <p className="text-xs text-gray-500 mt-1">مشخصات فنی و شرایط حقوقی مناقصه را تکمیل فرمایید.</p>
+              <h2 className="text-xl font-black text-slate-900 dark:text-slate-100">صدور استعلام قیمت و صلاحیت EPC (RFQ)</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">مشخصات فنی و شرایط حقوقی مناقصه را تکمیل فرمایید.</p>
             </div>
             <button 
               type="button" 
               onClick={() => setIsCreating(false)} 
-              className="text-gray-400 hover:text-gray-600 text-sm font-bold"
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold min-h-[44px] px-3 flex items-center"
             >
               انصراف
             </button>
@@ -264,80 +353,80 @@ export default function RFQTab({ projectId, project, onNavigateToBids, onProject
 
           <form onSubmit={handleCreateRFQ} className="space-y-6">
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-2">عنوان استعلام</label>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">عنوان استعلام</label>
               <input 
                 type="text"
                 required
                 value={title}
                 onChange={e => setTitle(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm font-bold"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 focus:border-[#0284C7] focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none text-sm font-bold"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-2">شرح محدوده خدمات (Scope of Work)</label>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">شرح محدوده خدمات (Scope of Work)</label>
               <textarea 
                 rows={3}
                 required
                 value={scopeDescription}
                 onChange={e => setScopeDescription(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm leading-relaxed"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 focus:border-[#0284C7] focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none text-sm leading-relaxed"
               />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-2">مهلت دریافت پیشنهادات (روز)</label>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">مهلت دریافت پیشنهادات (روز)</label>
                 <input 
                   type="number"
                   min={5}
                   max={90}
                   value={deadlineDays}
                   onChange={e => setDeadlineDays(Number(e.target.value))}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 outline-none text-sm font-bold"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 focus:border-[#0284C7] outline-none text-sm font-bold"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-2">حداقل گارانتی مورد نیاز (سال)</label>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">حداقل گارانتی مورد نیاز (سال)</label>
                 <input 
                   type="number"
                   min={1}
                   max={25}
                   value={minWarrantyYears}
                   onChange={e => setMinWarrantyYears(Number(e.target.value))}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 outline-none text-sm font-bold"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 focus:border-[#0284C7] outline-none text-sm font-bold"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-2">ظرفیت مدنظر پروژه</label>
-                <div className="px-4 py-2.5 bg-gray-50 rounded-xl text-sm font-bold text-gray-700 border border-gray-200">
-                  {project.targetCapacityKw ? `${project.targetCapacityKw} کیلووات` : 'طبق تحلیل اولیه'}
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">ظرفیت مدنظر پروژه</label>
+                <div className="px-4 py-2.5 bg-slate-50 dark:bg-zinc-800 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-zinc-700">
+                  {capacityText}
                 </div>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-2">تضامین و شرایط حقوقی الزامی</label>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">تضامین و شرایط حقوقی الزامی</label>
               <textarea 
                 rows={2}
                 value={requiredGuarantees}
                 onChange={e => setRequiredGuarantees(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 outline-none text-sm"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 focus:border-[#0284C7] outline-none text-sm"
               />
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100">
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-zinc-800">
               <button 
                 type="button" 
                 onClick={() => setIsCreating(false)} 
-                className="px-5 py-2.5 text-gray-600 rounded-xl hover:bg-gray-100 font-bold text-sm"
+                className="px-5 py-2.5 text-slate-600 dark:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 font-bold text-sm min-h-[44px]"
               >
                 انصراف
               </button>
               <button 
                 type="submit" 
                 disabled={submitting}
-                className="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-md text-sm disabled:opacity-50"
+                className="bg-[#0284C7] hover:bg-[#0369A1] text-white px-6 py-2.5 rounded-xl font-bold transition-colors shadow-md text-sm disabled:opacity-50 min-h-[44px] cursor-pointer"
               >
                 {submitting ? 'در حال ثبت...' : 'ثبت و صدور استعلام (پیش‌نویس)'}
               </button>
@@ -349,101 +438,163 @@ export default function RFQTab({ projectId, project, onNavigateToBids, onProject
       {/* ACTIVE RFQ VIEW */}
       {rfq && (
         <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-5 mb-5">
-              <div className="space-y-1">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm font-black text-blue-700 bg-blue-50 px-3 py-1 rounded-lg border border-blue-100">
+          {/* 1. RFQ OVERVIEW HEADER */}
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-5 sm:p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-zinc-800 pb-5 mb-5">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="font-mono text-xs font-black text-[#0284C7] bg-blue-50 dark:bg-blue-950/40 px-3 py-1 rounded-lg border border-blue-200/60 dark:border-blue-800/40">
                     {rfq.rfqCode}
                   </span>
-                  <span className={`text-xs px-3 py-1 rounded-full font-bold border ${
-                    rfq.status === 'PUBLISHED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                    rfq.status === 'DRAFT' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                    'bg-gray-100 text-gray-700 border-gray-200'
-                  }`}>
-                    {rfq.status === 'PUBLISHED' ? 'منتشر شده (در حال دریافت پیشنهاد)' :
-                     rfq.status === 'DRAFT' ? 'پیش‌نویس (منتشر نشده)' :
-                     rfq.status === 'CLOSED' ? 'بسته شده' : rfq.status}
+                  {getStatusBadge(rfq.status)}
+                  <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                    <MapPin size={13} className="text-slate-400" />
+                    <span>موقعیت: {locationText}</span>
                   </span>
                 </div>
-                <h2 className="text-xl font-black text-gray-900 pt-1">{rfq.title}</h2>
+                <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100 pt-1">
+                  {rfq.title}
+                </h2>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  پروژه: <strong className="text-slate-700 dark:text-slate-300 font-bold">{project.title || 'بدون عنوان'}</strong>
+                  <span className="mx-2">•</span>
+                  ظرفیت هدف: <strong className="text-slate-700 dark:text-slate-300 font-bold">{capacityText}</strong>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2">
                 {rfq.status === 'DRAFT' && (
                   <button 
+                    type="button"
                     onClick={handlePublishRFQ}
                     disabled={submitting}
-                    className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-emerald-700 transition-colors text-sm shadow-sm flex items-center gap-2"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold transition-colors text-xs sm:text-sm shadow-sm flex items-center gap-2 min-h-[44px] cursor-pointer"
                   >
                     <Send size={16} />
-                    انتشار رسمی استعلام
+                    <span>انتشار رسمی استعلام</span>
                   </button>
                 )}
-                {rfq.status === 'PUBLISHED' && (
+
+                {(rfq.status === 'PUBLISHED' || rfq.status === 'OPEN') && (
                   <button 
-                    onClick={handleCloseRFQ}
+                    type="button"
+                    onClick={() => setIsCloseModalOpen(true)}
                     disabled={submitting}
-                    className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-4 py-2.5 rounded-xl font-bold transition-colors text-sm"
+                    className="bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-200 px-4 py-2.5 rounded-xl font-bold transition-colors text-xs min-h-[44px] cursor-pointer"
                   >
                     بستن دریافت پیشنهاد
                   </button>
                 )}
+
                 {onNavigateToBids && (
                   <button 
+                    type="button"
                     onClick={onNavigateToBids}
-                    className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-blue-700 transition-colors text-sm flex items-center gap-2 shadow-sm"
+                    className="bg-[#0284C7] hover:bg-[#0369A1] text-white px-5 py-2.5 rounded-xl font-bold transition-colors text-xs sm:text-sm flex items-center gap-2 shadow-sm min-h-[44px] cursor-pointer"
                   >
                     <Eye size={16} />
-                    مشاهده پیشنهادها
+                    <span>مشاهده پیشنهادها ({bidsCount > 0 ? `${bidsCount} پیشنهاد` : 'بدون پیشنهاد'})</span>
                   </button>
                 )}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-xl mb-6">
+            {/* Lifecycle Stages Progress Bar */}
+            <div className="mb-6 p-4 rounded-xl bg-slate-50 dark:bg-zinc-850 border border-slate-100 dark:border-zinc-800">
+              <div className="text-xs font-bold text-slate-600 dark:text-slate-400 mb-3">
+                چرخه حیات استعلام و فرآیند انتخاب مجری:
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div className={`p-2.5 rounded-lg border flex items-center gap-2 ${
+                  rfq.status === 'DRAFT' 
+                    ? 'bg-amber-50 border-amber-300 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200 font-bold' 
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300'
+                }`}>
+                  <CheckCircle2 size={15} className="shrink-0" />
+                  <span>۱. تنظیم پیش‌نویس</span>
+                </div>
+
+                <div className={`p-2.5 rounded-lg border flex items-center gap-2 ${
+                  rfq.status === 'PUBLISHED' || rfq.status === 'OPEN'
+                    ? 'bg-blue-50 border-blue-300 text-[#0284C7] dark:bg-blue-950/30 dark:text-blue-200 font-bold'
+                    : (rfq.status === 'CLOSED' || rfq.status === 'AWARDED')
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300'
+                    : 'bg-slate-100 border-slate-200 text-slate-500 dark:bg-zinc-800 dark:text-slate-400'
+                }`}>
+                  <Clock size={15} className="shrink-0" />
+                  <span>۲. دریافت پیشنهادات</span>
+                </div>
+
+                <div className={`p-2.5 rounded-lg border flex items-center gap-2 ${
+                  rfq.status === 'CLOSED'
+                    ? 'bg-amber-50 border-amber-300 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200 font-bold'
+                    : rfq.status === 'AWARDED'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300'
+                    : 'bg-slate-100 border-slate-200 text-slate-500 dark:bg-zinc-800 dark:text-slate-400'
+                }`}>
+                  <FileCheck2 size={15} className="shrink-0" />
+                  <span>۳. ارزیابی تطبیقی</span>
+                </div>
+
+                <div className={`p-2.5 rounded-lg border flex items-center gap-2 ${
+                  rfq.status === 'AWARDED'
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200 font-bold'
+                    : 'bg-slate-100 border-slate-200 text-slate-500 dark:bg-zinc-800 dark:text-slate-400'
+                }`}>
+                  <Check size={15} className="shrink-0" />
+                  <span>۴. انتخاب رسمی مجری</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Key Authoritative Parameters Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50 dark:bg-zinc-800/50 p-4 rounded-xl mb-6 border border-slate-100 dark:border-zinc-800 text-xs">
               <div>
-                <span className="text-xs text-gray-400 block mb-1 font-bold">مهلت ارسال پیشنهاد</span>
-                <span className="text-sm font-black text-gray-800 flex items-center gap-1.5">
-                  <Clock size={16} className="text-blue-500" />
-                  {new Date(rfq.submissionDeadline).toLocaleDateString('fa-IR')}
+                <span className="text-slate-400 dark:text-slate-500 block mb-1 font-bold">مهلت ارسال پیشنهاد</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Clock size={15} className="text-[#0284C7]" />
+                  {rfq.submissionDeadline ? formatJalaliDate(rfq.submissionDeadline) : 'مهلت مشخص نشده است'}
                 </span>
               </div>
               <div>
-                <span className="text-xs text-gray-400 block mb-1 font-bold">تعداد دعوت‌شدگان</span>
-                <span className="text-sm font-black text-gray-800 flex items-center gap-1.5">
-                  <Users size={16} className="text-emerald-500" />
-                  {rfq.invitedContractorIds?.length || 0} شرکت EPC
+                <span className="text-slate-400 dark:text-slate-500 block mb-1 font-bold">پیشنهادهای دریافتی</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Users size={15} className="text-emerald-600" />
+                  {bidsCount > 0 ? `${bidsCount} پیشنهاد ثبت‌شده` : 'هنوز پیشنهادی دریافت نشده است'}
                 </span>
               </div>
               <div>
-                <span className="text-xs text-gray-400 block mb-1 font-bold">حداقل گارانتی الزامی</span>
-                <span className="text-sm font-black text-gray-800 flex items-center gap-1.5">
-                  <ShieldCheck size={16} className="text-amber-500" />
-                  {rfq.commercialTerms?.minWarrantyYears || 5} سال
+                <span className="text-slate-400 dark:text-slate-500 block mb-1 font-bold">حداقل گارانتی الزامی</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <ShieldCheck size={15} className="text-amber-500" />
+                  {rfq.commercialTerms?.minWarrantyYears ? `${rfq.commercialTerms.minWarrantyYears} سال` : 'ثبت نشده'}
                 </span>
               </div>
               <div>
-                <span className="text-xs text-gray-400 block mb-1 font-bold">راندمان پنل Tier 1</span>
-                <span className="text-sm font-black text-gray-800 flex items-center gap-1.5">
-                  <Zap size={16} className="text-indigo-500" />
-                  حداقل ۲۱٪
+                <span className="text-slate-400 dark:text-slate-500 block mb-1 font-bold">تعداد شرکت‌های دعوت‌شده</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Building2 size={15} className="text-indigo-500" />
+                  {rfq.invitedContractorIds && rfq.invitedContractorIds.length > 0 
+                    ? `${rfq.invitedContractorIds.length} شرکت EPC` 
+                    : 'عمومی (همه پیمانکاران معتبر)'}
                 </span>
               </div>
             </div>
 
+            {/* Scope and Requirements */}
             <div className="space-y-3">
               <div>
-                <h4 className="text-xs font-bold text-gray-500 mb-1">شرح خدمات و الزامات پروژه</h4>
-                <p className="text-sm text-gray-700 leading-relaxed bg-white border border-gray-100 p-3 rounded-xl">
-                  {rfq.scope || rfq.scopeDescription || rfq.description}
+                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">شرح خدمات و الزامات مهندسی پروژه</h4>
+                <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed bg-white dark:bg-zinc-800/80 border border-slate-100 dark:border-zinc-750 p-3.5 rounded-xl">
+                  {rfq.scope || rfq.scopeDescription || rfq.description || 'ثبت نشده'}
                 </p>
               </div>
 
               {rfq.requiredGuarantees && rfq.requiredGuarantees.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-bold text-gray-500 mb-1.5">تضامین و شرایط حقوقی</h4>
-                  <ul className="list-disc list-inside space-y-1 text-xs text-gray-600 bg-white border border-gray-100 p-3 rounded-xl">
+                  <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">تضامین و شرایط حقوقی الزامی</h4>
+                  <ul className="list-disc list-inside space-y-1 text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-zinc-800/80 border border-slate-100 dark:border-zinc-750 p-3.5 rounded-xl">
                     {rfq.requiredGuarantees.map((g, idx) => (
                       <li key={idx}>{g}</li>
                     ))}
@@ -453,23 +604,23 @@ export default function RFQTab({ projectId, project, onNavigateToBids, onProject
             </div>
           </div>
 
-          {/* SECURE RFQ DOCUMENTS & REQUIRED DOCUMENTS */}
+          {/* 2. SECURE RFQ DOCUMENTS & REQUIRED DOCUMENTS */}
           <RFQDocumentsManager 
             rfqId={rfq.id}
             isOwner={true}
             requiredDocuments={rfq.requiredDocuments || []}
           />
 
-          {/* EPC CONTRACTOR INVITATIONS */}
-          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+          {/* 3. EPC CONTRACTOR INVITATIONS */}
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-5 sm:p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
-                  <Building2 size={20} className="text-blue-600" />
-                  پیمانکاران EPC احراز صلاحیت شده هوشیار
+                <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <Building2 size={20} className="text-[#0284C7]" />
+                  پیمانکاران EPC احراز صلاحیت شده هوشیار انرژی
                 </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  می‌توانید شرکت‌های رتبه‌بندی شده را مستقیماً به شرکت در این استعلام دعوت نمایید.
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  می‌توانید شرکت‌های رتبه‌بندی شده توسط سامانه را مستقیماً به شرکت در این استعلام دعوت نمایید.
                 </p>
               </div>
             </div>
@@ -479,32 +630,33 @@ export default function RFQTab({ projectId, project, onNavigateToBids, onProject
                 const isInvited = rfq.invitedContractorIds?.includes(epc.id);
 
                 return (
-                  <div key={epc.id} className="border border-gray-200 rounded-xl p-4 flex flex-col justify-between gap-4 bg-white hover:border-blue-200 transition-colors">
+                  <div key={epc.id} className="border border-slate-200 dark:border-zinc-800 rounded-xl p-4 flex flex-col justify-between gap-3 bg-white dark:bg-zinc-850 hover:border-blue-200 transition-colors text-xs">
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 flex items-center gap-1">
+                        <span className="font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-100 dark:border-emerald-800 flex items-center gap-1 text-[11px]">
                           <Check size={12} />
-                          EPC تایید شده
+                          EPC تایید صلاحیت شده
                         </span>
-                        <span className="text-[10px] text-gray-400 font-mono">شناسه: {epc.nationalId}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">شناسه: {epc.nationalId || '—'}</span>
                       </div>
-                      <h4 className="font-bold text-gray-900 text-sm mb-1">{epc.tradeName || epc.legalName}</h4>
-                      <p className="text-xs text-gray-500 line-clamp-1">{epc.legalName}</p>
+                      <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm mb-1">{epc.tradeName || epc.legalName}</h4>
+                      <p className="text-slate-500 dark:text-slate-400 line-clamp-1">{epc.legalName}</p>
                     </div>
 
-                    <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
-                      <span className="text-[11px] text-gray-500">شماره ثبت: {epc.registrationNumber}</span>
+                    <div className="pt-3 border-t border-slate-100 dark:border-zinc-800 flex items-center justify-between">
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400">ثبت: {epc.registrationNumber || '—'}</span>
                       {isInvited ? (
-                        <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100 flex items-center gap-1">
-                          <CheckCircle2 size={14} />
+                        <span className="text-xs font-bold text-[#0284C7] bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1.5 rounded-lg border border-blue-100 dark:border-blue-900 flex items-center gap-1">
+                          <CheckCircle2 size={13} />
                           دعوت شده
                         </span>
                       ) : (
                         <button 
+                          type="button"
                           onClick={() => handleInviteEPC(epc.id)}
-                          className="bg-blue-600 text-white px-3 py-1 rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors"
+                          className="bg-[#0284C7] hover:bg-[#0369A1] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors min-h-[36px] cursor-pointer"
                         >
-                          دعوت به استعلام
+                          ارسال دعوت‌نامه
                         </button>
                       )}
                     </div>
@@ -515,6 +667,19 @@ export default function RFQTab({ projectId, project, onNavigateToBids, onProject
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal for Closing RFQ (Zero Native confirm) */}
+      <PersianConfirmModal
+        isOpen={isCloseModalOpen}
+        onClose={() => setIsCloseModalOpen(false)}
+        onConfirm={handleCloseRFQConfirm}
+        title="بستن مهلت دریافت پیشنهادات استعلام"
+        message="آیا از بستن این استعلام اطمینان دارید؟ پس از بستن، پیمانکاران دیگر امکان ارسال پیشنهاد جدید نخواهند داشت و پیشنهادات فعلی وارد فرآیند ارزیابی نهایی خواهند شد."
+        confirmText="تایید و بستن استعلام"
+        cancelText="انصراف"
+        variant="warning"
+        isSubmitting={submitting}
+      />
     </div>
   );
 }

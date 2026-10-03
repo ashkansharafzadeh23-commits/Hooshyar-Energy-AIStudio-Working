@@ -225,8 +225,8 @@ export const BidDocumentsManager: React.FC<BidDocumentsManagerProps> = ({
         </div>
 
         {!hasAnyDocs ? (
-          <p className="text-[11px] text-gray-400 py-3 text-center border border-dashed border-gray-100 rounded-lg">
-            سندی در این بخش ثبت نشده است.
+          <p className="text-[11px] text-gray-500 dark:text-zinc-400 py-4 text-center border border-dashed border-gray-200 dark:border-zinc-700 rounded-lg">
+            هنوز سندی برای این بخش بارگذاری نشده است.
           </p>
         ) : (
           <div className="space-y-2">
@@ -258,28 +258,29 @@ export const BidDocumentsManager: React.FC<BidDocumentsManagerProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       onClick={() => handleDownload(doc)}
                       disabled={isDownloading}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                      className="min-h-[44px] px-3 py-2 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors border border-blue-200 dark:border-blue-800/60"
                       title="دانلود امن"
                     >
                       {isDownloading ? (
-                        <Loader2 size={14} className="animate-spin" />
+                        <Loader2 size={16} className="animate-spin" />
                       ) : (
-                        <Download size={14} />
+                        <Download size={16} />
                       )}
-                      <span className="hidden sm:inline">دانلود</span>
+                      <span>دانلود امن</span>
                     </button>
 
                     {isBidOwner && canModify && (
                       <button
                         onClick={() => setDocToDelete(doc)}
-                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        className="min-h-[44px] min-w-[44px] p-2.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-lg transition-colors border border-red-200 dark:border-red-900/50 flex items-center justify-center cursor-pointer"
                         title="حذف سند"
+                        aria-label="حذف سند"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={16} />
                       </button>
                     )}
                   </div>

@@ -61,7 +61,7 @@ export const BidComparison: React.FC<BidComparisonProps> = ({
             <DataTruthBadge type="CONTRACTOR_SUBMITTED" size="sm" />
           </div>
           <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-zinc-100">
-            مقایسه ابعاد فنی و تجاری پیشنهادات پیمانکاران ({bids.length} پیشنهاد)
+            مقایسه پیشنهادهای دریافتی ({bids.length} پیشنهاد)
           </h3>
         </div>
 

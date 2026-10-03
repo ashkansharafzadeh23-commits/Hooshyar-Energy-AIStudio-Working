@@ -65,6 +65,7 @@ export default function ContractorDashboard() {
   const [expandedBidDocsId, setExpandedBidDocsId] = useState<string | null>(null);
   const [selectedTechFiles, setSelectedTechFiles] = useState<File[]>([]);
   const [selectedCommFiles, setSelectedCommFiles] = useState<File[]>([]);
+  const [bidStep, setBidStep] = useState<number>(1);
 
   // Revise Bid Modal
   const [revisingBid, setRevisingBid] = useState<EPCBid | null>(null);
@@ -134,6 +135,7 @@ export default function ContractorDashboard() {
 
   const handleOpenBidModal = (rfq: ProjectRFQ) => {
     setBiddingRfq(rfq);
+    setBidStep(1);
     setSelectedTechFiles([]);
     setSelectedCommFiles([]);
     // Sensible defaults based on RFQ
@@ -820,168 +822,396 @@ export default function ContractorDashboard() {
         )}
       </div>
 
-      {/* SUBMIT BID MODAL */}
+      {/* SUBMIT BID MODAL: 5-STEP STRUCTURED FLOW */}
       {biddingRfq && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm" dir="rtl">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="flex items-center justify-between pb-4 border-b border-gray-100 mb-6">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-2xl w-full p-5 sm:p-7 max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-200 dark:border-zinc-800">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-zinc-800 mb-5">
               <div>
-                <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-                  {biddingRfq.rfqCode}
-                </span>
-                <h3 className="text-lg font-black text-gray-900 mt-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-bold text-[#0284C7] bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded border border-blue-200/60 dark:border-blue-800/40">
+                    {biddingRfq.rfqCode}
+                  </span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    گام {bidStep} از ۵
+                  </span>
+                </div>
+                <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-slate-100 mt-1">
                   ارسال پیشنهاد فنی و مالی EPC
                 </h3>
               </div>
               <button 
+                type="button"
                 onClick={() => setBiddingRfq(null)}
-                className="text-gray-400 hover:text-gray-600 text-sm font-bold"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                aria-label="بستن پنجره ارسال پیشنهاد"
               >
                 ✕
               </button>
             </div>
 
+            {/* Stepper Progress Bar */}
+            <div className="grid grid-cols-5 gap-1.5 mb-6 text-[10px] text-center font-bold">
+              {[
+                { step: 1, title: 'اطلاعات' },
+                { step: 2, title: 'فنی' },
+                { step: 3, title: 'تجاری' },
+                { step: 4, title: 'اسناد' },
+                { step: 5, title: 'ارسال' },
+              ].map(s => (
+                <button
+                  key={s.step}
+                  type="button"
+                  onClick={() => setBidStep(s.step)}
+                  className={`py-1.5 px-1 rounded-lg border transition-all ${
+                    bidStep === s.step 
+                      ? 'bg-[#0284C7] text-white border-[#0284C7] shadow-xs' 
+                      : bidStep > s.step 
+                      ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' 
+                      : 'bg-slate-50 dark:bg-zinc-800 text-slate-400 border-slate-200 dark:border-zinc-700'
+                  }`}
+                >
+                  {s.step}. {s.title}
+                </button>
+              ))}
+            </div>
+
             <form onSubmit={handleSubmitBid} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">شرکت ارائه‌دهنده پیشنهاد (پروفایل EPC)</label>
-                <select 
-                  value={selectedOrgId}
-                  onChange={e => setSelectedOrgId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-gray-200 text-xs font-bold bg-gray-50"
-                >
-                  {epcOrgs.map(org => (
-                    <option key={org.id} value={org.id}>
-                      {org.tradeName || org.legalName} (شناسه: {org.nationalId})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* STEP 1: GENERAL & COMMERCIAL INFO */}
+              {bidStep === 1 && (
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      شرکت ارائه‌دهنده پیشنهاد (پروفایل EPC) <span className="text-red-500">*</span>
+                    </label>
+                    <select 
+                      value={selectedOrgId}
+                      onChange={e => setSelectedOrgId(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-xs font-bold bg-slate-50 dark:bg-zinc-800 text-slate-800 dark:text-slate-200"
+                    >
+                      {epcOrgs.map(org => (
+                        <option key={org.id} value={org.id}>
+                          {org.tradeName || org.legalName} (شناسه: {org.nationalId || '—'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      مبلغ کل پیشنهادی (میلیون تومان) <span className="text-red-500">*</span>
+                    </label>
+                    <input 
+                      type="number"
+                      required
+                      min={1}
+                      value={bidPriceToman}
+                      onChange={e => setBidPriceToman(Number(e.target.value))}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 focus:border-[#0284C7] outline-none text-sm font-bold bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100"
+                    />
+                    <span className="text-[11px] text-slate-400 mt-1 block">
+                      معادل {(Number(bidPriceToman) * 10000000).toLocaleString('fa-IR')} ریال
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      مدت زمان اجرا و راه‌اندازی (روز کاری) <span className="text-red-500">*</span>
+                    </label>
+                    <input 
+                      type="number"
+                      required
+                      min={10}
+                      value={bidTimelineDays}
+                      onChange={e => setBidTimelineDays(Number(e.target.value))}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 focus:border-[#0284C7] outline-none text-sm font-bold bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 2: TECHNICAL PROPOSAL */}
+              {bidStep === 2 && (
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      تولید سالیانه تضمین‌شده (MWh/سال) <span className="text-red-500">*</span>
+                    </label>
+                    <input 
+                      type="number"
+                      required
+                      min={1}
+                      step="0.1"
+                      value={bidYieldMwh}
+                      onChange={e => setBidYieldMwh(Number(e.target.value))}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 focus:border-[#0284C7] outline-none text-sm font-bold bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        برند و مدل پنل خورشیدی <span className="text-red-500">*</span>
+                      </label>
+                      <input 
+                        type="text"
+                        required
+                        value={panelBrand}
+                        onChange={e => setPanelBrand(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 focus:border-[#0284C7] outline-none text-xs bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 font-mono"
+                        dir="ltr"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        برند و مدل اینورتر <span className="text-red-500">*</span>
+                      </label>
+                      <input 
+                        type="text"
+                        required
+                        value={inverterBrand}
+                        onChange={e => setInverterBrand(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 focus:border-[#0284C7] outline-none text-xs bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 font-mono"
+                        dir="ltr"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      مشخصات سازه و استراکچر <span className="text-slate-400 font-normal">(اختیاری)</span>
+                    </label>
+                    <input 
+                      type="text"
+                      value={rackingType}
+                      onChange={e => setRackingType(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 focus:border-[#0284C7] outline-none text-xs bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <input 
+                      type="checkbox"
+                      id="monitoring"
+                      checked={monitoringIncluded}
+                      onChange={e => setMonitoringIncluded(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#0284C7] focus:ring-blue-500"
+                    />
+                    <label htmlFor="monitoring" className="font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
+                      سیستم مانیتورینگ و دیتالاگر برخط (Online SCADA/IoT) شامل می‌شود
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 3: COMMERCIAL TERMS & WARRANTY */}
+              {bidStep === 3 && (
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      مدت گارانتی و خدمات پس از فروش (سال) <span className="text-red-500">*</span>
+                    </label>
+                    <input 
+                      type="number"
+                      required
+                      min={1}
+                      value={bidWarrantyYears}
+                      onChange={e => setBidWarrantyYears(Number(e.target.value))}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 focus:border-[#0284C7] outline-none text-sm font-bold bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      شرایط پرداخت پیشنهادی <span className="text-red-500">*</span>
+                    </label>
+                    <input 
+                      type="text"
+                      required
+                      defaultValue="۲۰٪ پیش‌پرداخت، ۶۰٪ متناسب با تحویل تجهیزات، ۲۰٪ پس از راه‌اندازی و اتصال به شبکه"
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 focus:border-[#0284C7] outline-none text-xs bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      توضیحات تکمیلی پیشنهاد <span className="text-slate-400 font-normal">(اختیاری)</span>
+                    </label>
+                    <textarea 
+                      rows={3}
+                      value={bidNotes}
+                      onChange={e => setBidNotes(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 focus:border-[#0284C7] outline-none text-xs bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 leading-relaxed"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 4: SECURE DOCUMENT ATTACHMENTS */}
+              {bidStep === 4 && (
+                <div className="space-y-4 text-xs">
+                  <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 rounded-xl text-blue-900 dark:text-blue-200">
+                    <p className="font-bold mb-1">بارگذاری اسناد فنی و تجاری پیشنهاد:</p>
+                    <p className="text-[11px] leading-relaxed">
+                      فایل‌های انتخاب‌شده پس از ثبت اولیه پیشنهاد، به صورت خودکار و امن در فضای ذخیره‌سازی ابری بارگذاری خواهند شد.
+                    </p>
+                  </div>
+
+                  {/* Technical Documents Picker */}
+                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50/50 dark:bg-zinc-800/40">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-bold text-slate-800 dark:text-slate-200">
+                        اسناد فنی (نقشه‌ها، شبیه‌سازی تابش، کاتالوگ تجهیزات)
+                      </span>
+                      <span className="text-[11px] text-slate-400">{selectedTechFiles.length} فایل</span>
+                    </div>
+
+                    <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 cursor-pointer min-h-[40px]">
+                      <span>انتخاب فایل‌های فنی (PDF / تصویر)</span>
+                      <input 
+                        type="file" 
+                        multiple 
+                        accept=".pdf,.jpg,.jpeg,.png,.webp"
+                        className="hidden" 
+                        onChange={e => {
+                          if (e.target.files) {
+                            setSelectedTechFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+
+                    {selectedTechFiles.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {selectedTechFiles.map((f, i) => (
+                          <div key={i} className="flex items-center justify-between p-1.5 bg-white dark:bg-zinc-800 rounded border border-slate-100 dark:border-zinc-700 text-[11px]">
+                            <span className="truncate max-w-[280px]">{f.name} ({(f.size / 1024).toFixed(0)} KB)</span>
+                            <button 
+                              type="button" 
+                              onClick={() => setSelectedTechFiles(prev => prev.filter((_, idx) => idx !== i))}
+                              className="text-red-500 font-bold px-1.5"
+                            >
+                              حذف
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Commercial Documents Picker */}
+                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50/50 dark:bg-zinc-800/40">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-bold text-slate-800 dark:text-slate-200">
+                        اسناد مالی و تجاری (جدول قیمت، پیش‌نویس قرارداد، ضمانت‌نامه)
+                      </span>
+                      <span className="text-[11px] text-slate-400">{selectedCommFiles.length} فایل</span>
+                    </div>
+
+                    <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 cursor-pointer min-h-[40px]">
+                      <span>انتخاب فایل‌های تجاری (PDF / تصویر)</span>
+                      <input 
+                        type="file" 
+                        multiple 
+                        accept=".pdf,.jpg,.jpeg,.png,.webp"
+                        className="hidden" 
+                        onChange={e => {
+                          if (e.target.files) {
+                            setSelectedCommFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+
+                    {selectedCommFiles.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {selectedCommFiles.map((f, i) => (
+                          <div key={i} className="flex items-center justify-between p-1.5 bg-white dark:bg-zinc-800 rounded border border-slate-100 dark:border-zinc-700 text-[11px]">
+                            <span className="truncate max-w-[280px]">{f.name} ({(f.size / 1024).toFixed(0)} KB)</span>
+                            <button 
+                              type="button" 
+                              onClick={() => setSelectedCommFiles(prev => prev.filter((_, idx) => idx !== i))}
+                              className="text-red-500 font-bold px-1.5"
+                            >
+                              حذف
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 5: REVIEW & SUBMIT */}
+              {bidStep === 5 && (
+                <div className="space-y-3 text-xs">
+                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800/60 space-y-2">
+                    <h4 className="font-bold text-slate-900 dark:text-slate-100 border-b border-slate-200 dark:border-zinc-700 pb-1.5">
+                      خلاصه پیشنهاد جهت ارسال نهایی:
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2 text-slate-600 dark:text-slate-300">
+                      <div>مبلغ کل: <strong className="text-blue-700 dark:text-blue-300">{Number(bidPriceToman).toLocaleString('fa-IR')} میلیون تومان</strong></div>
+                      <div>مدت اجرا: <strong className="text-slate-800 dark:text-slate-200">{bidTimelineDays} روز کاری</strong></div>
+                      <div>تولید تضمینی: <strong className="text-emerald-700 dark:text-emerald-300">{bidYieldMwh} MWh/سال</strong></div>
+                      <div>مدت گارانتی: <strong className="text-slate-800 dark:text-slate-200">{bidWarrantyYears} سال</strong></div>
+                      <div className="col-span-2">پنل: <span dir="ltr" className="font-mono">{panelBrand}</span> | اینورتر: <span dir="ltr" className="font-mono">{inverterBrand}</span></div>
+                      <div className="col-span-2 text-slate-500">
+                        تعداد اسناد پیوست: {selectedTechFiles.length} سند فنی + {selectedCommFiles.length} سند تجاری
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-xl text-amber-900 dark:text-amber-200 text-[11px] leading-relaxed">
+                    <strong>توضیح فرآیند:</strong> پس از ارسال، پیشنهاد وارد فرآیند ارزیابی قطعی سیستم شده و برای کارفرما در پیشخوان پروژه قابل بررسی خواهد بود. در صورت نیاز می‌توانید نسخه اصلاحیه نیز ثبت فرمایید.
+                  </div>
+                </div>
+              )}
+
+              {/* Navigation & Submit Buttons */}
+              <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-zinc-800">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">مبلغ کل پیشنهادی (میلیون تومان)</label>
-                  <input 
-                    type="number"
-                    required
-                    min={1}
-                    value={bidPriceToman}
-                    onChange={e => setBidPriceToman(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-amber-500 outline-none text-sm font-bold"
-                  />
-                  <span className="text-[10px] text-gray-400 mt-0.5 block">
-                    معادل {(Number(bidPriceToman) * 10000000).toLocaleString('fa-IR')} ریال
-                  </span>
+                  {bidStep > 1 && (
+                    <button 
+                      type="button" 
+                      onClick={() => setBidStep(prev => prev - 1)}
+                      className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl font-bold text-xs min-h-[44px]"
+                    >
+                      مرحله قبلی
+                    </button>
+                  )}
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">تولید سالیانه تضمین‌شده (MWh/سال)</label>
-                  <input 
-                    type="number"
-                    required
-                    min={1}
-                    step="0.1"
-                    value={bidYieldMwh}
-                    onChange={e => setBidYieldMwh(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-amber-500 outline-none text-sm font-bold"
-                  />
+                <div className="flex items-center gap-2">
+                  <button 
+                    type="button" 
+                    onClick={() => setBiddingRfq(null)}
+                    className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl font-bold text-xs min-h-[44px]"
+                  >
+                    انصراف
+                  </button>
+
+                  {bidStep < 5 ? (
+                    <button 
+                      type="button" 
+                      onClick={() => setBidStep(prev => prev + 1)}
+                      className="bg-[#0284C7] hover:bg-[#0369A1] text-white px-5 py-2.5 rounded-xl font-bold text-xs shadow-sm min-h-[44px] cursor-pointer"
+                    >
+                      گام بعدی
+                    </button>
+                  ) : (
+                    <button 
+                      type="submit" 
+                      disabled={submittingBid}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-bold text-xs shadow-md disabled:opacity-50 min-h-[44px] cursor-pointer"
+                    >
+                      {submittingBid ? 'در حال ارسال و ارزیابی...' : 'ثبت و ارسال رسمی پیشنهاد'}
+                    </button>
+                  )}
                 </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">مدت زمان اجرا و راه‌اندازی (روز کاری)</label>
-                  <input 
-                    type="number"
-                    required
-                    min={10}
-                    value={bidTimelineDays}
-                    onChange={e => setBidTimelineDays(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-amber-500 outline-none text-sm font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">مدت گارانتی و خدمات پس از فروش (سال)</label>
-                  <input 
-                    type="number"
-                    required
-                    min={1}
-                    value={bidWarrantyYears}
-                    onChange={e => setBidWarrantyYears(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-amber-500 outline-none text-sm font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">برند و مدل پنل خورشیدی</label>
-                  <input 
-                    type="text"
-                    required
-                    value={panelBrand}
-                    onChange={e => setPanelBrand(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-amber-500 outline-none text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">برند و مدل اینورتر</label>
-                  <input 
-                    type="text"
-                    required
-                    value={inverterBrand}
-                    onChange={e => setInverterBrand(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-amber-500 outline-none text-xs"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">مشخصات سازه و استراکچر</label>
-                <input 
-                  type="text"
-                  value={rackingType}
-                  onChange={e => setRackingType(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-amber-500 outline-none text-xs"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <input 
-                  type="checkbox"
-                  id="monitoring"
-                  checked={monitoringIncluded}
-                  onChange={e => setMonitoringIncluded(e.target.checked)}
-                  className="rounded text-amber-600 focus:ring-amber-500"
-                />
-                <label htmlFor="monitoring" className="text-xs font-bold text-gray-700 cursor-pointer">
-                  سیستم مانیتورینگ و دیتالاگر برخط (Online SCADA/IoT) شامل می‌شود
-                </label>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">توضیحات تکمیلی پیشنهاد</label>
-                <textarea 
-                  rows={2}
-                  value={bidNotes}
-                  onChange={e => setBidNotes(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-amber-500 outline-none text-xs"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100">
-                <button 
-                  type="button" 
-                  onClick={() => setBiddingRfq(null)}
-                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl font-bold text-xs"
-                >
-                  انصراف
-                </button>
-                <button 
-                  type="submit" 
-                  disabled={submittingBid}
-                  className="bg-amber-500 hover:bg-amber-600 text-white px-6 py-2.5 rounded-xl font-bold text-xs shadow-md disabled:opacity-50"
-                >
-                  {submittingBid ? 'در حال ارسال و امتیازدهی...' : 'ثبت و ارسال پیشنهاد'}
-                </button>
               </div>
             </form>
           </div>

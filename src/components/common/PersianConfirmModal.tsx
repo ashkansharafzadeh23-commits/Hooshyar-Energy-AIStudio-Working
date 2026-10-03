@@ -85,7 +85,7 @@ export const PersianConfirmModal: React.FC<PersianConfirmModalProps> = ({
             type="button"
             onClick={onClose}
             disabled={isBusy}
-            className="px-4 py-2 text-xs sm:text-sm font-semibold text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
+            className="min-h-[44px] px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center"
           >
             {cancelText}
           </button>
@@ -93,7 +93,7 @@ export const PersianConfirmModal: React.FC<PersianConfirmModalProps> = ({
             type="button"
             onClick={handleConfirm}
             disabled={isBusy}
-            className={`px-5 py-2 text-xs sm:text-sm font-bold rounded-xl transition-colors flex items-center gap-2 shadow-xs disabled:opacity-50 cursor-pointer ${getConfirmButtonClasses()}`}
+            className={`min-h-[44px] px-5 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-2 shadow-xs disabled:opacity-50 cursor-pointer ${getConfirmButtonClasses()}`}
           >
             {isBusy && <Loader2 size={15} className="animate-spin" />}
             <span>{confirmText}</span>
