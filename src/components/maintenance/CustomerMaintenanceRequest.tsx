@@ -416,7 +416,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
         <div className="max-w-md mx-auto bg-slate-50 rounded-2xl border border-slate-200 p-5 text-right space-y-3">
           <div className="flex items-center justify-between border-b border-slate-200 pb-3">
             <span className="text-xs text-slate-500 font-bold">کد پیگیری پرونده:</span>
-            <span className="text-sm font-black font-mono text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg">
+            <span dir="ltr" className="text-sm font-black font-mono text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg">
               {createdCase.caseNumber || createdCase.maintenanceCode || createdCase.id}
             </span>
           </div>
@@ -454,7 +454,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
             <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-[11px] text-amber-800 flex items-start gap-2">
               <Info size={14} className="mt-0.5 shrink-0" />
               <span>
-                این پرونده پس از اتمام اقدامات O&M، مستقیماً در شناسنامه فنی دارایی (Asset Passport) ثبت و آرشیو خواهد شد.
+                اطلاعات و سوابق اقدامات این پرونده پس از تکمیل، در بخش تاریخچه نگهداری دارایی در دسترس خواهد بود.
               </span>
             </div>
           )}
@@ -463,21 +463,24 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
           <button
+            type="button"
             onClick={() => onTrackCase(createdCase.id)}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-2"
+            className="px-6 py-3 min-h-[44px] bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer"
           >
             <span>پیگیری لحظه‌ای و جزئیات پرونده</span>
             <ArrowLeft size={16} />
           </button>
 
           <button
+            type="button"
             onClick={onGoToCases}
-            className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all"
+            className="px-6 py-3 min-h-[44px] bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
           >
             مشاهده تمام پرونده‌های من
           </button>
 
           <button
+            type="button"
             onClick={() => {
               setCreatedCase(null);
               setStep(1);
@@ -487,7 +490,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
               setProblemTitle('');
               setProblemDescription('');
             }}
-            className="px-4 py-3 text-slate-500 hover:text-slate-800 text-xs font-bold"
+            className="px-4 py-3 min-h-[44px] text-slate-500 hover:text-slate-800 text-xs font-bold cursor-pointer"
           >
             ثبت یک درخواست دیگر
           </button>
@@ -510,7 +513,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
               ثبت درخواست عیب‌یابی، تعمیر و اعزام متخصص
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              مراحل را طی کنید تا ارزیابی هوشمند و اتصال به متخصصان مجاز دارای صلاحیت انجام شود.
+              مراحل را طی کنید تا تحلیل اولیه شواهد و امکان انتخاب یا ارجاع به متخصصان ثبت‌شده فراهم شود.
             </p>
           </div>
 
@@ -579,7 +582,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
                   انتخاب از دارایی‌های خورشیدی ثبت‌شده من
                 </h4>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  اتصال به شناسنامه فنی (Asset Passport)، سوابق تله‌متری و گارانتی معتبر قطعات
+                  استفاده از اطلاعات نیروگاه یا پروژه ثبت‌شده در حساب کاربری شما
                 </p>
               </div>
             </button>
@@ -732,7 +735,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
               type="button"
               disabled={!canGoToStep2()}
               onClick={() => setStep(2)}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-2"
+              className="px-6 py-3 min-h-[44px] bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer"
             >
               <span>مرحله بعد: شرح علائم و مشاهدات</span>
               <ArrowLeft size={16} />
@@ -844,7 +847,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
             <button
               type="button"
               onClick={() => setStep(1)}
-              className="px-5 py-2.5 text-slate-600 hover:text-slate-900 text-xs font-bold flex items-center gap-1.5"
+              className="px-5 py-2.5 min-h-[44px] text-slate-600 hover:text-slate-900 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
             >
               <ArrowRight size={16} />
               <span>مرحله قبل</span>
@@ -854,7 +857,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
               type="button"
               disabled={!canGoToStep3()}
               onClick={() => setStep(3)}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-2"
+              className="px-6 py-3 min-h-[44px] bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer"
             >
               <span>مرحله بعد: بارگذاری تصاویر و مدارک</span>
               <ArrowLeft size={16} />
@@ -977,7 +980,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
             <button
               type="button"
               onClick={() => setStep(2)}
-              className="px-5 py-2.5 text-slate-600 hover:text-slate-900 text-xs font-bold flex items-center gap-1.5"
+              className="px-5 py-2.5 min-h-[44px] text-slate-600 hover:text-slate-900 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
             >
               <ArrowRight size={16} />
               <span>مرحله قبل</span>
@@ -991,7 +994,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
                   handleRunDiagnosis();
                 }
               }}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-2"
+              className="px-6 py-3 min-h-[44px] bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer"
             >
               <span>مرحله بعد: تحلیل و عیب‌یابی اولیه هوشمند</span>
               <Sparkles size={16} />
@@ -1023,18 +1026,31 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
               type="button"
               disabled={diagnosing}
               onClick={handleRunDiagnosis}
-              className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200 transition-all flex items-center gap-1.5 shrink-0"
+              className="px-4 py-2 min-h-[44px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
             >
               <Sparkles size={14} className={diagnosing ? 'animate-spin' : ''} />
               <span>تحلیل مجدد شواهد</span>
             </button>
           </div>
 
+          {/* Engineering Attribution & Truthfulness Notice */}
+          <div className="bg-indigo-50/60 border border-indigo-200/80 rounded-2xl p-4 flex items-start gap-3 text-xs text-indigo-950">
+            <Info size={18} className="text-indigo-600 mt-0.5 shrink-0" />
+            <div className="space-y-1">
+              <span className="font-bold block text-indigo-900">
+                دستیار هوشمند تحلیل شواهد مهندسی O&M (پیشنهاد اولیه تشخیصی)
+              </span>
+              <p className="text-[11px] text-indigo-800 leading-relaxed">
+                این نتایج یک بررسی فنی اولیه بر اساس اطلاعات و شواهد تصویری ثبت‌شده توسط کاربر است و جایگزین بررسی حضوری کارشناس یا آزمون‌های الکتریکی تخصصی نبوده و صرفاً جنبه راهنمایی دارد.
+              </p>
+            </div>
+          </div>
+
           {diagnosing ? (
             <div className="py-16 text-center space-y-3 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
               <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mx-auto" />
-              <p className="text-xs font-bold text-slate-700">در حال ریشه‌یابی و تطابق شواهد مهندسی با متون استاندارد...</p>
-              <p className="text-[11px] text-slate-400">تحلیل عیوب اینورتر، وضعیت ایزولاسیون، ایمنی DC و استعلام شرایط گارانتی</p>
+              <p className="text-xs font-bold text-slate-700">در حال پردازش شواهد ثبت‌شده و بررسی اولیه الگوهای اعلامی...</p>
+              <p className="text-[11px] text-slate-400">بررسی علائم اعلام‌شده و ارائه توصیه‌های اولیه پیش از بازدید کارشناس</p>
             </div>
           ) : diagError ? (
             <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-2">
@@ -1229,7 +1245,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
             <button
               type="button"
               onClick={() => setStep(3)}
-              className="px-5 py-2.5 text-slate-600 hover:text-slate-900 text-xs font-bold flex items-center gap-1.5"
+              className="px-5 py-2.5 min-h-[44px] text-slate-600 hover:text-slate-900 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
             >
               <ArrowRight size={16} />
               <span>مرحله قبل</span>
@@ -1238,7 +1254,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
             <button
               type="button"
               onClick={() => setStep(5)}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-2"
+              className="px-6 py-3 min-h-[44px] bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer"
             >
               <span>مرحله بعد: انطباق متخصص و ثبت درخواست</span>
               <ArrowLeft size={16} />
@@ -1254,13 +1270,13 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
         <div className="space-y-6 animate-fadeIn">
           <div>
             <span className="text-xs font-bold text-purple-700 bg-purple-50 px-3 py-1 rounded-full">
-              شبکه تخصصی و مجاز هوشیار انرژی
+              شبکه متخصصان و کارشناسان انرژی خورشیدی
             </span>
             <h3 className="text-base font-black text-slate-900 mt-2">
-              گام ۵: انتخاب متخصص مجاز و ثبت نهایی درخواست
+              گام ۵: انتخاب متخصص یا شیوه ارجاع درخواست
             </h3>
             <p className="text-xs text-slate-500 mt-1">
-              تنها متخصصان دارای تاییدیه رسمی صلاحیت در فهرست زیر نمایش داده می‌شوند (بدون ارقام یا رتبه‌بندی‌های غیرواقعی).
+              فهرست متخصصان فعال در پلتفرم بر اساس شهر و تخصص ثبت‌شده کاربر (بدون رتبه‌بندی‌های غیرواقعی).
             </p>
           </div>
 
@@ -1278,7 +1294,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
                   : 'bg-white text-slate-700 hover:bg-slate-100'
               }`}
             >
-              ارسال درخواست به نزدیک‌ترین متخصص مجاز منطقه (پیشنهاد هوشمند)
+              ارجاع به متخصصان فعال منطقه بر اساس شهر انتخابی
             </button>
             <button
               type="button"
@@ -1294,7 +1310,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
                   : 'bg-white text-slate-700 hover:bg-slate-100'
               }`}
             >
-              انتخاب دستی از فهرست متخصصان مجاز
+              انتخاب دستی از بین متخصصان ثبت‌شده
             </button>
           </div>
 
@@ -1302,7 +1318,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
           {loadingTechnicians ? (
             <div className="py-12 text-center text-xs text-slate-400 space-y-2">
               <Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-600" />
-              <p>در حال جستجوی متخصصان مجاز منطقه و انطباق صلاحیت‌های O&M...</p>
+              <p>در حال دریافت لیست متخصصان فعال منطقه...</p>
             </div>
           ) : technicians.length === 0 ? (
             <div className="p-6 bg-amber-50 rounded-2xl border border-amber-200 text-center space-y-2">
@@ -1316,7 +1332,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
           ) : (
             <div className="space-y-3">
               <label className="block text-xs font-bold text-slate-700">
-                متخصصان مجاز و دارای صلاحیت منطبق با این پرونده:
+                متخصصان فعال ثبت‌شده برای شهر یا حوزه انتخابی:
               </label>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1406,10 +1422,11 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
                 </label>
                 <input
                   type="tel"
+                  dir="ltr"
                   value={contactPhone}
                   onChange={e => setContactPhone(e.target.value)}
                   placeholder="0912xxxxxxx"
-                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-white text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full p-2.5 min-h-[44px] rounded-xl border border-slate-200 bg-white text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500 text-left"
                 />
               </div>
             </div>
@@ -1427,7 +1444,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
             <button
               type="button"
               onClick={() => setStep(4)}
-              className="px-5 py-2.5 text-slate-600 hover:text-slate-900 text-xs font-bold flex items-center gap-1.5"
+              className="px-5 py-2.5 min-h-[44px] text-slate-600 hover:text-slate-900 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
             >
               <ArrowRight size={16} />
               <span>مرحله قبل</span>
@@ -1437,7 +1454,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
               type="button"
               disabled={submitting}
               onClick={handleSubmitRequest}
-              className="px-8 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black rounded-xl shadow-md transition-all flex items-center gap-2"
+              className="px-8 py-3.5 min-h-[48px] bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
             >
               {submitting ? (
                 <>

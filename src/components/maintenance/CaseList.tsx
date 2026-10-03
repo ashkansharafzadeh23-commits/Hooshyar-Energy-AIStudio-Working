@@ -95,9 +95,9 @@ export const CaseList: React.FC<CaseListProps> = ({
               placeholder="جستجو بر اساس شماره پرونده، عنوان، شرح..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-3 pr-9 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              className="w-full pl-3 pr-9 py-2.5 min-h-[44px] rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
-            <Search size={16} className="absolute right-3 top-2.5 text-slate-400" />
+            <Search size={16} className="absolute right-3 top-3 text-slate-400" />
           </div>
 
           <div className="flex items-center gap-2">
@@ -105,7 +105,7 @@ export const CaseList: React.FC<CaseListProps> = ({
             <select
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
-              className="text-xs font-medium bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 focus:outline-none"
+              className="text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2.5 min-h-[44px] text-slate-700 focus:outline-none"
             >
               <option value="ALL">همه وضعیت‌ها</option>
               <option value="OPEN">باز</option>
@@ -123,7 +123,7 @@ export const CaseList: React.FC<CaseListProps> = ({
             <select
               value={priorityFilter}
               onChange={e => setPriorityFilter(e.target.value)}
-              className="text-xs font-medium bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 focus:outline-none"
+              className="text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2.5 min-h-[44px] text-slate-700 focus:outline-none"
             >
               <option value="ALL">همه اولویت‌ها</option>
               <option value="URGENT">فوری</option>
@@ -135,11 +135,12 @@ export const CaseList: React.FC<CaseListProps> = ({
         </div>
 
         <button
+          type="button"
           onClick={onNewCase}
-          className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+          className="px-5 py-2.5 min-h-[44px] text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
         >
           <FileText size={15} />
-          ثبت پرونده تعمیراتی جدید
+          <span>ثبت پرونده تعمیراتی جدید</span>
         </button>
       </div>
 
@@ -163,7 +164,7 @@ export const CaseList: React.FC<CaseListProps> = ({
                 <div className="flex flex-wrap items-center gap-2">
                   {getStatusBadge(c.status)}
                   {getPriorityBadge(c.priority)}
-                  <span className="text-xs font-mono font-bold text-blue-600">{c.caseNumber}</span>
+                  <span dir="ltr" className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">{c.caseNumber}</span>
                   <span className="text-xs text-slate-400">•</span>
                   <span className="text-xs text-slate-500">
                     ثبت در {new Date(c.createdAt).toLocaleDateString('fa-IR')}
@@ -191,8 +192,8 @@ export const CaseList: React.FC<CaseListProps> = ({
                   )}
 
                   {c.totalCostIrr !== undefined && c.totalCostIrr > 0 && (
-                    <span className="flex items-center gap-1 font-mono text-slate-700">
-                      هزینه: {c.totalCostIrr.toLocaleString()} ریال
+                    <span className="flex items-center gap-1 text-slate-700">
+                      هزینه: <strong dir="ltr" className="font-mono text-slate-900">{c.totalCostIrr.toLocaleString()}</strong> ریال
                     </span>
                   )}
 
@@ -208,20 +209,22 @@ export const CaseList: React.FC<CaseListProps> = ({
               <div className="flex flex-wrap items-center gap-2 self-end md:self-center">
                 {!c.assignedTechnicianId && c.status !== 'CLOSED' && (
                   <button
+                    type="button"
                     onClick={() => onAssignTechnician(c)}
-                    className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-all flex items-center gap-1"
+                    className="px-3.5 py-2.5 min-h-[44px] text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-all flex items-center gap-1 cursor-pointer"
                   >
                     <UserPlus size={14} />
-                    تخصیص تکنسین
+                    <span>تخصیص تکنسین</span>
                   </button>
                 )}
 
                 <button
+                  type="button"
                   onClick={() => onSelectCase(c)}
-                  className="px-4 py-1.5 text-xs font-bold text-slate-700 hover:text-blue-700 bg-slate-100 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-xl transition-all flex items-center gap-1"
+                  className="px-4 py-2.5 min-h-[44px] text-xs font-bold text-slate-700 hover:text-blue-700 bg-slate-100 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-xl transition-all flex items-center gap-1 cursor-pointer"
                 >
                   <Wrench size={14} />
-                  جزییات و ثبت اقدامات
+                  <span>جزییات و ثبت اقدامات</span>
                 </button>
               </div>
             </div>

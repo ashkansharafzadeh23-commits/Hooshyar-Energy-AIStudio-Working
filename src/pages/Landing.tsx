@@ -426,7 +426,7 @@ export default function Landing() {
               <div className="space-y-1">
                 <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">تعمیرات و نگهداری هوشمند</h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  ثبت برخط خرابی، عیب‌یابی تحلیلی و ارتباط مستقیم با کارشناسان میدانی.
+                  ثبت خرابی تجهیزات، بارگذاری تصویر، عیبیابی هوشمند و ارتباط با تعمیرکار متخصص
                 </p>
               </div>
             </div>

@@ -170,7 +170,7 @@ export const AlertDashboard: React.FC<AlertDashboardProps> = ({
                     <div className="flex flex-wrap items-center gap-2">
                       {getSeverityBadge(alert.severity)}
                       {getStatusBadge(alert.status)}
-                      <span className="text-xs font-mono font-medium text-slate-400">{alert.alertCode}</span>
+                      <span dir="ltr" className="text-xs font-mono font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{alert.alertCode}</span>
                       <span className="text-xs text-slate-400">•</span>
                       <span className="text-xs text-slate-500 font-medium">
                         {new Date(alert.detectedAt).toLocaleString('fa-IR')}
@@ -232,44 +232,48 @@ export const AlertDashboard: React.FC<AlertDashboardProps> = ({
                   <div className="flex flex-wrap items-center gap-2 self-end md:self-center">
                     {alert.status === 'TRIGGERED' && (
                       <button
+                        type="button"
                         onClick={() => onAcknowledge(alert.id)}
-                        className="px-3 py-1.5 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-all flex items-center gap-1"
+                        className="px-3.5 py-2.5 min-h-[44px] text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-all flex items-center gap-1 cursor-pointer"
                       >
                         <Check size={14} />
-                        تایید بررسی
+                        <span>تایید بررسی</span>
                       </button>
                     )}
 
                     {(alert.status === 'TRIGGERED' || alert.status === 'ACKNOWLEDGED') && (
                       <button
+                        type="button"
                         onClick={() => onDismiss(alert.id)}
-                        className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all flex items-center gap-1"
+                        className="px-3.5 py-2.5 min-h-[44px] text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all flex items-center gap-1 cursor-pointer"
                       >
                         <XCircle size={14} />
-                        نادیده گرفتن
+                        <span>نادیده گرفتن</span>
                       </button>
                     )}
 
                     <button
+                      type="button"
                       onClick={() => onDiagnose(alert)}
-                      className="px-3.5 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-all flex items-center gap-1.5"
+                      className="px-4 py-2.5 min-h-[44px] text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
                     >
                       <Stethoscope size={14} />
-                      تشخیص و گارانتی
+                      <span>تشخیص و گارانتی</span>
                     </button>
 
                     {!alert.maintenanceCaseId ? (
                       <button
+                        type="button"
                         onClick={() => onCreateCase(alert)}
-                        className="px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+                        className="px-4 py-2.5 min-h-[44px] text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
                       >
                         <FileText size={14} />
-                        ایجاد پرونده تعمیراتی
+                        <span>ایجاد پرونده تعمیراتی</span>
                       </button>
                     ) : (
-                      <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1">
+                      <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2.5 min-h-[44px] rounded-xl flex items-center gap-1">
                         <CheckCircle size={14} />
-                        پرونده ثبت شد
+                        <span>پرونده ثبت شد</span>
                       </span>
                     )}
                   </div>

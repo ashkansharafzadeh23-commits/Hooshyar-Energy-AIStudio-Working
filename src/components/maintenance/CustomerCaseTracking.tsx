@@ -172,7 +172,7 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
-          closureNotes: 'تأیید نهایی رضایت کارفرما و بستن رسمی پرونده در شناسنامه دارایی'
+          closureNotes: 'تکمیل نهایی اقدامات و بستن پرونده نگهداری'
         })
       });
       if (!res.ok) {
@@ -246,8 +246,9 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
       {/* Top Navigation */}
       <div className="flex items-center justify-between">
         <button
+          type="button"
           onClick={onBack}
-          className="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 transition-colors"
+          className="min-h-[44px] text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 transition-colors cursor-pointer"
         >
           <ArrowRight size={16} />
           <span>بازگشت به فهرست پرونده‌ها</span>
@@ -255,7 +256,7 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
 
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-400">کد پیگیری:</span>
-          <span className="font-mono text-xs font-black text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
+          <span dir="ltr" className="font-mono text-xs font-black text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
             {mCase.caseNumber || mCase.maintenanceCode || mCase.id}
           </span>
         </div>
@@ -287,7 +288,7 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
                     setVerifyActionPass(true);
                     setShowVerifyModal(true);
                   }}
-                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+                  className="px-4 py-2.5 min-h-[44px] bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
                 >
                   <CheckCircle2 size={14} />
                   <span>تأیید حسن انجام کار</span>
@@ -298,7 +299,7 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
                     setVerifyActionPass(false);
                     setShowVerifyModal(true);
                   }}
-                  className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
+                  className="px-3.5 py-2.5 min-h-[44px] bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   <XCircle size={14} />
                   <span>عدم تایید / رفع نقص</span>
@@ -311,7 +312,7 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
                 type="button"
                 disabled={closing}
                 onClick={handleCloseCase}
-                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+                className="px-4 py-2.5 min-h-[44px] bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
               >
                 {closing ? <Loader2 size={14} className="animate-spin" /> : <FileCheck2 size={14} />}
                 <span>بستن نهایی پرونده و بایگانی در شناسنامه</span>
@@ -319,7 +320,7 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
             )}
 
             {mCase.status === 'CLOSED' && (
-              <span className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1.5">
+              <span className="px-3 py-1.5 min-h-[44px] bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1.5">
                 <CheckCircle2 size={14} className="text-emerald-600" />
                 <span>پرونده بایگانی شده</span>
               </span>
@@ -394,6 +395,7 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
                 <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
                   <span className="text-slate-500">شماره تماس مستقیم:</span>
                   <a
+                    dir="ltr"
                     href={`tel:${mCase.assignedTechnicianPhone}`}
                     className="font-mono font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
                   >
@@ -411,7 +413,7 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
                 <div className="pt-2">
                   <Link
                     to={`/professionals/${mCase.assignedTechnicianId}`}
-                    className="w-full py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl font-bold text-center block transition-colors"
+                    className="w-full py-2.5 min-h-[44px] bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl font-bold text-center flex items-center justify-center transition-colors"
                   >
                     مشاهده پروفایل و سوابق متخصص
                   </Link>
@@ -425,21 +427,21 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
             </div>
           )}
 
-          {/* Asset Passport Link Notice */}
+          {/* Asset Link Notice */}
           {mCase.assetId && mCase.assetId !== 'UNREGISTERED' && (
             <div className="p-3.5 bg-blue-50/60 rounded-2xl border border-blue-200 space-y-2 text-xs">
               <div className="flex items-center gap-1.5 text-blue-900 font-bold">
                 <Info size={14} className="text-blue-600 shrink-0" />
-                <span>اتصال به شناسنامه دارایی (Asset Passport)</span>
+                <span>ارتباط با پرونده نیروگاه در بخش دارایی‌ها</span>
               </div>
               <p className="text-[11px] text-blue-800">
-                این پرونده به دارایی انرژی متصل است. سوابق اقدامات و قطعات مصرفی به دفترچه شناسنامه اضافه خواهد شد.
+                این پرونده به دارایی انرژی متصل است. سوابق اقدامات و قطعات مصرفی در تاریخچه این دارایی قابل دسترسی خواهد بود.
               </p>
               <Link
                 to={`/solar-assets/${mCase.assetId}`}
                 className="text-[11px] font-bold text-blue-700 hover:underline flex items-center gap-1 pt-1"
               >
-                <span>مشاهده شناسنامه فنی دارایی</span>
+                <span>مشاهده پرونده دارایی در سامانه</span>
                 <ExternalLink size={12} />
               </Link>
             </div>
@@ -460,7 +462,7 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
             <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-xs text-slate-400 space-y-1">
               <Clock size={24} className="mx-auto text-slate-300 mb-2" />
               <p className="font-bold text-slate-600">هنوز اقدام فنی ثبت نشده است.</p>
-              <p className="text-[11px]">با شروع بازرسی میدانی یا تست تجهیز، گزارش‌ها در این بخش درج می‌گردد.</p>
+              <p className="text-[11px]">با شروع اقدامات یا ثبت گزارش توسط تکنسین، جزئیات در این بخش درج می‌گردد.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -509,7 +511,7 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
           <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-xs text-slate-400 space-y-1">
             <Camera size={24} className="mx-auto text-slate-300 mb-2" />
             <p className="font-bold text-slate-600">پیوست تصویری یا سندی ثبت نشده است.</p>
-            <p className="text-[11px]">تصاویر آپلودشده توسط مشتری یا گزارش‌های بازرسی تکنسین در این بخش بایگانی می‌گردند.</p>
+            <p className="text-[11px]">تصاویر و مستندات آپلودشده در این بخش نمایش داده می‌شوند.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -672,8 +674,8 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
 
             <p className="text-xs text-slate-600 leading-relaxed">
               {verifyActionPass
-                ? 'با تأیید حسن انجام کار، عملیات تعمیرات و سرویس توسط کارفرما تایید شده و پرونده آماده بایگانی نهایی در شناسنامه دارایی می‌شود.'
-                : 'در صورت وجود هرگونه ایراد یا عدم انطباق با استانداردهای O&M، علت عدم تایید را بنویسید تا جهت اصلاح به متخصص ارجاع گردد.'}
+                ? 'با ثبت تأیید، وضعیت پرونده به مرحله تاییدشده تغییر یافته و پرونده قابل بستن خواهد بود.'
+                : 'در صورت وجود هرگونه نقص یا عدم رفع مشکل، دلایل عدم تایید را بنویسید تا در سوابق پرونده ثبت گردد.'}
             </p>
 
             <div>
@@ -693,7 +695,7 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
               <button
                 type="button"
                 onClick={() => setShowVerifyModal(false)}
-                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+                className="px-4 py-2.5 min-h-[44px] text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
               >
                 انصراف
               </button>
@@ -702,7 +704,7 @@ export const CustomerCaseTracking: React.FC<CustomerCaseTrackingProps> = ({
                 type="button"
                 disabled={verifying}
                 onClick={() => handleVerifyCase(verifyActionPass)}
-                className={`px-5 py-2.5 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${
+                className={`px-5 py-2.5 min-h-[44px] text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer ${
                   verifyActionPass ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
                 }`}
               >

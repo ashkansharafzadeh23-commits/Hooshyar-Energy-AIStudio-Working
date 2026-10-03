@@ -81,21 +81,21 @@ export const ApprovedProfessionalsDirectory: React.FC<ApprovedProfessionalsDirec
           <div>
             <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
               <ShieldCheck className="text-emerald-600" size={20} />
-              شبکه متخصصان و کارشناسان مجاز انرژی خورشیدی (O&M)
+              فهرست متخصصان و تکنسین‌های انرژی خورشیدی (O&M)
             </h3>
             <p className="text-xs text-slate-500 mt-1">
-              تنها کارشناسان دارای احراز هویت رسمی و تایید صلاحیت فنی در این سامانه فعالیت دارند.
+              نمایش کارشناسان و متخصصان ثبت‌نام‌شده در سامانه بر اساس شهر و تخصص فنی اعلامی.
             </p>
           </div>
 
           <div className="relative w-full md:w-72">
-            <Search size={16} className="absolute right-3 top-3 text-slate-400" />
+            <Search size={16} className="absolute right-3 top-3.5 text-slate-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="جستجوی نام یا مهارت متخصص..."
-              className="w-full pr-9 pl-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pr-9 pl-3 py-2.5 min-h-[44px] text-xs rounded-xl border border-slate-200 bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
         </div>
@@ -109,7 +109,7 @@ export const ApprovedProfessionalsDirectory: React.FC<ApprovedProfessionalsDirec
           <select
             value={cityFilter}
             onChange={e => setCityFilter(e.target.value)}
-            className="p-1.5 rounded-lg border border-slate-200 bg-white font-bold text-slate-700 outline-none"
+            className="p-2 min-h-[44px] rounded-xl border border-slate-200 bg-white font-bold text-slate-700 outline-none"
           >
             <option value="ALL">همه شهرها</option>
             {availableCities.map((c: string) => (
@@ -123,7 +123,7 @@ export const ApprovedProfessionalsDirectory: React.FC<ApprovedProfessionalsDirec
           <select
             value={specialtyFilter}
             onChange={e => setSpecialtyFilter(e.target.value)}
-            className="p-1.5 rounded-lg border border-slate-200 bg-white font-bold text-slate-700 outline-none"
+            className="p-2 min-h-[44px] rounded-xl border border-slate-200 bg-white font-bold text-slate-700 outline-none"
           >
             <option value="ALL">همه تخصص‌ها</option>
             <option value="اینورتر">اینورتر و ادوات قدرت</option>
@@ -138,7 +138,7 @@ export const ApprovedProfessionalsDirectory: React.FC<ApprovedProfessionalsDirec
       {loading ? (
         <div className="py-16 text-center text-xs text-slate-400 space-y-2 bg-white rounded-3xl border border-slate-200">
           <Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-600" />
-          <p>در حال بارگذاری لیست متخصصان مجاز O&M...</p>
+          <p>در حال بارگذاری لیست متخصصان O&M...</p>
         </div>
       ) : filteredPros.length === 0 ? (
         <div className="p-8 text-center bg-white rounded-3xl border border-dashed border-slate-200 text-xs text-slate-500">
@@ -216,14 +216,14 @@ export const ApprovedProfessionalsDirectory: React.FC<ApprovedProfessionalsDirec
                     matchScore: 100,
                     matchReasons: ['انتخاب مستقیم توسط کاربر']
                   })}
-                  className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs text-center"
+                  className="flex-1 py-2.5 min-h-[44px] bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs text-center flex items-center justify-center cursor-pointer"
                 >
-                  ثبت درخواست با این متخصص
+                  <span>ثبت درخواست با این متخصص</span>
                 </button>
 
                 <Link
                   to={`/professionals/${pro.id}`}
-                  className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-colors"
+                  className="p-2.5 min-h-[44px] min-w-[44px] bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-colors flex items-center justify-center cursor-pointer shrink-0"
                   title="مشاهده پروفایل عمومی"
                 >
                   <ExternalLink size={16} />

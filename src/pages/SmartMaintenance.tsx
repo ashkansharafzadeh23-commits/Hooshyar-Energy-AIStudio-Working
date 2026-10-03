@@ -18,7 +18,11 @@ import {
   Wrench,
   Search,
   Sparkles,
-  ArrowLeft
+  ArrowLeft,
+  Activity,
+  CheckCircle2,
+  Camera,
+  FileCheck2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { AdBanner } from '../components/AdBanner';
@@ -494,7 +498,7 @@ export default function SmartMaintenance() {
                 تعمیرات و نگهداری هوشمند
               </h1>
               <p className="text-xs md:text-sm text-slate-500 mt-1">
-                سامانه یکپارچه تشخیص عیب، درخواست سرویس، اعزام کارشناسان مجاز و ثبت سوابق در شناسنامه فنی نیروگاه
+                سامانه پیگیری و ثبت درخواست‌های تعمیراتی، تحلیل اولیه شواهد و ارتباط با متخصصان حوزه انرژی خورشیدی
               </p>
             </div>
 
@@ -506,7 +510,7 @@ export default function SmartMaintenance() {
                   setPreselectedTechForRequest(null);
                   setActiveTab('NEW_REQUEST');
                 }}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2"
+                className="px-5 py-2.5 min-h-[44px] bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer"
               >
                 <Plus size={16} />
                 <span>ثبت درخواست تعمیرات جدید</span>
@@ -514,13 +518,13 @@ export default function SmartMaintenance() {
 
               {/* Project Switcher if available */}
               {projects.length > 0 && (
-                <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-200 text-xs">
+                <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-200 text-xs min-h-[44px]">
                   <Building size={14} className="text-slate-400 mr-1" />
                   <span className="font-bold text-slate-600">پروژه:</span>
                   <select
                     value={selectedProjectId}
                     onChange={e => handleProjectChange(e.target.value)}
-                    className="font-bold bg-white border border-slate-200 rounded-xl px-2.5 py-1 text-slate-800 outline-none"
+                    className="font-bold bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-800 outline-none"
                   >
                     {projects.map(p => (
                       <option key={p.id} value={p.id}>
@@ -537,20 +541,21 @@ export default function SmartMaintenance() {
           <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
             <form onSubmit={handleLookupTrackingCode} className="flex items-center gap-2 w-full sm:w-auto">
               <div className="relative flex-1 sm:w-80">
-                <Search size={14} className="absolute right-3 top-2.5 text-slate-400" />
+                <Search size={14} className="absolute right-3 top-3.5 text-slate-400" />
                 <input
                   type="text"
+                  dir="ltr"
                   value={trackingInputCode}
                   onChange={e => setTrackingInputCode(e.target.value)}
-                  placeholder="پیگیری سریع با کد پرونده (مثال: MC-2026-0001)..."
-                  className="w-full pr-8 pl-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  placeholder="MC-2026-0001..."
+                  className="w-full pr-8 pl-3 py-2.5 min-h-[44px] rounded-xl border border-slate-200 bg-slate-50 text-xs outline-none focus:ring-2 focus:ring-blue-500 font-mono text-left"
                 />
               </div>
               <button
                 type="submit"
-                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition-colors"
+                className="px-5 py-2.5 min-h-[44px] bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer shrink-0"
               >
-                رهگیری
+                رهگیری پرونده
               </button>
             </form>
 
@@ -558,94 +563,256 @@ export default function SmartMaintenance() {
               <span className="text-[11px] text-rose-600 font-bold">{trackingLookupError}</span>
             )}
 
-            <div className="text-[11px] text-slate-400">
-              تعداد پرونده‌های شما: <strong className="text-slate-700">{cases.length}</strong>
+            <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+              <span>تعداد پرونده‌های فعال شما:</span>
+              <strong className="text-slate-800 font-mono">{cases.length}</strong>
             </div>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex flex-wrap border-b border-slate-200 bg-white px-4 rounded-2xl shadow-sm gap-2 text-xs font-bold text-slate-600">
+        {/* Enterprise O&M Operational Lifecycle Banner */}
+        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white rounded-3xl p-5 md:p-6 shadow-sm border border-slate-800 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Activity className="text-blue-400" size={18} />
+              <h2 className="text-xs md:text-sm font-black text-slate-100">
+                گردش کار عملیاتی بهره‌برداری و نگهداری نیروگاه‌های خورشیدی (Solar O&M Lifecycle)
+              </h2>
+            </div>
+            <span className="text-[10px] text-slate-400 bg-slate-800/80 px-2.5 py-1 rounded-full border border-slate-700 w-fit">
+              بررسی فنی اولیه بر اساس اطلاعات و شواهد ثبت‌شده
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-1 text-xs">
+            <div className="bg-slate-800/60 border border-slate-700/80 p-3 rounded-2xl space-y-1">
+              <div className="flex items-center justify-between text-[11px] font-bold text-blue-400">
+                <span>گام ۱</span>
+                <Wrench size={13} />
+              </div>
+              <div className="font-bold text-white text-[11px]">ثبت عارضه و مشخصات</div>
+              <p className="text-[10px] text-slate-400 leading-tight">تجهیز معیوب، علائم و ظرفیت</p>
+            </div>
+
+            <div className="bg-slate-800/60 border border-slate-700/80 p-3 rounded-2xl space-y-1">
+              <div className="flex items-center justify-between text-[11px] font-bold text-indigo-400">
+                <span>گام ۲</span>
+                <Camera size={13} />
+              </div>
+              <div className="font-bold text-white text-[11px]">شواهد و تصاویر فنی</div>
+              <p className="text-[10px] text-slate-400 leading-tight">پلاک، نمایشگر اینورتر و قبوض</p>
+            </div>
+
+            <div className="bg-slate-800/60 border border-slate-700/80 p-3 rounded-2xl space-y-1">
+              <div className="flex items-center justify-between text-[11px] font-bold text-cyan-400">
+                <span>گام ۳</span>
+                <Sparkles size={13} />
+              </div>
+              <div className="font-bold text-white text-[11px]">تحلیل هوشمند و قواعد</div>
+              <p className="text-[10px] text-slate-400 leading-tight">ریشه‌یابی و ارزیابی گارانتی</p>
+            </div>
+
+            <div className="bg-slate-800/60 border border-slate-700/80 p-3 rounded-2xl space-y-1">
+              <div className="flex items-center justify-between text-[11px] font-bold text-purple-400">
+                <span>گام ۴</span>
+                <ShieldCheck size={13} />
+              </div>
+              <div className="font-bold text-white text-[11px]">انتخاب یا ارجاع به متخصص</div>
+              <p className="text-[10px] text-slate-400 leading-tight">متخصصان ثبت‌شده در سامانه</p>
+            </div>
+
+            <div className="col-span-2 sm:col-span-1 bg-slate-800/60 border border-slate-700/80 p-3 rounded-2xl space-y-1">
+              <div className="flex items-center justify-between text-[11px] font-bold text-emerald-400">
+                <span>گام ۵</span>
+                <FileCheck2 size={13} />
+              </div>
+              <div className="font-bold text-white text-[11px]">ثبت اقدامات و وضعیت پرونده</div>
+              <p className="text-[10px] text-slate-400 leading-tight">ثبت سوابق تکنسین و تاریخچه پرونده</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile Navigation Tabs (Horizontally scrollable, RTL-safe, min-h 44px) */}
+        <div className="md:hidden -mx-4 px-4 overflow-x-auto pb-2 flex items-center gap-2 no-scrollbar touch-pan-x scroll-smooth">
           <button
+            type="button"
             onClick={() => setActiveTab('NEW_REQUEST')}
-            className={`py-3.5 px-4 border-b-2 transition-all flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap min-h-[44px] shrink-0 flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
               activeTab === 'NEW_REQUEST'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent hover:text-slate-900'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <Plus size={16} />
-            ثبت درخواست و عیب‌یابی هوشمند
+            <Plus size={15} />
+            <span>درخواست جدید</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('CASES')}
-            className={`py-3.5 px-4 border-b-2 transition-all flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap min-h-[44px] shrink-0 flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
               activeTab === 'CASES'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent hover:text-slate-900'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <FileText size={16} />
-            پیگیری و پرونده‌های من ({cases.length})
+            <FileText size={15} />
+            <span>پرونده‌ها ({cases.length})</span>
           </button>
 
           {activeTab === 'TRACKING' && (
             <button
+              type="button"
               onClick={() => setActiveTab('TRACKING')}
-              className="py-3.5 px-4 border-b-2 border-indigo-600 text-indigo-600 transition-all flex items-center gap-2"
+              className="px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap min-h-[44px] shrink-0 flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-xs cursor-pointer"
             >
-              <Search size={16} />
-              رهگیری پرونده انتخابی
+              <Search size={15} />
+              <span>رهگیری فعال</span>
             </button>
           )}
 
           <button
+            type="button"
             onClick={() => setActiveTab('TECHNICIANS')}
-            className={`py-3.5 px-4 border-b-2 transition-all flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap min-h-[44px] shrink-0 flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
               activeTab === 'TECHNICIANS'
-                ? 'border-purple-600 text-purple-600'
-                : 'border-transparent hover:text-slate-900'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <ShieldCheck size={16} />
-            شبکه متخصصان مجاز O&M
+            <ShieldCheck size={15} />
+            <span>متخصصان و کارشناسان</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('ALERTS')}
-            className={`py-3.5 px-4 border-b-2 transition-all flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap min-h-[44px] shrink-0 flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
               activeTab === 'ALERTS'
-                ? 'border-amber-600 text-amber-600'
-                : 'border-transparent hover:text-slate-900'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <AlertTriangle size={16} />
-            مرکز پایش و هشدارها ({alerts.filter(a => a.status === 'TRIGGERED' || a.status === 'ACKNOWLEDGED').length})
+            <AlertTriangle size={15} />
+            <span>هشدارها ({alerts.filter(a => a.status === 'TRIGGERED' || a.status === 'ACKNOWLEDGED').length})</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('HISTORY')}
-            className={`py-3.5 px-4 border-b-2 transition-all flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap min-h-[44px] shrink-0 flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
               activeTab === 'HISTORY'
-                ? 'border-emerald-600 text-emerald-600'
-                : 'border-transparent hover:text-slate-900'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <History size={16} />
-            تاریخچه و شاخص‌های O&M
+            <History size={15} />
+            <span>تاریخچه O&M</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('CALCULATOR')}
-            className={`py-3.5 px-4 border-b-2 transition-all flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap min-h-[44px] shrink-0 flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
               activeTab === 'CALCULATOR'
-                ? 'border-amber-600 text-amber-600'
-                : 'border-transparent hover:text-slate-900'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <Calculator size={16} />
-            محاسبه‌گر توازن انرژی
+            <Calculator size={15} />
+            <span>توازن توان</span>
+          </button>
+        </div>
+
+        {/* Desktop Navigation Tabs */}
+        <div className="hidden md:flex md:flex-wrap items-center gap-1.5 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm text-xs font-bold text-slate-600">
+          <button
+            type="button"
+            onClick={() => setActiveTab('NEW_REQUEST')}
+            className={`px-4 py-2.5 rounded-xl min-h-[44px] transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'NEW_REQUEST'
+                ? 'bg-blue-50 text-blue-700 font-black shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            <Plus size={16} className={activeTab === 'NEW_REQUEST' ? 'text-blue-600' : 'text-slate-400'} />
+            <span>ثبت درخواست و عیب‌یابی هوشمند</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('CASES')}
+            className={`px-4 py-2.5 rounded-xl min-h-[44px] transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'CASES'
+                ? 'bg-blue-50 text-blue-700 font-black shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            <FileText size={16} className={activeTab === 'CASES' ? 'text-blue-600' : 'text-slate-400'} />
+            <span>پیگیری و پرونده‌های من ({cases.length})</span>
+          </button>
+
+          {activeTab === 'TRACKING' && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('TRACKING')}
+              className="px-4 py-2.5 rounded-xl min-h-[44px] bg-indigo-50 text-indigo-700 font-black shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Search size={16} className="text-indigo-600" />
+              <span>رهگیری پرونده انتخابی</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('TECHNICIANS')}
+            className={`px-4 py-2.5 rounded-xl min-h-[44px] transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'TECHNICIANS'
+                ? 'bg-purple-50 text-purple-700 font-black shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            <ShieldCheck size={16} className={activeTab === 'TECHNICIANS' ? 'text-purple-600' : 'text-slate-400'} />
+            <span>شبکه متخصصان و کارشناسان O&M</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('ALERTS')}
+            className={`px-4 py-2.5 rounded-xl min-h-[44px] transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'ALERTS'
+                ? 'bg-amber-50 text-amber-700 font-black shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            <AlertTriangle size={16} className={activeTab === 'ALERTS' ? 'text-amber-600' : 'text-slate-400'} />
+            <span>مرکز پایش و هشدارها ({alerts.filter(a => a.status === 'TRIGGERED' || a.status === 'ACKNOWLEDGED').length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('HISTORY')}
+            className={`px-4 py-2.5 rounded-xl min-h-[44px] transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'HISTORY'
+                ? 'bg-emerald-50 text-emerald-700 font-black shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            <History size={16} className={activeTab === 'HISTORY' ? 'text-emerald-600' : 'text-slate-400'} />
+            <span>تاریخچه و شاخص‌های O&M</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('CALCULATOR')}
+            className={`px-4 py-2.5 rounded-xl min-h-[44px] transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'CALCULATOR'
+                ? 'bg-amber-50 text-amber-700 font-black shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            <Calculator size={16} className={activeTab === 'CALCULATOR' ? 'text-amber-600' : 'text-slate-400'} />
+            <span>محاسبه‌گر توازن انرژی</span>
           </button>
         </div>
 
