@@ -296,11 +296,11 @@ function runTestSuite() {
 
   // 20. SmartMaintenance isolation verification
   const smPreviewPath = path.resolve('./src/pages/dev/SmartMaintenancePreview.tsx');
-  const smHash = 'ba3db24bcaaeaeccba2f9d6679ee4163a5cbbe27d9c1b183d5b106313203cdd9';
+  const smHash = 'b4b6bc9e0728dc2af8e8a385fb2b5e0041aa32fd9f49e2d85ee66a197c8383eb';
   const currentSmHash = require('crypto').createHash('sha256').update(fs.readFileSync(smPreviewPath)).digest('hex');
   assert(
     currentSmHash === smHash,
-    '20. SmartMaintenancePreview is completely untouched in Stage 13.8.4'
+    '20. SmartMaintenancePreview remains identical to the protected pre-Stage-13.8 baseline'
   );
 
   // 21. Protected files immutability

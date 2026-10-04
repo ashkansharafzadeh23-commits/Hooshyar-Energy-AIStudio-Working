@@ -145,30 +145,25 @@ const DEV_ACTIVE_CASE_FIXTURE: MaintenanceCase = {
       mimeType: 'image/jpeg'
     }
   ],
-  createdAt: '2026-03-25T10:30:00Z',
-  updatedAt: '2026-03-25T10:30:00Z'
+  createdAt: '2026-03-25T10:30:00Z'
 };
 
 const DEV_ACTIVE_ACTIONS_FIXTURE: MaintenanceAction[] = [
   {
     id: 'act-dev-01',
-    maintenanceCaseId: 'mc-dev-act-0042',
-    actionType: 'CLEANING',
+    caseId: 'mc-dev-act-0042',
+    actionType: 'بازرسی و تمیزکاری',
     description: 'بررسی فیلترهای هوای ورودی هیت‌سینک و غبارزدایی پروانه‌های فن تهویه با کمپرسور باد',
-    performedBy: 'tech-dev-01',
     performedAt: '2026-03-26T09:00:00Z',
-    resultStatus: 'انجام شد - مسیر هوای خنک‌کننده پاکسازی گردید',
-    createdAt: '2026-03-26T09:00:00Z'
+    resultStatus: 'انجام شد - مسیر هوای خنک‌کننده پاکسازی گردید'
   },
   {
     id: 'act-dev-02',
-    maintenanceCaseId: 'mc-dev-act-0042',
-    actionType: 'TEST',
+    caseId: 'mc-dev-act-0042',
+    actionType: 'تست عملکردی',
     description: 'تست مدار فرمان فن تهویه و اندازه‌گیری دمای بدنه با ترمومتر دیجیتال',
-    performedBy: 'tech-dev-01',
     performedAt: '2026-03-26T11:30:00Z',
-    resultStatus: 'فن شماره ۲ نیازمند جایگزینی است؛ هماهنگی جهت تامین قطعه انجام شد',
-    createdAt: '2026-03-26T11:30:00Z'
+    resultStatus: 'فن شماره ۲ نیازمند جایگزینی است؛ هماهنگی جهت تامین قطعه انجام شد'
   }
 ];
 
@@ -223,30 +218,25 @@ const DEV_COMPLETED_CASE_FIXTURE: MaintenanceCase = {
       mimeType: 'image/jpeg'
     }
   ],
-  createdAt: '2026-03-10T14:00:00Z',
-  updatedAt: '2026-03-12T16:00:00Z'
+  createdAt: '2026-03-10T14:00:00Z'
 };
 
 const DEV_COMPLETED_ACTIONS_FIXTURE: MaintenanceAction[] = [
   {
     id: 'act-dev-c1',
-    maintenanceCaseId: 'mc-dev-comp-0019',
-    actionType: 'INSPECTION',
+    caseId: 'mc-dev-comp-0019',
+    actionType: 'بررسی الکتریکی',
     description: 'تست پیوستگی مدار و تشخیص فیوز سوخته استرینگ ۳ کمباینر باکس',
-    performedBy: 'tech-dev-02',
     performedAt: '2026-03-11T10:00:00Z',
-    resultStatus: 'سوختگی فیوز ۱۵ آمپر محرز شد',
-    createdAt: '2026-03-11T10:00:00Z'
+    resultStatus: 'سوختگی فیوز ۱۵ آمپر محرز شد'
   },
   {
     id: 'act-dev-c2',
-    maintenanceCaseId: 'mc-dev-comp-0019',
-    actionType: 'PART_REPLACEMENT',
+    caseId: 'mc-dev-comp-0019',
+    actionType: 'تعویض قطعه',
     description: 'نصب دو عدد فیوز استاندارد خورشیدی ۱۰*۳۸ میلی‌متر gPV و بستن مدار با گشتاور استاندارد',
-    performedBy: 'tech-dev-02',
     performedAt: '2026-03-12T15:00:00Z',
-    resultStatus: 'مدار متصل و جریان استرینگ روی ۸.۴ آمپر پایدار شد',
-    createdAt: '2026-03-12T15:00:00Z'
+    resultStatus: 'مدار متصل و جریان استرینگ روی ۸.۴ آمپر پایدار شد'
   }
 ];
 
