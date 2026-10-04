@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { usePlacementStore } from '../../store/usePlacementStore';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, Play, Pause } from 'lucide-react';
 
 export function SunPathController() {
   const { timeOfDay, setTimeOfDay } = usePlacementStore();
@@ -20,46 +20,57 @@ export function SunPathController() {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   };
 
-  const isNight = timeOfDay < 6 || timeOfDay > 18;
+  const isNight = timeOfDay < 5 || timeOfDay > 19;
 
   return (
-    <div className="bg-white p-4 rounded-2xl shadow-sm border border-[#E4E7EC] space-y-4">
-      <div className="flex items-center justify-between border-b border-[#E4E7EC] pb-2">
-        <h3 className="font-bold text-[#1A1D23] flex items-center gap-2">
-          {isNight ? <Moon size={18} className="text-[#3B82F6]" /> : <Sun size={18} className="text-[#F5A623]" />}
-          شبیه‌ساز روز و شب
+    <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-xs border border-slate-200 dark:border-slate-800 space-y-3">
+      <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+        <h3 className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+          {isNight ? <Moon size={15} className="text-indigo-400" /> : <Sun size={15} className="text-amber-500" />}
+          <span>شبیه‌ساز بصری نور و زاویه خورشید</span>
         </h3>
+        
         <div className="flex items-center gap-2">
           <button 
+            type="button"
             onClick={() => setIsAuto(!isAuto)}
-            className={`text-xs px-2 py-1 rounded-md font-bold transition-colors ${isAuto ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}
+            className={`min-h-[36px] px-2.5 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer ${
+              isAuto 
+                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' 
+                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200'
+            }`}
           >
-            {isAuto ? 'توقف' : 'خودکار'}
+            {isAuto ? <Pause size={12} /> : <Play size={12} />}
+            <span>{isAuto ? 'توقف' : 'پخش'}</span>
           </button>
-          <span className="font-bold text-sm text-[#1F9254] bg-[#1F9254]/10 px-2 py-1 rounded-md">
+          <span className="font-bold text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-2 py-1 rounded-lg font-mono" dir="ltr">
             {formatTime(timeOfDay)}
           </span>
         </div>
       </div>
       
-      <div className="space-y-2">
-        <div className="flex justify-between text-xs text-[#5A6072]">
-          <span>۰۰:۰۰</span>
-          <span>۰۶:۰۰</span>
-          <span>۱۲:۰۰</span>
-          <span>۱۸:۰۰</span>
-          <span>۲۴:۰۰</span>
+      <div className="space-y-1.5">
+        <div className="flex justify-between text-[10px] text-slate-400 font-mono" dir="ltr">
+          <span>06:00</span>
+          <span>12:00 (ظهر)</span>
+          <span>18:00</span>
+          <span>24:00</span>
         </div>
         <input 
-           type="range" 
-           min="0" max="24" step="0.25"
+          type="range" 
+          min="0" 
+          max="24" 
+          step="0.25"
           value={timeOfDay}
           onChange={(e) => {
             setIsAuto(false);
             setTimeOfDay(Number(e.target.value));
           }}
-          className={`w-full ${isNight ? 'accent-[#3B82F6]' : 'accent-[#F5A623]'}`}
+          className={`w-full cursor-pointer min-h-[32px] ${isNight ? 'accent-indigo-500' : 'accent-amber-500'}`}
         />
+        <p className="text-[10px] text-slate-400 leading-tight">
+          جهت تابش خورشید جنبه نمایش بصری سایه‌ها را داشته و آنالیز سایه‌اندازی تفصیلی تلقی نمی‌شود.
+        </p>
       </div>
     </div>
   );

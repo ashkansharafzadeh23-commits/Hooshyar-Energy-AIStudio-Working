@@ -56,6 +56,7 @@ import EngineeringResultPreview from './pages/dev/EngineeringResultPreview';
 import RfqBidPreview from './pages/dev/RfqBidPreview';
 import PartnerExperiencePreview from './pages/dev/PartnerExperiencePreview';
 import SmartMaintenancePreview from './pages/dev/SmartMaintenancePreview';
+import SolarPlannerPreview from './pages/dev/SolarPlannerPreview';
 
 export default function App() {
   return (
@@ -72,6 +73,7 @@ export default function App() {
                   <Route path="/dev/rfq-bid-preview" element={<RfqBidPreview />} />
                   <Route path="/dev/partner-experience-preview" element={<PartnerExperiencePreview />} />
                   <Route path="/dev/smart-maintenance-preview" element={<SmartMaintenancePreview />} />
+                  <Route path="/dev/solar-planner-preview" element={<SolarPlannerPreview />} />
                 </>
               )}
 
