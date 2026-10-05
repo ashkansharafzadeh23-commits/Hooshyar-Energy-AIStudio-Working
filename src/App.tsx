@@ -57,6 +57,7 @@ import RfqBidPreview from './pages/dev/RfqBidPreview';
 import PartnerExperiencePreview from './pages/dev/PartnerExperiencePreview';
 import SmartMaintenancePreview from './pages/dev/SmartMaintenancePreview';
 import SolarPlannerPreview from './pages/dev/SolarPlannerPreview';
+import Stage13FinalPreview from './pages/dev/Stage13FinalPreview';
 
 export default function App() {
   return (
@@ -68,6 +69,7 @@ export default function App() {
               {/* Development-Only QA Visual Preview Routes (Guarded by import.meta.env.DEV) */}
               {import.meta.env.DEV && (
                 <>
+                  <Route path="/dev/stage13-final-preview" element={<Stage13FinalPreview />} />
                   <Route path="/dev/customer-dashboard-preview" element={<CustomerDashboardPreview />} />
                   <Route path="/dev/engineering-result-preview" element={<EngineeringResultPreview />} />
                   <Route path="/dev/rfq-bid-preview" element={<RfqBidPreview />} />

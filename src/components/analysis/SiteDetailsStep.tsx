@@ -138,7 +138,8 @@ export const SiteDetailsStep: React.FC<SiteDetailsStepProps> = ({
           <DataTruthBadge type="USER_PROVIDED" size="sm" />
         </div>
 
-        <div className="relative mt-2">
+        {/* Input group container without absolute badge collision */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-2 p-1.5 sm:p-2 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-300 dark:border-zinc-700 rounded-xl focus-within:ring-2 focus-within:ring-amber-500/20 focus-within:border-amber-500 transition-colors">
           <input
             id="area-input"
             type="number"
@@ -146,12 +147,12 @@ export const SiteDetailsStep: React.FC<SiteDetailsStepProps> = ({
             max="1000000"
             value={totalArea}
             onChange={(e) => handleAreaChange(e.target.value)}
-            placeholder="مساحت به متر مربع"
-            className="w-full min-h-[48px] px-4 py-2.5 text-base font-bold bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-300 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors pl-24 text-left"
+            placeholder="مثال: ۱۰۰"
+            className="flex-1 min-h-[44px] px-3 py-2 text-base font-bold bg-transparent text-zinc-900 dark:text-zinc-100 focus:outline-none text-left"
             dir="ltr"
           />
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-200/80 dark:bg-zinc-700/80 px-2.5 py-1.5 rounded-lg pointer-events-none">
-            متر مربع
+          <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-zinc-600 dark:text-zinc-300 bg-zinc-200/80 dark:bg-zinc-700/80 px-3 py-2.5 rounded-lg shrink-0 select-none min-h-[44px]">
+            <span>متر مربع</span>
           </div>
         </div>
         <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">

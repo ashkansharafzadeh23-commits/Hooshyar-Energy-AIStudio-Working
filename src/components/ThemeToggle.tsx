@@ -10,8 +10,8 @@ export function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      className="relative p-2 rounded-full text-zinc-600 dark:text-zinc-300 hover:bg-black/5 dark:hover:bg-white/10 transition-colors focus:outline-none overflow-hidden"
-      aria-label="Toggle Dark Mode"
+      className="relative p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full text-zinc-600 dark:text-zinc-300 hover:bg-black/5 dark:hover:bg-white/10 transition-colors focus:outline-none overflow-hidden cursor-pointer"
+      aria-label="تغییر حالت شب و روز"
     >
       <AnimatePresence mode="wait" initial={false}>
         {isDark ? (

@@ -7,6 +7,8 @@ interface ConsumptionStepProps {
   monthlyKwh: number | null;
   area: number;
   city?: string;
+  province?: string;
+  onEditLocation?: () => void;
   onChange: (monthlyKwh: number) => void;
   onAnalysisExtracted?: (extractedKwh: number, capacityKwp?: number) => void;
 }
@@ -15,6 +17,8 @@ export const ConsumptionStep: React.FC<ConsumptionStepProps> = ({
   monthlyKwh,
   area,
   city,
+  province,
+  onEditLocation,
   onChange,
   onAnalysisExtracted
 }) => {
@@ -46,7 +50,8 @@ export const ConsumptionStep: React.FC<ConsumptionStepProps> = ({
           <DataTruthBadge type="USER_PROVIDED" size="sm" />
         </div>
 
-        <div className="relative mt-2">
+        {/* Input group container without absolute badge collision */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-2 p-1.5 sm:p-2 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-300 dark:border-zinc-700 rounded-xl focus-within:ring-2 focus-within:ring-amber-500/20 focus-within:border-amber-500 transition-colors">
           <input
             id="consumption-input"
             type="number"
@@ -54,11 +59,11 @@ export const ConsumptionStep: React.FC<ConsumptionStepProps> = ({
             max="1000000"
             value={inputValue}
             onChange={(e) => handleInputChange(e.target.value)}
-            placeholder="میزان مصرف ماهانه بر حسب کیلووات‌ساعت"
-            className="w-full min-h-[50px] px-4 py-3 text-lg font-bold bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-300 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors pl-28 text-left"
+            placeholder="مثال: ۴۵۰"
+            className="flex-1 min-h-[44px] px-3 py-2 text-lg font-bold bg-transparent text-zinc-900 dark:text-zinc-100 focus:outline-none text-left"
             dir="ltr"
           />
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-200/80 dark:bg-zinc-700/80 px-2.5 py-1.5 rounded-lg pointer-events-none">
+          <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-zinc-600 dark:text-zinc-300 bg-zinc-200/80 dark:bg-zinc-700/80 px-3 py-2.5 rounded-lg shrink-0 select-none min-h-[44px]">
             <Zap size={14} className="text-amber-500" />
             <span>کیلووات‌ساعت در ماه</span>
           </div>
@@ -85,7 +90,7 @@ export const ConsumptionStep: React.FC<ConsumptionStepProps> = ({
         <button
           type="button"
           onClick={() => setShowBillUpload(!showBillUpload)}
-          className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors flex items-center gap-1.5 cursor-pointer"
+          className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors flex items-center gap-1.5 cursor-pointer min-h-[44px]"
         >
           <Upload size={14} />
           <span>{showBillUpload ? 'بستن آپلود تصویر قبض' : 'بارگذاری عکس قبض برق (استخراج خودکار)'}</span>
@@ -96,6 +101,8 @@ export const ConsumptionStep: React.FC<ConsumptionStepProps> = ({
             <SmartAnalyzer
               area={area || 100}
               city={city}
+              province={province}
+              onEditLocation={onEditLocation}
               isSolar={true}
               onAnalysisComplete={(extractedKwh, recommendation, capacityKwp) => {
                 if (extractedKwh && extractedKwh > 0) {

@@ -62,11 +62,20 @@ interface AnalysisResultData {
 interface Props {
   area: number;
   city?: string;
+  province?: string;
+  onEditLocation?: () => void;
   isSolar?: boolean;
   onAnalysisComplete: (consumption: number | null, recommendation: string, capacity: number | null) => void;
 }
 
-export default function SmartAnalyzer({ area: defaultArea, city: defaultCity, isSolar = true, onAnalysisComplete }: Props) {
+export default function SmartAnalyzer({ 
+  area: defaultArea, 
+  city: defaultCity, 
+  province, 
+  onEditLocation, 
+  isSolar = true, 
+  onAnalysisComplete 
+}: Props) {
   const [billImage, setBillImage] = useState<string | null>(null);
   const [siteImages, setSiteImages] = useState<string[]>([]);
   const [manualKwh, setManualKwh] = useState<string>('');
@@ -75,6 +84,13 @@ export default function SmartAnalyzer({ area: defaultArea, city: defaultCity, is
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResultData | null>(null);
+
+  // Synchronize selectedCity with canonical defaultCity prop
+  React.useEffect(() => {
+    if (defaultCity) {
+      setSelectedCity(defaultCity);
+    }
+  }, [defaultCity]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'bill' | 'site') => {
     const files = e.target.files;
@@ -269,23 +285,48 @@ export default function SmartAnalyzer({ area: defaultArea, city: defaultCity, is
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-indigo-50 flex items-center gap-3 shadow-sm">
-          <div className="w-10 h-10 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center shrink-0">
-            <MapPin size={20} />
+        {defaultCity ? (
+          <div className="bg-white p-4 rounded-xl border border-indigo-50 flex items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center shrink-0">
+                <MapPin size={20} />
+              </div>
+              <div>
+                <span className="text-xs text-gray-500 block font-medium">محل پروژه</span>
+                <span className="text-sm font-bold text-gray-800">
+                  {province ? `${province}، ${selectedCity}` : selectedCity}
+                </span>
+              </div>
+            </div>
+            {onEditLocation && (
+              <button
+                type="button"
+                onClick={onEditLocation}
+                className="text-xs text-indigo-600 hover:text-indigo-800 font-bold px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 transition-colors cursor-pointer"
+              >
+                ویرایش محل پروژه
+              </button>
+            )}
           </div>
-          <div className="flex-1">
-            <label className="text-sm font-bold text-gray-700 block mb-1">شهر (تابش اقلیمی)</label>
-            <select
-              value={selectedCity}
-              onChange={(e) => setSelectedCity(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm"
-            >
-              {POPULAR_CITIES.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+        ) : (
+          <div className="bg-white p-4 rounded-xl border border-indigo-50 flex items-center gap-3 shadow-sm">
+            <div className="w-10 h-10 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center shrink-0">
+              <MapPin size={20} />
+            </div>
+            <div className="flex-1">
+              <label className="text-sm font-bold text-gray-700 block mb-1">شهر (تابش اقلیمی)</label>
+              <select
+                value={selectedCity}
+                onChange={(e) => setSelectedCity(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm"
+              >
+                {POPULAR_CITIES.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {error && (

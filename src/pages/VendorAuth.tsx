@@ -100,7 +100,7 @@ export default function VendorAuth() {
           <button 
             type="button"
             onClick={() => { setIsLogin(true); setError(null); }}
-            className={`flex-1 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+            className={`flex-1 py-2.5 min-h-[44px] rounded-lg text-xs sm:text-sm font-bold transition-all ${
               isLogin 
                 ? 'bg-white dark:bg-slate-900 text-[#0284C7] dark:text-blue-400 shadow-xs' 
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -111,7 +111,7 @@ export default function VendorAuth() {
           <button 
             type="button"
             onClick={() => { setIsLogin(false); setError(null); }}
-            className={`flex-1 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+            className={`flex-1 py-2.5 min-h-[44px] rounded-lg text-xs sm:text-sm font-bold transition-all ${
               !isLogin 
                 ? 'bg-white dark:bg-slate-900 text-[#0284C7] dark:text-blue-400 shadow-xs' 
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -142,16 +142,20 @@ export default function VendorAuth() {
               <div>
                 <label className="label-he">نام فروشگاه یا شرکت بازرگانی</label>
                 <div className="relative">
+                  <div className="absolute right-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none text-slate-400">
+                    <Building size={18} />
+                  </div>
                   <input 
                     required 
                     name="companyName" 
                     value={formData.companyName} 
                     onChange={handleChange} 
                     type="text" 
-                    className="input-he pl-9" 
+                    dir="rtl"
+                    style={{ paddingRight: '3.5rem', paddingLeft: '1rem' }}
+                    className="input-he pr-14 pl-4 min-h-[48px] h-12 text-right" 
                     placeholder="مثال: پارس سولار نوین" 
                   />
-                  <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                 </div>
               </div>
 
@@ -163,7 +167,9 @@ export default function VendorAuth() {
                   value={formData.managerName} 
                   onChange={handleChange} 
                   type="text" 
-                  className="input-he" 
+                  dir="rtl"
+                  style={{ paddingRight: '1rem', paddingLeft: '1rem' }}
+                  className="input-he px-4 min-h-[48px] h-12 text-right" 
                   placeholder="مثال: محمد حسینی" 
                 />
               </div>
@@ -174,7 +180,9 @@ export default function VendorAuth() {
                   name="category" 
                   value={formData.category} 
                   onChange={handleChange} 
-                  className="input-he appearance-none"
+                  dir="rtl"
+                  style={{ paddingRight: '1rem', paddingLeft: '1rem' }}
+                  className="input-he px-4 min-h-[48px] h-12 appearance-none text-right"
                 >
                   <option value="پنل و تجهیزات خورشیدی">پنل و تجهیزات خورشیدی</option>
                   <option value="اینورتر و مبدل‌های برق">اینورتر و مبدل‌های برق</option>
@@ -187,16 +195,20 @@ export default function VendorAuth() {
               <div>
                 <label className="label-he">شهر و استان</label>
                 <div className="relative">
+                  <div className="absolute right-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none text-slate-400">
+                    <MapPin size={18} />
+                  </div>
                   <input 
                     required 
                     name="city" 
                     value={formData.city} 
                     onChange={handleChange} 
                     type="text" 
-                    className="input-he pl-9" 
+                    dir="rtl"
+                    style={{ paddingRight: '3.5rem', paddingLeft: '1rem' }}
+                    className="input-he pr-14 pl-4 min-h-[48px] h-12 text-right" 
                     placeholder="مثال: تهران" 
                   />
-                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                 </div>
               </div>
             </div>
@@ -206,6 +218,9 @@ export default function VendorAuth() {
             <div>
               <label className="label-he">شماره موبایل</label>
               <div className="relative">
+                <div className="absolute left-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none text-slate-400">
+                  <Phone size={18} />
+                </div>
                 <input 
                   required 
                   name="phone" 
@@ -213,16 +228,21 @@ export default function VendorAuth() {
                   onChange={handleChange} 
                   type="tel" 
                   dir="ltr" 
-                  className="input-he pl-9 text-left" 
+                  inputMode="tel"
+                  autoComplete="tel"
+                  style={{ paddingLeft: '3.5rem', paddingRight: '1rem' }}
+                  className="input-he pl-14 pr-4 min-h-[48px] h-12 text-left" 
                   placeholder="0912..." 
                 />
-                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               </div>
             </div>
             
             <div>
               <label className="label-he">رمز عبور</label>
               <div className="relative">
+                <div className="absolute left-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none text-slate-400">
+                  <Lock size={18} />
+                </div>
                 <input 
                   required 
                   name="password" 
@@ -230,10 +250,11 @@ export default function VendorAuth() {
                   onChange={handleChange} 
                   type="password" 
                   dir="ltr" 
-                  className="input-he pl-9 text-left" 
+                  autoComplete={isLogin ? "current-password" : "new-password"}
+                  style={{ paddingLeft: '3.5rem', paddingRight: '1rem' }}
+                  className="input-he pl-14 pr-4 min-h-[48px] h-12 text-left" 
                   placeholder="********" 
                 />
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               </div>
             </div>
           </div>
@@ -242,7 +263,7 @@ export default function VendorAuth() {
             <button 
               type="submit" 
               disabled={loading}
-              className="btn-he-primary w-full"
+              className="btn-he-primary w-full min-h-[48px]"
             >
               {loading ? (
                 <Loader2 size={18} className="animate-spin" />
@@ -256,13 +277,37 @@ export default function VendorAuth() {
           </div>
         </form>
 
-        <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
-          <Link to="/customer-login" className="hover:text-[#0284C7] transition-colors">
-            ورود خریداران و کارفرمایان
-          </Link>
-          <Link to="/contractor-auth" className="hover:text-[#0284C7] transition-colors">
-            ورود شرکت‌های EPC
-          </Link>
+        {/* Partner Ecosystem Gateways */}
+        <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 text-center">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 font-medium">
+            دسترسی به سایر بخش‌ها و همکاران:
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+            <Link 
+              to="/contractor-auth" 
+              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-[#0284C7] dark:hover:text-blue-400 transition-colors font-medium min-h-[36px] inline-flex items-center"
+            >
+              شرکت‌های EPC
+            </Link>
+            <span className="text-slate-300 dark:text-slate-700">·</span>
+            <span className="px-3 py-1.5 rounded-lg font-bold bg-blue-50 dark:bg-blue-950/60 text-[#0284C7] dark:text-blue-400 border border-blue-200 dark:border-blue-900/60 min-h-[36px] inline-flex items-center">
+              تأمین‌کنندگان (فعلی)
+            </span>
+            <span className="text-slate-300 dark:text-slate-700">·</span>
+            <Link 
+              to="/technician-auth" 
+              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-[#0284C7] dark:hover:text-blue-400 transition-colors font-medium min-h-[36px] inline-flex items-center"
+            >
+              تعمیرکاران
+            </Link>
+            <span className="text-slate-300 dark:text-slate-700">·</span>
+            <Link 
+              to="/customer-login" 
+              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-[#0284C7] dark:hover:text-blue-400 transition-colors font-medium min-h-[36px] inline-flex items-center"
+            >
+              ورود کارفرمایان
+            </Link>
+          </div>
         </div>
 
       </div>

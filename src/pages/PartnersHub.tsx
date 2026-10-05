@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Wrench, Building2, ShoppingBag, Coins, ArrowLeft, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Wrench, Building2, ShoppingBag, Coins, ArrowLeft, ShieldCheck, CheckCircle2, Megaphone } from 'lucide-react';
 
 export default function PartnersHub() {
   const partnerCategories = [
@@ -43,6 +43,16 @@ export default function PartnersHub() {
       icon: Coins,
       color: 'text-indigo-500 dark:text-indigo-400',
       badge: 'سرمایه‌گذاری انرژی'
+    },
+    {
+      id: 'ads',
+      title: 'ثبت تبلیغات و معرفی برند',
+      role: 'پرتال تبلیغات و حمایت مالی',
+      desc: 'رزرو بنرهای تبلیغاتی، نمایش ویژه تجهیزات در امکان‌سنجی پروژه‌ها، و ارتباط هدفمند با خریداران و مجریان سراسر کشور',
+      link: '/ads/portal',
+      icon: Megaphone,
+      color: 'text-purple-500 dark:text-purple-400',
+      badge: 'تبلیغات و برندینگ'
     }
   ];
 

@@ -102,7 +102,7 @@ export default function TechnicianAuth() {
           <button 
             type="button"
             onClick={() => { setIsLogin(true); setError(null); }}
-            className={`flex-1 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+            className={`flex-1 py-2.5 min-h-[44px] rounded-lg text-xs sm:text-sm font-bold transition-all ${
               isLogin 
                 ? 'bg-white dark:bg-slate-900 text-[#0284C7] dark:text-blue-400 shadow-xs' 
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -113,7 +113,7 @@ export default function TechnicianAuth() {
           <button 
             type="button"
             onClick={() => { setIsLogin(false); setError(null); }}
-            className={`flex-1 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+            className={`flex-1 py-2.5 min-h-[44px] rounded-lg text-xs sm:text-sm font-bold transition-all ${
               !isLogin 
                 ? 'bg-white dark:bg-slate-900 text-[#0284C7] dark:text-blue-400 shadow-xs' 
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -149,7 +149,9 @@ export default function TechnicianAuth() {
                   value={formData.name} 
                   onChange={handleChange} 
                   type="text" 
-                  className="input-he" 
+                  dir="rtl"
+                  style={{ paddingRight: '1rem', paddingLeft: '1rem' }}
+                  className="input-he px-4 min-h-[48px] h-12 text-right" 
                   placeholder="مثال: مهندس علی حسینی" 
                 />
               </div>
@@ -157,12 +159,17 @@ export default function TechnicianAuth() {
               <div>
                 <label className="label-he">تخصص خورشیدی اصلی</label>
                 <div className="relative">
+                  <div className="absolute right-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none text-slate-400">
+                    <Briefcase size={18} />
+                  </div>
                   <select 
                     required 
                     name="profession" 
                     value={formData.profession} 
                     onChange={handleChange} 
-                    className="input-he pr-9 appearance-none"
+                    dir="rtl"
+                    style={{ paddingRight: '3.5rem', paddingLeft: '1rem' }}
+                    className="input-he pr-14 pl-4 min-h-[48px] h-12 appearance-none text-right"
                   >
                     <option value="متخصص سیستم‌های فتوولتائیک و پنل">متخصص سیستم‌های فتوولتائیک و پنل</option>
                     <option value="اینورتر و سیستم‌های الکترونیک قدرت">اینورتر و سیستم‌های الکترونیک قدرت</option>
@@ -171,7 +178,6 @@ export default function TechnicianAuth() {
                     <option value="پایش برخط و عیب‌یابی نیروگاهی">پایش برخط و عیب‌یابی نیروگاهی</option>
                     <option value="سرویس و نگهداری دوره‌ای نیروگاه خورشیدی">سرویس و نگهداری دوره‌ای نیروگاه خورشیدی</option>
                   </select>
-                  <Briefcase className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                 </div>
               </div>
 
@@ -179,6 +185,9 @@ export default function TechnicianAuth() {
                 <div>
                   <label className="label-he">سابقه کار در حوزه خورشیدی (سال)</label>
                   <div className="relative">
+                    <div className="absolute right-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none text-slate-400">
+                      <Award size={18} />
+                    </div>
                     <input 
                       name="experience" 
                       value={formData.experience} 
@@ -186,26 +195,31 @@ export default function TechnicianAuth() {
                       type="number" 
                       min="0" 
                       max="50" 
-                      className="input-he pr-9" 
+                      dir="rtl"
+                      style={{ paddingRight: '3.5rem', paddingLeft: '1rem' }}
+                      className="input-he pr-14 pl-4 min-h-[48px] h-12 text-right" 
                       placeholder="مثال: 5" 
                     />
-                    <Award className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                   </div>
                 </div>
 
                 <div>
                   <label className="label-he">شهر و استان فعالیت</label>
                   <div className="relative">
+                    <div className="absolute right-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none text-slate-400">
+                      <MapPin size={18} />
+                    </div>
                     <input 
                       required 
                       name="city" 
                       value={formData.city} 
                       onChange={handleChange} 
                       type="text" 
-                      className="input-he pr-9" 
+                      dir="rtl"
+                      style={{ paddingRight: '3.5rem', paddingLeft: '1rem' }}
+                      className="input-he pr-14 pl-4 min-h-[48px] h-12 text-right" 
                       placeholder="مثال: اصفهان" 
                     />
-                    <MapPin className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                   </div>
                 </div>
               </div>
@@ -217,7 +231,7 @@ export default function TechnicianAuth() {
                   value={formData.bio} 
                   onChange={handleChange} 
                   rows={2} 
-                  className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/20 transition-all resize-none" 
+                  className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/20 transition-all resize-none min-h-[80px]" 
                   placeholder="سوابق اجرایی، گواهینامه‌های فنی‌وحرفه‌ای، دوره‌های نصب و نظارت..."
                 />
               </div>
@@ -228,6 +242,9 @@ export default function TechnicianAuth() {
             <div>
               <label className="label-he">شماره موبایل</label>
               <div className="relative">
+                <div className="absolute left-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none text-slate-400">
+                  <Phone size={18} />
+                </div>
                 <input 
                   required 
                   name="phone" 
@@ -235,16 +252,21 @@ export default function TechnicianAuth() {
                   onChange={handleChange} 
                   type="tel" 
                   dir="ltr" 
-                  className="input-he pl-9 text-left" 
+                  inputMode="tel"
+                  autoComplete="tel"
+                  style={{ paddingLeft: '3.5rem', paddingRight: '1rem' }}
+                  className="input-he pl-14 pr-4 min-h-[48px] h-12 text-left" 
                   placeholder="0912..." 
                 />
-                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               </div>
             </div>
             
             <div>
               <label className="label-he">رمز عبور</label>
               <div className="relative">
+                <div className="absolute left-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none text-slate-400">
+                  <Lock size={18} />
+                </div>
                 <input 
                   required 
                   name="password" 
@@ -252,10 +274,11 @@ export default function TechnicianAuth() {
                   onChange={handleChange} 
                   type="password" 
                   dir="ltr" 
-                  className="input-he pl-9 text-left" 
+                  autoComplete={isLogin ? "current-password" : "new-password"}
+                  style={{ paddingLeft: '3.5rem', paddingRight: '1rem' }}
+                  className="input-he pl-14 pr-4 min-h-[48px] h-12 text-left" 
                   placeholder="********" 
                 />
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               </div>
             </div>
           </div>
@@ -264,7 +287,7 @@ export default function TechnicianAuth() {
             <button 
               type="submit" 
               disabled={loading}
-              className="btn-he-primary w-full"
+              className="btn-he-primary w-full min-h-[48px]"
             >
               {loading ? (
                 <Loader2 size={18} className="animate-spin" />
@@ -278,13 +301,37 @@ export default function TechnicianAuth() {
           </div>
         </form>
 
-        <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
-          <Link to="/customer-login" className="hover:text-[#0284C7] transition-colors">
-            ورود مالکان و کارفرمایان
-          </Link>
-          <Link to="/contractor-auth" className="hover:text-[#0284C7] transition-colors">
-            ورود شرکت‌های EPC
-          </Link>
+        {/* Partner Ecosystem Gateways */}
+        <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 text-center">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 font-medium">
+            دسترسی به سایر بخش‌ها و همکاران:
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+            <Link 
+              to="/contractor-auth" 
+              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-[#0284C7] dark:hover:text-blue-400 transition-colors font-medium min-h-[36px] inline-flex items-center"
+            >
+              شرکت‌های EPC
+            </Link>
+            <span className="text-slate-300 dark:text-slate-700">·</span>
+            <Link 
+              to="/vendor-auth" 
+              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-[#0284C7] dark:hover:text-blue-400 transition-colors font-medium min-h-[36px] inline-flex items-center"
+            >
+              تأمین‌کنندگان
+            </Link>
+            <span className="text-slate-300 dark:text-slate-700">·</span>
+            <span className="px-3 py-1.5 rounded-lg font-bold bg-blue-50 dark:bg-blue-950/60 text-[#0284C7] dark:text-blue-400 border border-blue-200 dark:border-blue-900/60 min-h-[36px] inline-flex items-center">
+              تعمیرکاران (فعلی)
+            </span>
+            <span className="text-slate-300 dark:text-slate-700">·</span>
+            <Link 
+              to="/customer-login" 
+              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-[#0284C7] dark:hover:text-blue-400 transition-colors font-medium min-h-[36px] inline-flex items-center"
+            >
+              ورود کارفرمایان
+            </Link>
+          </div>
         </div>
 
       </div>

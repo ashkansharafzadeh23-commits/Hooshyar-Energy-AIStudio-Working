@@ -359,6 +359,8 @@ export default function SolarAnalysisExperience() {
           monthlyKwh={monthlyKwh}
           area={area || 0}
           city={city}
+          province={province}
+          onEditLocation={() => setCurrentStep(2)}
           onChange={(kwh) => setMonthlyKwh(kwh)}
           onAnalysisExtracted={(extractedKwh) => {
             if (extractedKwh && extractedKwh > 0) {

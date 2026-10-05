@@ -298,7 +298,7 @@ export interface MaintenanceCase {
     notes?: string;
   };
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
 }
 
 export interface MaintenanceAssignmentHistory {
@@ -325,18 +325,19 @@ export type MaintenanceActionType =
 
 export interface MaintenanceAction {
   id: string;
-  maintenanceCaseId: string;
+  maintenanceCaseId?: string;
+  caseId?: string;
   actionType: MaintenanceActionType;
   description: string;
   componentId?: string;
   replacedComponentId?: string;
   newComponentSerial?: string;
   newComponentModel?: string;
-  performedBy: string;
+  performedBy?: string;
   performedAt: string;
   resultStatus?: string;
   notes?: string;
-  createdAt: string;
+  createdAt?: string;
 }
 
 export interface TechnicianMatch {

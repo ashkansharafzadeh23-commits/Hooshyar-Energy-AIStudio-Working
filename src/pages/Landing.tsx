@@ -20,7 +20,8 @@ import {
   ArrowRight,
   TrendingUp,
   FileCheck2,
-  Activity
+  Activity,
+  Megaphone
 } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { useAuth } from '../context/AuthContext';
@@ -133,7 +134,7 @@ export default function Landing() {
             {/* Mobile Menu Button */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden focus:outline-none"
+              className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden focus:outline-none cursor-pointer"
               aria-label="منوی ناوبری"
             >
               {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
@@ -524,13 +525,22 @@ export default function Landing() {
                   معرفی تجهیزات دارای تأییدیه، فروش عمده به پیمانکاران، رزرو تبلیغات بنری و دسترسی مستقیم به خریداران در سراسر کشور.
                 </p>
               </div>
-              <Link 
-                to="/vendor-auth" 
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 hover:text-amber-700 transition-colors"
-              >
-                <span>ثبت فروشگاه تجهیزات</span>
-                <ArrowLeft size={14} />
-              </Link>
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                <Link 
+                  to="/vendor-auth" 
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 hover:text-amber-700 transition-colors min-h-[44px]"
+                >
+                  <span>ثبت فروشگاه تجهیزات</span>
+                  <ArrowLeft size={14} />
+                </Link>
+                <Link 
+                  to="/ads/portal" 
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-600 hover:text-purple-700 transition-colors min-h-[44px]"
+                >
+                  <Megaphone size={14} />
+                  <span>پرتال تبلیغات</span>
+                </Link>
+              </div>
             </div>
 
           </div>

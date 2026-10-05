@@ -105,7 +105,7 @@ export default function ContractorAuth() {
           <button 
             type="button"
             onClick={() => { setIsLogin(true); setError(null); }}
-            className={`flex-1 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+            className={`flex-1 py-2.5 min-h-[44px] rounded-lg text-xs sm:text-sm font-bold transition-all ${
               isLogin 
                 ? 'bg-white dark:bg-slate-900 text-[#0284C7] dark:text-blue-400 shadow-xs' 
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -116,7 +116,7 @@ export default function ContractorAuth() {
           <button 
             type="button"
             onClick={() => { setIsLogin(false); setError(null); }}
-            className={`flex-1 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+            className={`flex-1 py-2.5 min-h-[44px] rounded-lg text-xs sm:text-sm font-bold transition-all ${
               !isLogin 
                 ? 'bg-white dark:bg-slate-900 text-[#0284C7] dark:text-blue-400 shadow-xs' 
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -147,33 +147,44 @@ export default function ContractorAuth() {
             <div className="space-y-4">
               <div>
                 <label className="label-he">نام شرکت یا برند تجاری</label>
-                <input 
-                  required 
-                  name="name" 
-                  value={formData.name} 
-                  onChange={handleChange} 
-                  type="text" 
-                  className="input-he" 
-                  placeholder="مثال: مهندسی نیروپژوهان افق" 
-                />
+                <div className="relative">
+                  <div className="absolute right-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none text-slate-400">
+                    <Building2 size={18} />
+                  </div>
+                  <input 
+                    required 
+                    name="name" 
+                    value={formData.name} 
+                    onChange={handleChange} 
+                    type="text" 
+                    dir="rtl"
+                    style={{ paddingRight: '3.5rem', paddingLeft: '1rem' }}
+                    className="input-he pr-14 pl-4 min-h-[48px] h-12 text-right" 
+                    placeholder="مثال: مهندسی نیروپژوهان افق" 
+                  />
+                </div>
               </div>
               
               <div>
                 <label className="label-he">تخصص اصلی پیمانکاری</label>
                 <div className="relative">
+                  <div className="absolute right-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none text-slate-400">
+                    <Briefcase size={18} />
+                  </div>
                   <select 
                     required 
                     name="specialty" 
                     value={formData.specialty} 
                     onChange={handleChange} 
-                    className="input-he pr-9 appearance-none"
+                    dir="rtl"
+                    style={{ paddingRight: '3.5rem', paddingLeft: '1rem' }}
+                    className="input-he pr-14 pl-4 min-h-[48px] h-12 appearance-none text-right"
                   >
                     <option value="نیروگاه‌های خورشیدی مقیاس بزرگ و صنعتی">نیروگاه‌های مقیاس بزرگ و صنعتی</option>
                     <option value="نیروگاه‌های خورشیدی سقفی و سوله صنعتی">نیروگاه‌های سقفی و سوله صنعتی</option>
                     <option value="طراحی، مهندسی و اجرای مگاواتی (EPC)">طراحی و اجرای مگاواتی (EPC)</option>
                     <option value="مزارع خورشیدی و سیستم‌های هیبریدی">مزارع خورشیدی و سیستم‌های هیبریدی</option>
                   </select>
-                  <Briefcase className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                 </div>
               </div>
 
@@ -185,7 +196,10 @@ export default function ContractorAuth() {
                     value={formData.registrationNumber} 
                     onChange={handleChange} 
                     type="text" 
-                    className="input-he" 
+                    dir="ltr"
+                    inputMode="numeric"
+                    style={{ paddingLeft: '1rem', paddingRight: '1rem' }}
+                    className="input-he px-4 min-h-[48px] h-12 text-left" 
                     placeholder="مثال: 123456" 
                   />
                 </div>
@@ -196,7 +210,10 @@ export default function ContractorAuth() {
                     value={formData.nationalId} 
                     onChange={handleChange} 
                     type="text" 
-                    className="input-he" 
+                    dir="ltr"
+                    inputMode="numeric"
+                    style={{ paddingLeft: '1rem', paddingRight: '1rem' }}
+                    className="input-he px-4 min-h-[48px] h-12 text-left" 
                     placeholder="مثال: 1400..." 
                   />
                 </div>
@@ -205,16 +222,20 @@ export default function ContractorAuth() {
               <div>
                 <label className="label-he">شهر دفتر مرکزی</label>
                 <div className="relative">
+                  <div className="absolute right-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none text-slate-400">
+                    <MapPin size={18} />
+                  </div>
                   <input 
                     required 
                     name="city" 
                     value={formData.city} 
                     onChange={handleChange} 
                     type="text" 
-                    className="input-he pr-9" 
+                    dir="rtl"
+                    style={{ paddingRight: '3.5rem', paddingLeft: '1rem' }}
+                    className="input-he pr-14 pl-4 min-h-[48px] h-12 text-right" 
                     placeholder="مثال: اصفهان" 
                   />
-                  <MapPin className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                 </div>
               </div>
 
@@ -225,7 +246,7 @@ export default function ContractorAuth() {
                   value={formData.bio} 
                   onChange={handleChange} 
                   rows={2} 
-                  className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/20 transition-all resize-none" 
+                  className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/20 transition-all resize-none min-h-[80px]" 
                   placeholder="خلاصه‌ای از رزومه، استانداردهای فنی و پروژه‌های اجراشده..."
                 />
               </div>
@@ -236,6 +257,9 @@ export default function ContractorAuth() {
             <div>
               <label className="label-he">شماره تماس نماینده شرکت</label>
               <div className="relative">
+                <div className="absolute left-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none text-slate-400">
+                  <Phone size={18} />
+                </div>
                 <input 
                   required 
                   name="phone" 
@@ -243,16 +267,21 @@ export default function ContractorAuth() {
                   onChange={handleChange} 
                   type="tel" 
                   dir="ltr" 
-                  className="input-he pl-9 text-left" 
+                  inputMode="tel"
+                  autoComplete="tel"
+                  style={{ paddingLeft: '3.5rem', paddingRight: '1rem' }}
+                  className="input-he pl-14 pr-4 min-h-[48px] h-12 text-left" 
                   placeholder="0912..." 
                 />
-                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               </div>
             </div>
             
             <div>
               <label className="label-he">رمز عبور حساب</label>
               <div className="relative">
+                <div className="absolute left-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none text-slate-400">
+                  <Lock size={18} />
+                </div>
                 <input 
                   required 
                   name="password" 
@@ -260,10 +289,11 @@ export default function ContractorAuth() {
                   onChange={handleChange} 
                   type="password" 
                   dir="ltr" 
-                  className="input-he pl-9 text-left" 
+                  autoComplete={isLogin ? "current-password" : "new-password"}
+                  style={{ paddingLeft: '3.5rem', paddingRight: '1rem' }}
+                  className="input-he pl-14 pr-4 min-h-[48px] h-12 text-left" 
                   placeholder="********" 
                 />
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               </div>
             </div>
           </div>
@@ -272,7 +302,7 @@ export default function ContractorAuth() {
             <button 
               type="submit" 
               disabled={loading}
-              className="btn-he-primary w-full"
+              className="btn-he-primary w-full min-h-[48px]"
             >
               {loading ? (
                 <Loader2 size={18} className="animate-spin" />
@@ -286,13 +316,37 @@ export default function ContractorAuth() {
           </div>
         </form>
 
-        <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
-          <Link to="/customer-login" className="hover:text-[#0284C7] transition-colors">
-            ورود مشتریان حقیقی و کارفرمایان
-          </Link>
-          <Link to="/vendor-auth" className="hover:text-[#0284C7] transition-colors">
-            پرتال تأمین‌کنندگان
-          </Link>
+        {/* Partner Ecosystem Gateways */}
+        <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 text-center">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 font-medium">
+            دسترسی به سایر بخش‌ها و همکاران:
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+            <span className="px-3 py-1.5 rounded-lg font-bold bg-blue-50 dark:bg-blue-950/60 text-[#0284C7] dark:text-blue-400 border border-blue-200 dark:border-blue-900/60 min-h-[36px] inline-flex items-center">
+              شرکت‌های EPC (فعلی)
+            </span>
+            <span className="text-slate-300 dark:text-slate-700">·</span>
+            <Link 
+              to="/vendor-auth" 
+              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-[#0284C7] dark:hover:text-blue-400 transition-colors font-medium min-h-[36px] inline-flex items-center"
+            >
+              تأمین‌کنندگان
+            </Link>
+            <span className="text-slate-300 dark:text-slate-700">·</span>
+            <Link 
+              to="/technician-auth" 
+              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-[#0284C7] dark:hover:text-blue-400 transition-colors font-medium min-h-[36px] inline-flex items-center"
+            >
+              تعمیرکاران
+            </Link>
+            <span className="text-slate-300 dark:text-slate-700">·</span>
+            <Link 
+              to="/customer-login" 
+              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-[#0284C7] dark:hover:text-blue-400 transition-colors font-medium min-h-[36px] inline-flex items-center"
+            >
+              ورود کارفرمایان
+            </Link>
+          </div>
         </div>
 
       </div>

@@ -123,7 +123,7 @@ export const MobileBottomNav: React.FC = () => {
             </div>
             <button
               onClick={() => setIsActionSheetOpen(false)}
-              className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               aria-label="بستن منو"
             >
               <X size={20} />
