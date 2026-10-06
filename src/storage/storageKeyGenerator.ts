@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import path from 'path';
 
 export interface StorageKeyOptions {
-  scope: 'projects' | 'maintenance' | 'rfq' | 'bids' | 'assets';
+  scope: 'projects' | 'maintenance' | 'rfq' | 'bids' | 'assets' | 'partners' | 'contractors' | 'vendors' | 'technicians';
   entityId: string;
   category: string;
   extension: string;

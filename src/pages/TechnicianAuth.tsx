@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, UserCircle, Phone, Lock, MapPin, Briefcase, Award, AlertCircle, CheckCircle2, Loader2, Wrench } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import TechnicianOnboardingFlow from '../components/onboarding/TechnicianOnboardingFlow';
 
 export default function TechnicianAuth() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [phase, setPhase] = useState<'AUTH' | 'ONBOARDING'>(() => {
+    return searchParams.get('step') === 'onboarding' ? 'ONBOARDING' : 'AUTH';
+  });
   const { login } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -69,9 +74,7 @@ export default function TechnicianAuth() {
 
         login(data.token, data.user);
         setSuccessMsg('ثبت‌نام با موفقیت انجام شد. حساب کاربری ایجاد گردید.');
-        setTimeout(() => {
-          navigate('/technician-dashboard');
-        }, 1200);
+        setPhase('ONBOARDING');
       }
     } catch (err: any) {
       setError(err.message || 'خطایی در ارتباط با سرور رخ داد.');
@@ -79,6 +82,16 @@ export default function TechnicianAuth() {
       setLoading(false);
     }
   };
+
+  if (phase === 'ONBOARDING') {
+    return (
+      <TechnicianOnboardingFlow
+        initialName={formData.name}
+        onComplete={() => navigate('/technician-dashboard')}
+        onSkip={() => navigate('/technician-dashboard')}
+      />
+    );
+  }
 
   return (
     <div className="w-full max-w-xl">

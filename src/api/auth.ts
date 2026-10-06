@@ -254,6 +254,7 @@ authRouter.post("/partner-register", (req: Request, res: Response) => {
     const found = vendors.find((v: any) => v.companyName === (companyName || name));
     if (!found) {
       profileData = vendorRepository.create({
+        userId: user.id,
         companyName: companyName || name,
         logoUrl: '',
         aboutUs: bio || '',

@@ -57,11 +57,8 @@ export class InMemoryFileStorageService implements IFileStorageService {
     if (!this.configured) {
       throw new Error('STORAGE_NOT_CONFIGURED');
     }
-    if (!this.objects.has(params.key)) {
-      throw new Error('OBJECT_NOT_FOUND');
-    }
     const ttl = params.expiresInSeconds || this.signedUrlTtl;
-    return `https://mock-storage.test/download/${encodeURIComponent(params.key)}?X-Amz-Expires=${ttl}&mockSignature=valid`;
+    return `https://mock-storage.test/download/${encodeURIComponent(params.key)}?expires=${ttl}&X-Amz-Expires=${ttl}&mockSignature=valid`;
   }
 
   async objectExists(key: string): Promise<boolean> {

@@ -28,6 +28,7 @@ import { maintenanceRouter } from "./src/api/maintenance.js";
 import rfqRouter from "./src/api/rfq.js";
 import enterpriseRouter from "./src/api/enterprise.js";
 import healthRouter from "./src/api/health.js";
+import partnersRouter, { signMediaItem, signMediaArray } from "./src/api/partners.js";
 import { validateEnvironment, assertProductionReadiness } from "./src/config/environment.js";
 import { closePostgresDB } from "./src/database/postgres/connection.js";
 
@@ -151,13 +152,15 @@ app.post("/api/analyze", verifyAuthToken, async (req, res) => {
 });
 
 // Marketplace & Public Products / Vendors
-app.get("/api/vendors", (req, res) => {
+app.get("/api/vendors", async (req, res) => {
   const vendors = (db.getVendors() || [])
-    .filter((v: any) => v.status === "approved" || v.isPublished === true)
-    .map((v: any) => ({
+    .filter((v: any) => v.status === "approved" || v.isPublished === true);
+
+  const publicVendors = await Promise.all(
+    vendors.map(async (v: any) => ({
       id: v.id,
       companyName: v.companyName,
-      logoUrl: v.logoUrl || "",
+      logoUrl: v.logoKey ? await signMediaItem(v.logoKey) : (v.logoUrl || ""),
       aboutUs: v.aboutUs || "",
       categories: v.categories || [],
       address: v.address || "",
@@ -168,18 +171,31 @@ app.get("/api/vendors", (req, res) => {
       verified: v.status === "approved",
       phones: v.phones || [],
       createdAt: v.createdAt || null
-    }));
-  res.json(vendors);
+    }))
+  );
+  res.json(publicVendors);
 });
 
-app.get("/api/vendors/:id", (req, res) => {
+app.get("/api/vendors/:id", async (req, res) => {
   const v = db.getVendorById?.(req.params.id) || (db.getVendors() || []).find((x: any) => x.id === req.params.id);
   if (!v) return res.status(404).json({ error: "فروشگاه یافت نشد." });
+
+  const signedLogo = v.logoKey ? await signMediaItem(v.logoKey) : (v.logoUrl || "");
+  const allProducts = db.getProducts?.() || [];
+  const vendorProducts = allProducts.filter((p: any) => p.vendorId === v.id || p.ownerId === v.id);
+  const products = await Promise.all(
+    vendorProducts.map(async (p: any) => ({
+      ...p,
+      availability: p.availability || (p.inStock === false ? 'UNAVAILABLE' : 'AVAILABLE'),
+      images: await signMediaArray(p.images)
+    }))
+  );
+
   res.json({
     vendor: {
       id: v.id,
       companyName: v.companyName,
-      logoUrl: v.logoUrl || "",
+      logoUrl: signedLogo,
       aboutUs: v.aboutUs || "",
       categories: v.categories || [],
       address: v.address || "",
@@ -189,6 +205,7 @@ app.get("/api/vendors/:id", (req, res) => {
       status: v.status,
       verified: v.status === "approved",
       phones: v.phones || [],
+      products,
       createdAt: v.createdAt || null
     }
   });
@@ -319,6 +336,7 @@ app.post('/api/analyze-powerplant', handlePowerPlantPlanning);
 
 // Domain sub-routers
 app.use("/api/auth", authRouter);
+app.use("/api/partners", partnersRouter);
 app.use("/api/professionals", professionalsRouter);
 app.use("/api/contractors", contractorsRouter);
 app.use("/api/ads", adsRouter);

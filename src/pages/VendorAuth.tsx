@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Store, Phone, Lock, Building, MapPin, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import VendorOnboardingFlow from '../components/onboarding/VendorOnboardingFlow';
 
 export default function VendorAuth() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [phase, setPhase] = useState<'AUTH' | 'ONBOARDING'>(() => {
+    return searchParams.get('step') === 'onboarding' ? 'ONBOARDING' : 'AUTH';
+  });
   const { login } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -67,9 +72,7 @@ export default function VendorAuth() {
 
         login(data.token, data.user);
         setSuccessMsg('ثبت تأمین‌کننده با موفقیت انجام شد. حساب کاربری فروشگاهی ایجاد گردید.');
-        setTimeout(() => {
-          navigate('/vendor-portal/dashboard');
-        }, 1200);
+        setPhase('ONBOARDING');
       }
     } catch (err: any) {
       setError(err.message || 'خطایی در ارتباط با سرور رخ داد.');
@@ -77,6 +80,16 @@ export default function VendorAuth() {
       setLoading(false);
     }
   };
+
+  if (phase === 'ONBOARDING') {
+    return (
+      <VendorOnboardingFlow
+        initialCompanyName={formData.companyName}
+        onComplete={() => navigate('/vendor-portal/dashboard')}
+        onSkip={() => navigate('/vendor-portal/dashboard')}
+      />
+    );
+  }
 
   return (
     <div className="w-full max-w-xl">

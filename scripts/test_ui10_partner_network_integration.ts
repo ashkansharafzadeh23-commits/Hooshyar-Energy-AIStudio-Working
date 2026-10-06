@@ -195,7 +195,7 @@ assert(!contractorsCode.includes('"طراحی و احداث نیروگاه خو�
 assert(!contractorsCode.includes('createdAt: org.createdAt || new Date().toISOString()'), 'no fabricated current createdAt');
 
 // DTO Runtime checks for EPC
-const dummyEpcNoCity = toPublicEpc({ id: 'org_test', tradeName: 'تست سولار', type: 'EPC_CONTRACTOR' });
+const dummyEpcNoCity = await toPublicEpc({ id: 'org_test', tradeName: 'تست سولار', type: 'EPC_CONTRACTOR' });
 assert(dummyEpcNoCity.city === null || dummyEpcNoCity.city === undefined, 'toPublicEpc preserves missing city as null/undefined');
 assert(dummyEpcNoCity.createdAt === null || dummyEpcNoCity.createdAt === undefined, 'toPublicEpc preserves missing createdAt as null/undefined');
 assert(Array.isArray(dummyEpcNoCity.specialties) && dummyEpcNoCity.specialties.length === 0, 'toPublicEpc does not invent specialties');
@@ -208,13 +208,13 @@ assert(!prosCode.includes('"متخصص فنی خورشیدی"'), 'no fabricated 
 assert(!prosCode.includes("['پنل‌های خورشیدی']"), 'no default solar specialty for missing professional specialty');
 
 // DTO Runtime checks for Professional
-const proMissingExp = toPublicProfessional({ id: 'p_1', fullName: 'علی حسینی', status: 'approved' });
+const proMissingExp = await toPublicProfessional({ id: 'p_1', fullName: 'علی حسینی', status: 'approved' });
 assert(proMissingExp.yearsExperience === null, 'missing yearsExperience != 0 (remains null)');
 
-const proZeroExp = toPublicProfessional({ id: 'p_2', fullName: 'رضا کمالی', yearsExperience: 0, status: 'approved' });
+const proZeroExp = await toPublicProfessional({ id: 'p_2', fullName: 'رضا کمالی', yearsExperience: 0, status: 'approved' });
 assert(proZeroExp.yearsExperience === 0, 'genuine 0 remains genuine 0 where valid');
 
-const proEmptyName = toPublicProfessional({ id: 'p_3', status: 'approved' });
+const proEmptyName = await toPublicProfessional({ id: 'p_3', status: 'approved' });
 assert(proEmptyName.fullName === null, 'no fabricated professional display name when name is empty');
 
 // [9] CONCLUDING IMMUTABILITY CHECK

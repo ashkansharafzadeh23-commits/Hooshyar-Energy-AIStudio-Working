@@ -22,10 +22,12 @@ export const setDBPath = (newPath: string) => {
   currentDbPath = newPath;
 };
 
-interface Vendor {
+export interface Vendor {
   id: string;
+  userId?: string;
   companyName: string;
   logoUrl: string;
+  logoKey?: string;
   aboutUs: string;
   categories: string[];
   address: string;
@@ -36,22 +38,28 @@ interface Vendor {
   website: string;
   status: "pending_review" | "approved" | "rejected";
   createdAt: string;
+  updatedAt?: string;
 }
 
-interface Product {
+export interface Product {
   id: string;
-  vendorId: string;
+  vendorId?: string;
+  contractorId?: string;
+  ownerId?: string;
+  ownerType?: 'VENDOR' | 'CONTRACTOR';
   category: string;
-  brand: string;
-  model: string;
-  specs: any;
-  price: number;
-  currency: string;
+  brand?: string;
+  model?: string;
+  specs?: any;
+  price?: number;
+  currency?: string;
   images: string[];
-  description: string;
-  inStock: boolean;
-  warrantyYears: number;
+  description?: string;
+  inStock?: boolean;
+  availability?: 'AVAILABLE' | 'UNAVAILABLE';
+  warrantyYears?: number;
   createdAt: string;
+  updatedAt?: string;
 }
 
 
@@ -111,6 +119,27 @@ export interface OTP {
   expiresAt: number;
 }
 
+export interface ProfessionalCertification {
+  id: string;
+  title: string;
+  issuingOrg?: string;
+  issueYear?: string;
+  description?: string;
+  imageUrl?: string;
+  fileKey?: string;
+  mimeType?: string;
+  verified?: boolean;
+  createdAt: string;
+}
+
+export interface ProfessionalWorkSample {
+  id: string;
+  title: string;
+  description: string;
+  images: string[];
+  createdAt: string;
+}
+
 export interface Professional {
   id: string;
   userId?: string;
@@ -121,10 +150,13 @@ export interface Professional {
   yearsExperience: number;
   bio: string;
   profileImageUrl: string;
-  certifications: { title: string; imageUrl: string }[];
+  profileImageKey?: string;
+  certifications: (ProfessionalCertification | { title: string; imageUrl: string; [key: string]: any })[];
+  workSamples?: ProfessionalWorkSample[];
   status: "pending_review" | "approved" | "rejected";
   rating: number | null;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Ad {
@@ -1290,10 +1322,11 @@ export const db: any = {
   getSubscriptionById: (id: string) => readDB().subscriptions.find(s => s.id === id),
   getUserSubscriptions: (userId: string) => (readDB().subscriptions || []).filter(s => s.userId === userId),
 
-  getVendors: () => readDB().vendors,
-  getVendorById: (id: string) => readDB().vendors.find((v) => v.id === id),
+  getVendors: () => readDB().vendors || [],
+  getVendorById: (id: string) => (readDB().vendors || []).find((v: any) => v.id === id),
   createVendor: (vendor: Omit<Vendor, "id" | "createdAt" | "status">) => {
     const data = readDB();
+    if (!data.vendors) data.vendors = [];
     const newVendor: Vendor = {
       ...vendor,
       id: uuidv4(),
@@ -1304,9 +1337,22 @@ export const db: any = {
     writeDB(data);
     return newVendor;
   },
-  getProducts: () => readDB().products,
+  updateVendor: (id: string, updates: Partial<Vendor>) => {
+    const data = readDB();
+    if (!data.vendors) data.vendors = [];
+    const idx = data.vendors.findIndex((v: any) => v.id === id);
+    if (idx !== -1) {
+      data.vendors[idx] = { ...data.vendors[idx], ...updates, updatedAt: new Date().toISOString() };
+      writeDB(data);
+      return data.vendors[idx];
+    }
+    return null;
+  },
+  getProducts: () => readDB().products || [],
+  getProductById: (id: string) => (readDB().products || []).find((p: any) => p.id === id),
   createProduct: (product: Omit<Product, "id" | "createdAt">) => {
     const data = readDB();
+    if (!data.products) data.products = [];
     const newProduct: Product = {
       ...product,
       id: uuidv4(),
@@ -1315,6 +1361,47 @@ export const db: any = {
     data.products.push(newProduct);
     writeDB(data);
     return newProduct;
+  },
+  updateProduct: (id: string, updates: Partial<Product>) => {
+    const data = readDB();
+    if (!data.products) data.products = [];
+    const idx = data.products.findIndex((p: any) => p.id === id);
+    if (idx !== -1) {
+      data.products[idx] = {
+        ...data.products[idx],
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      writeDB(data);
+      return data.products[idx];
+    }
+    return null;
+  },
+  deleteProduct: (id: string) => {
+    const data = readDB();
+    if (!data.products) return false;
+    const initialLen = data.products.length;
+    data.products = data.products.filter((p: any) => p.id !== id);
+    if (data.products.length !== initialLen) {
+      writeDB(data);
+      return true;
+    }
+    return false;
+  },
+  updateOrganization: (id: string, updates: Partial<Organization>) => {
+    const data = readDB();
+    if (!data.organizations) data.organizations = [];
+    const idx = data.organizations.findIndex((o: any) => o.id === id);
+    if (idx !== -1) {
+      data.organizations[idx] = {
+        ...data.organizations[idx],
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      writeDB(data);
+      return data.organizations[idx];
+    }
+    return null;
   },
   // Finance methods
   getFinancialModelsByProjectId: (projectId: string) => (readDB().financialModels || []).filter(m => m.projectId === projectId),

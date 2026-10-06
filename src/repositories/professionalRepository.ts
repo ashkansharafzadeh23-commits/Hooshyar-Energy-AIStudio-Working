@@ -12,6 +12,7 @@ export class JSONProfessionalRepository implements IProfessionalRepository {
     return (db.getProfessionals() || []).find((p: any) => p.userId === userId);
   }
   getProfessionals() { return db.getProfessionals(); }
+  updateProfessional(id: string, updates: any) { return (db as any).updateProfessional(id, updates); }
   updateProfessionalStatus(id: string, status: string) { return (db as any).updateProfessionalStatus(id, status); }
 }
 

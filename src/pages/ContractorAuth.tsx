@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
 import { Phone, Lock, Building2, MapPin, Briefcase, AlertCircle, CheckCircle2, ArrowLeft, Loader2 } from 'lucide-react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import EpcOnboardingFlow from '../components/onboarding/EpcOnboardingFlow';
 
 export default function ContractorAuth() {
   const [isLogin, setIsLogin] = useState(true);
+  const [searchParams] = useSearchParams();
+  const [phase, setPhase] = useState<'AUTH' | 'ONBOARDING'>(() => {
+    return searchParams.get('step') === 'onboarding' ? 'ONBOARDING' : 'AUTH';
+  });
   const navigate = useNavigate();
   const { login } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -68,9 +73,7 @@ export default function ContractorAuth() {
 
         login(data.token, data.user);
         setSuccessMsg('ثبت شرکت با موفقیت انجام شد. حساب کاربری مجری ایجاد گردید.');
-        setTimeout(() => {
-          navigate('/contractor-dashboard');
-        }, 1200);
+        setPhase('ONBOARDING');
       }
     } catch (err: any) {
       setError(err.message || 'خطایی در ارتباط با سرور رخ داد.');
@@ -82,6 +85,16 @@ export default function ContractorAuth() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
+
+  if (phase === 'ONBOARDING') {
+    return (
+      <EpcOnboardingFlow
+        initialCompanyName={formData.name}
+        onComplete={() => navigate('/contractor-dashboard')}
+        onSkip={() => navigate('/contractor-dashboard')}
+      />
+    );
+  }
 
   return (
     <div className="w-full max-w-xl">

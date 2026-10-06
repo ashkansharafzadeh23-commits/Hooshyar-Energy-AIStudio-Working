@@ -29,7 +29,12 @@ import {
   X,
   Plus,
   ExternalLink,
-  Info
+  Info,
+  Camera,
+  Loader2,
+  Trash2,
+  Package,
+  Upload
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 import { ProjectRFQ, EPCBid } from '../types/rfq.js';
@@ -40,6 +45,21 @@ import { BidDocumentsManager } from '../components/rfq/BidDocumentsManager.js';
 import { rfqDocumentClient, executeBidSubmissionWorkflow } from '../services/rfqDocumentClient.js';
 import { validateClientFile, formatFileSize } from '../utils/documentPresentation.js';
 import { formatCurrencyIRR, formatJalaliDate, formatPersianNumber, formatSolarCapacity } from '../utils/formatters.js';
+import {
+  uploadPartnerMedia,
+  getContractorProfile,
+  updateContractorProfile,
+  createContractorPortfolioProject,
+  updateContractorPortfolioProject,
+  deleteContractorPortfolioProject,
+  createContractorProduct,
+  updateContractorProduct,
+  deleteContractorProduct,
+  EpcContractorProfile,
+  EpcPortfolioProject
+} from '../services/partnerMediaService.js';
+import { useToast } from '../context/ToastContext.js';
+import { PersianConfirmModal } from '../components/common/PersianConfirmModal.js';
 
 export interface ContractorDashboardProps {
   previewMode?: boolean;
@@ -47,7 +67,7 @@ export interface ContractorDashboardProps {
   initialBids?: EPCBid[];
   initialProjects?: EnergyProject[];
   initialOrgs?: Organization[];
-  initialActiveTab?: 'rfqs' | 'my_bids' | 'awarded' | 'overview' | 'settings';
+  initialActiveTab?: 'rfqs' | 'my_bids' | 'awarded' | 'overview' | 'settings' | 'portfolio';
 }
 
 export default function ContractorDashboard({
@@ -58,8 +78,22 @@ export default function ContractorDashboard({
   initialOrgs,
   initialActiveTab = 'rfqs'
 }: ContractorDashboardProps = {}) {
-  const [activeTab, setActiveTab] = useState<'rfqs' | 'my_bids' | 'awarded' | 'overview' | 'settings'>(initialActiveTab);
+  const { showSuccess, showError } = useToast();
+  const [activeTab, setActiveTab] = useState<'rfqs' | 'my_bids' | 'awarded' | 'overview' | 'settings' | 'portfolio'>(initialActiveTab);
   const [requests, setRequests] = useState<any[]>([]);
+
+  // Delete confirm modal state
+  const [deleteConfirmState, setDeleteConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => Promise<void>;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: async () => {}
+  });
 
   // RFQ & Bidding State
   const [openRfqs, setOpenRfqs] = useState<ProjectRFQ[]>(initialRfqs || []);
@@ -97,6 +131,263 @@ export default function ContractorDashboard({
   const [reviseTimelineDays, setReviseTimelineDays] = useState<number>(55);
   const [reviseWarrantyYears, setReviseWarrantyYears] = useState<number>(7);
   const [reviseReason, setReviseReason] = useState('تخفیف ویژه مهندسی و ارتقای دوره گارانتی');
+
+  // Portfolio & Media State
+  const [contractorProfile, setContractorProfile] = useState<EpcContractorProfile | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  // Project Modal State
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<EpcPortfolioProject | null>(null);
+  const [projectTitle, setProjectTitle] = useState('');
+  const [projectType, setProjectType] = useState('نیروگاهی');
+  const [projectProvince, setProjectProvince] = useState('');
+  const [projectCity, setProjectCity] = useState('');
+  const [projectCapacity, setProjectCapacity] = useState('');
+  const [projectYear, setProjectYear] = useState('');
+  const [projectDesc, setProjectDesc] = useState('');
+  const [projectImages, setProjectImages] = useState<string[]>([]);
+  const [uploadingProjectImage, setUploadingProjectImage] = useState(false);
+  const [submittingProject, setSubmittingProject] = useState(false);
+
+  // Contractor Product Modal State
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [editingContractorProduct, setEditingContractorProduct] = useState<any | null>(null);
+  const [prodName, setProdName] = useState('');
+  const [prodCategory, setProdCategory] = useState('پنل خورشیدی');
+  const [prodBrand, setProdBrand] = useState('');
+  const [prodModel, setProdModel] = useState('');
+  const [prodPrice, setProdPrice] = useState('');
+  const [prodDesc, setProdDesc] = useState('');
+  const [prodImages, setProdImages] = useState<string[]>([]);
+  const [uploadingProdImage, setUploadingProdImage] = useState(false);
+  const [submittingProd, setSubmittingProd] = useState(false);
+
+  const loadContractorProfileData = async () => {
+    try {
+      setLoadingProfile(true);
+      const data = await getContractorProfile();
+      setContractorProfile(data);
+    } catch (e) {
+      console.error('Failed to load contractor profile:', e);
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'portfolio') {
+      loadContractorProfileData();
+    }
+  }, [activeTab]);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingLogo(true);
+      const res = await uploadPartnerMedia(file, 'EPC_LOGO');
+      const updated = await updateContractorProfile({
+        logoKey: res.storageKey,
+        logoUrl: res.downloadUrl
+      });
+      setContractorProfile(updated);
+      showSuccess('لوگوی شرکت با موفقیت در فضای ذخیره‌سازی ابری بارگذاری شد.', 'بارگذاری موفق');
+    } catch (err: any) {
+      showError(err.message || 'خطا در بارگذاری لوگو.', 'خطای بارگذاری');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const handleOpenAddProject = () => {
+    setEditingProject(null);
+    setProjectTitle('');
+    setProjectType('نیروگاهی');
+    setProjectProvince('');
+    setProjectCity('');
+    setProjectCapacity('');
+    setProjectYear('');
+    setProjectDesc('');
+    setProjectImages([]);
+    setIsProjectModalOpen(true);
+  };
+
+  const handleOpenEditProject = (proj: EpcPortfolioProject) => {
+    setEditingProject(proj);
+    setProjectTitle(proj.title);
+    setProjectType(proj.projectType);
+    setProjectProvince(proj.province || '');
+    setProjectCity(proj.city || '');
+    setProjectCapacity(proj.installedCapacityKw ? String(proj.installedCapacityKw) : '');
+    setProjectYear(proj.completionYear ? String(proj.completionYear) : '');
+    setProjectDesc(proj.description || '');
+    setProjectImages(Array.isArray(proj.images) ? proj.images : []);
+    setIsProjectModalOpen(true);
+  };
+
+  const handleUploadProjectImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingProjectImage(true);
+      const res = await uploadPartnerMedia(file, 'EPC_PORTFOLIO');
+      setProjectImages(prev => [res.downloadUrl, ...prev]);
+      showSuccess('تصویر پروژه با موفقیت بارگذاری شد.', 'بارگذاری موفق');
+    } catch (err: any) {
+      showError(err.message || 'خطا در بارگذاری تصویر پروژه.', 'خطای بارگذاری');
+    } finally {
+      setUploadingProjectImage(false);
+    }
+  };
+
+  const handleSaveProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!projectTitle) return;
+
+    try {
+      setSubmittingProject(true);
+      const payload = {
+        title: projectTitle,
+        projectType,
+        province: projectProvince,
+        city: projectCity,
+        installedCapacityKw: projectCapacity ? Number(projectCapacity) : null,
+        completionYear: projectYear,
+        description: projectDesc,
+        images: projectImages
+      };
+
+      if (editingProject) {
+        await updateContractorPortfolioProject(editingProject.id, payload);
+        showSuccess('اطلاعات نمونه‌پروژه با موفقیت به‌روزرسانی شد.', 'ویرایش موفق');
+      } else {
+        await createContractorPortfolioProject(payload);
+        showSuccess('نمونه‌پروژه جدید با موفقیت ثبت شد.', 'ثبت پروژه');
+      }
+
+      await loadContractorProfileData();
+      setIsProjectModalOpen(false);
+    } catch (err: any) {
+      showError(err.message || 'خطا در ثبت نمونه‌پروژه.', 'خطای عملیات');
+    } finally {
+      setSubmittingProject(false);
+    }
+  };
+
+  const handleDeleteProject = (projId: string) => {
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'حذف نمونه‌پروژه',
+      message: 'آیا از حذف این نمونه‌پروژه اطمینان دارید؟ این عمل غیرقابل بازگشت است.',
+      onConfirm: async () => {
+        try {
+          await deleteContractorPortfolioProject(projId);
+          await loadContractorProfileData();
+          showSuccess('نمونه‌پروژه با موفقیت حذف شد.', 'حذف موفق');
+        } catch (err: any) {
+          showError(err.message || 'خطا در حذف پروژه.', 'خطای عملیات');
+        } finally {
+          setDeleteConfirmState(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
+  const handleOpenAddProduct = () => {
+    setEditingContractorProduct(null);
+    setProdName('');
+    setProdCategory('پنل خورشیدی');
+    setProdBrand('');
+    setProdModel('');
+    setProdPrice('');
+    setProdDesc('');
+    setProdImages([]);
+    setIsProductModalOpen(true);
+  };
+
+  const handleOpenEditProduct = (prod: any) => {
+    setEditingContractorProduct(prod);
+    setProdName(prod.name);
+    setProdCategory(prod.category);
+    setProdBrand(prod.brand || '');
+    setProdModel(prod.model || '');
+    setProdPrice(prod.price ? String(prod.price) : '');
+    setProdDesc(prod.description || '');
+    setProdImages(Array.isArray(prod.images) ? prod.images : []);
+    setIsProductModalOpen(true);
+  };
+
+  const handleUploadProdImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingProdImage(true);
+      const res = await uploadPartnerMedia(file, 'EPC_PRODUCT');
+      setProdImages(prev => [res.downloadUrl, ...prev]);
+      showSuccess('تصویر تجهیز با موفقیت بارگذاری شد.', 'بارگذاری موفق');
+    } catch (err: any) {
+      showError(err.message || 'خطا در بارگذاری تصویر تجهیز.', 'خطای بارگذاری');
+    } finally {
+      setUploadingProdImage(false);
+    }
+  };
+
+  const handleSaveContractorProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!prodName) return;
+
+    try {
+      setSubmittingProd(true);
+      const payload = {
+        name: prodName,
+        category: prodCategory,
+        brand: prodBrand,
+        model: prodModel,
+        price: prodPrice ? Number(prodPrice) : undefined,
+        description: prodDesc,
+        images: prodImages
+      };
+
+      if (editingContractorProduct) {
+        await updateContractorProduct(editingContractorProduct.id, payload);
+        showSuccess('اطلاعات تجهیز با موفقیت به‌روزرسانی شد.', 'ویرایش موفق');
+      } else {
+        await createContractorProduct(payload);
+        showSuccess('تجهیز جدید با موفقیت اضافه شد.', 'ثبت تجهیز');
+      }
+
+      await loadContractorProfileData();
+      setIsProductModalOpen(false);
+    } catch (err: any) {
+      showError(err.message || 'خطا در ذخیره تجهیز.', 'خطای عملیات');
+    } finally {
+      setSubmittingProd(false);
+    }
+  };
+
+  const handleDeleteContractorProduct = (prodId: string) => {
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'حذف تجهیز',
+      message: 'آیا از حذف این تجهیز اطمینان دارید؟ این عمل غیرقابل بازگشت است.',
+      onConfirm: async () => {
+        try {
+          await deleteContractorProduct(prodId);
+          await loadContractorProfileData();
+          showSuccess('تجهیز با موفقیت حذف شد.', 'حذف موفق');
+        } catch (err: any) {
+          showError(err.message || 'خطا در حذف تجهیز.', 'خطای عملیات');
+        } finally {
+          setDeleteConfirmState(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
 
   useEffect(() => {
     if (previewMode) {
@@ -520,6 +811,19 @@ export default function ContractorDashboard({
 
           <button 
             type="button"
+            onClick={() => setActiveTab('portfolio')}
+            className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl font-bold text-xs transition-colors min-h-[44px] cursor-pointer ${
+              activeTab === 'portfolio' 
+                ? 'bg-[#0284C7] text-white shadow-xs' 
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-800'
+            }`}
+          >
+            <Building2 size={18} />
+            <span>پروفایل و سبد پروژه‌ها</span>
+          </button>
+
+          <button 
+            type="button"
             onClick={() => setActiveTab('settings')}
             className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl font-bold text-xs transition-colors min-h-[44px] cursor-pointer ${
               activeTab === 'settings' 
@@ -614,6 +918,15 @@ export default function ContractorDashboard({
             }`}
           >
             آمار تجمیعی
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('portfolio')}
+            className={`px-3.5 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap min-h-[44px] shrink-0 flex items-center justify-center transition-colors cursor-pointer ${
+              activeTab === 'portfolio' ? 'bg-[#0284C7] text-white shadow-xs' : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-zinc-700 hover:bg-slate-50'
+            }`}
+          >
+            پروفایل و پروژه‌ها
           </button>
           <button
             type="button"
@@ -1120,6 +1433,236 @@ export default function ContractorDashboard({
         )}
 
         {/* ========================================================================= */}
+        {/* TAB 4.5: PORTFOLIO & COMPANY MEDIA                                        */}
+        {/* ========================================================================= */}
+        {activeTab === 'portfolio' && (
+          <div className="space-y-6">
+            {loadingProfile ? (
+              <div className="p-12 text-center text-slate-500 text-xs">
+                <Loader2 className="animate-spin mx-auto mb-2 text-[#0284C7]" size={28} />
+                در حال دریافت اطلاعات سبد پروژه‌ها و کاتالوگ...
+              </div>
+            ) : (
+              <>
+                {/* 1. Company Logo Card */}
+                <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-slate-200 dark:border-zinc-800 p-6 sm:p-8 shadow-xs">
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 pb-6 border-b border-slate-100 dark:border-zinc-800">
+                    <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-slate-50 dark:bg-zinc-800 border-2 border-dashed border-slate-300 dark:border-zinc-700 flex items-center justify-center overflow-hidden shrink-0 group">
+                      {uploadingLogo ? (
+                        <Loader2 className="animate-spin text-[#0284C7]" size={28} />
+                      ) : contractorProfile?.logoUrl ? (
+                        <img src={contractorProfile.logoUrl} alt="لوگوی شرکت" className="w-full h-full object-contain p-2" />
+                      ) : (
+                        <Building2 size={44} className="text-slate-400" />
+                      )}
+                      <label className="absolute inset-0 bg-black/50 text-white flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-[10px] font-bold">
+                        <Camera size={20} className="mb-1" />
+                        <span>تغییر لوگو</span>
+                        <input 
+                          type="file" 
+                          accept="image/jpeg,image/png,image/webp" 
+                          className="hidden" 
+                          onChange={handleLogoUpload}
+                          disabled={uploadingLogo}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex-1 text-center sm:text-right">
+                      <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                        {contractorProfile?.tradeName || contractorProfile?.legalName || currentOrg?.tradeName || 'شرکت مهندسی EPC'}
+                      </h2>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        لوگوی رسمی شرکت برای نمایش در استعلام‌های قیمت (RFQ)، مناقصات و نمایه عمومی
+                      </p>
+                      {currentOrg?.id && (
+                        <div className="mt-3">
+                          <Link
+                            to={`/contractor/${currentOrg.id}`}
+                            target="_blank"
+                            className="inline-flex items-center gap-1.5 text-xs text-[#0284C7] hover:underline font-bold"
+                          >
+                            <span>مشاهده نمایه عمومی پیمانکار</span>
+                            <ExternalLink size={12} />
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Project Portfolio Management */}
+                <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-slate-200 dark:border-zinc-800 p-6 sm:p-8 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-zinc-800">
+                    <div className="flex items-center gap-2">
+                      <Briefcase className="text-[#0284C7]" size={20} />
+                      <h3 className="font-black text-sm sm:text-base text-slate-900 dark:text-white">
+                        سبد نمونه‌پروژه‌های اجرا شده ({contractorProfile?.projectPortfolio?.length || 0})
+                      </h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleOpenAddProject}
+                      className="inline-flex items-center gap-1 bg-[#0284C7] hover:bg-[#0369A1] text-white px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer min-h-[38px]"
+                    >
+                      <Plus size={15} />
+                      <span>افزودن نمونه‌پروژه جدید</span>
+                    </button>
+                  </div>
+
+                  {!contractorProfile?.projectPortfolio || contractorProfile.projectPortfolio.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-slate-400">
+                      هنوز نمونه‌پروژه‌ای در این بخش ثبت نشده است. با افزودن پروژه‌های تکمیل‌شده همراه با تصاویر و مشخصات فنی، رتبه و امتیاز پذیرش پیشنهادات خود را افزایش دهید.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {contractorProfile.projectPortfolio.map(proj => (
+                        <div
+                          key={proj.id}
+                          className="rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden bg-slate-50 dark:bg-zinc-850/50 flex flex-col justify-between"
+                        >
+                          <div>
+                            {proj.images?.[0] ? (
+                              <div className="w-full h-40 overflow-hidden bg-slate-100 dark:bg-zinc-800 relative">
+                                <img src={proj.images[0]} alt={proj.title} className="w-full h-full object-cover" />
+                                <span className="absolute top-2 right-2 bg-white/95 dark:bg-zinc-900/95 text-slate-800 dark:text-slate-200 text-[10px] px-2 py-0.5 rounded font-bold">
+                                  {proj.projectType}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="w-full h-28 bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-400">
+                                <Briefcase size={24} />
+                              </div>
+                            )}
+
+                            <div className="p-4 space-y-2">
+                              <h4 className="font-bold text-sm text-slate-900 dark:text-white">
+                                {proj.title}
+                              </h4>
+                              <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
+                                {proj.installedCapacityKw && (
+                                  <span className="font-bold text-[#0284C7]">
+                                    ظرفیت: {formatPersianNumber(proj.installedCapacityKw)} کیلووات
+                                  </span>
+                                )}
+                                {(proj.province || proj.city) && (
+                                  <span>محل: {proj.province ? `${proj.province}، ` : ''}{proj.city || ''}</span>
+                                )}
+                                {proj.completionYear && (
+                                  <span>سال: {proj.completionYear}</span>
+                                )}
+                              </div>
+                              {proj.description && (
+                                <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2">
+                                  {proj.description}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="p-4 pt-2 border-t border-slate-200 dark:border-zinc-800 flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditProject(proj)}
+                              className="p-1.5 text-slate-500 hover:text-slate-800 rounded-lg hover:bg-slate-200 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Edit3 size={14} />
+                              <span>ویرایش</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteProject(proj.id)}
+                              className="p-1.5 text-rose-500 hover:text-rose-700 rounded-lg hover:bg-rose-50 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Trash2 size={14} />
+                              <span>حذف</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Optional Products / Equipment Management */}
+                <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-slate-200 dark:border-zinc-800 p-6 sm:p-8 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-zinc-800">
+                    <div className="flex items-center gap-2">
+                      <Package className="text-amber-500" size={20} />
+                      <div>
+                        <h3 className="font-black text-sm sm:text-base text-slate-900 dark:text-white">
+                          تجهیزات و اقلام اختصاصی پیمانکار (اختیاری) ({contractorProfile?.products?.length || 0})
+                        </h3>
+                        <span className="text-[11px] text-slate-400">تجهیزاتی که شرکت شما به طور مستقیم در پروژه‌ها تأمین یا به فروش می‌رساند</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleOpenAddProduct}
+                      className="inline-flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-slate-950 px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer min-h-[38px]"
+                    >
+                      <Plus size={15} />
+                      <span>افزودن تجهیز اختیاری</span>
+                    </button>
+                  </div>
+
+                  {!contractorProfile?.products || contractorProfile.products.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-slate-400">
+                      هیچ تجهیز اختصاصی ثبت نشده است. (این بخش اختیاری است و برای پیمانکارانی است که انبار تجهیزات خورشیدی دارند)
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                      {contractorProfile.products.map(prod => (
+                        <div
+                          key={prod.id}
+                          className="rounded-2xl border border-slate-200 dark:border-zinc-800 p-4 bg-slate-50 dark:bg-zinc-850/50 flex flex-col justify-between"
+                        >
+                          <div>
+                            {prod.images?.[0] ? (
+                              <div className="w-full h-32 rounded-xl overflow-hidden mb-2 bg-white dark:bg-zinc-800">
+                                <img src={prod.images[0]} alt={prod.name} className="w-full h-full object-cover" />
+                              </div>
+                            ) : null}
+                            <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white mb-1">
+                              {prod.name}
+                            </h4>
+                            <div className="text-[10px] text-slate-500 mb-2">
+                              {prod.category} {prod.brand ? `• ${prod.brand}` : ''}
+                            </div>
+                            {prod.price && prod.price > 0 && (
+                              <div className="text-xs font-black text-[#0284C7] mb-2">
+                                {formatCurrencyIRR(prod.price)}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-200 dark:border-zinc-800 flex justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditProduct(prod)}
+                              className="p-1 text-slate-500 hover:text-slate-800 cursor-pointer"
+                            >
+                              <Edit3 size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteContractorProduct(prod.id)}
+                              className="p-1 text-rose-500 hover:text-rose-700 cursor-pointer"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================================= */}
         {/* TAB 5: COMPANY PROFILE & CREDENTIALS                                     */}
         {/* ========================================================================= */}
         {activeTab === 'settings' && (
@@ -1606,6 +2149,333 @@ export default function ContractorDashboard({
         </div>
       )}
 
+      {/* ADD / EDIT PORTFOLIO PROJECT MODAL */}
+      {isProjectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs" dir="rtl">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-lg w-full p-5 sm:p-6 border border-slate-200 dark:border-zinc-800 shadow-2xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-zinc-800 mb-4">
+              <h3 className="font-black text-sm sm:text-base text-slate-900 dark:text-white">
+                {editingProject ? 'ویرایش نمونه‌پروژه' : 'ثبت نمونه‌پروژه جدید در سبد پروژه‌ها'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsProjectModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProject} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  عنوان پروژه <span className="text-red-500">*</span>
+                </label>
+                <input
+                  required
+                  value={projectTitle}
+                  onChange={e => setProjectTitle(e.target.value)}
+                  placeholder="مثال: نیروگاه خورشیدی ۱۰۰ کیلووات متصل به شبکه شهرک صنعتی شیراز"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white min-h-[44px]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">نوع کاربری پروژه</label>
+                  <select
+                    value={projectType}
+                    onChange={e => setProjectType(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white min-h-[44px]"
+                  >
+                    <option value="نیروگاهی">نیروگاهی (Utility)</option>
+                    <option value="صنعتی">صنعتی و کارگاهی</option>
+                    <option value="تجاری">تجاری و اداری</option>
+                    <option value="مسکونی">مسکونی و ویلایی</option>
+                    <option value="کشاورزی">کشاورزی و پمپ آب</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">ظرفیت نصب‌شده (کیلووات)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={projectCapacity}
+                    onChange={e => setProjectCapacity(e.target.value)}
+                    placeholder="مثال: ۱۰۰"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white min-h-[44px]"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">استان</label>
+                  <input
+                    value={projectProvince}
+                    onChange={e => setProjectProvince(e.target.value)}
+                    placeholder="مثال: فارس"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white min-h-[44px]"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">شهر</label>
+                  <input
+                    value={projectCity}
+                    onChange={e => setProjectCity(e.target.value)}
+                    placeholder="مثال: شیراز"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white min-h-[44px]"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">سال اجرا</label>
+                  <input
+                    value={projectYear}
+                    onChange={e => setProjectYear(e.target.value)}
+                    placeholder="مثال: ۱۴۰۲"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white min-h-[44px]"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">شرح مشخصات فنی و تجهیزات</label>
+                <textarea
+                  rows={3}
+                  value={projectDesc}
+                  onChange={e => setProjectDesc(e.target.value)}
+                  placeholder="شرح اینورترهای به‌کاررفته، استراکچر، نوع پنل، تولید سالیانه و ویژگی‌های فنی..."
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white resize-none"
+                />
+              </div>
+
+              {/* Project Images Upload */}
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  تصاویر پروژه (مخزن امن ابری)
+                </label>
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  {projectImages.map((img, idx) => (
+                    <div key={idx} className="relative w-16 h-16 rounded-xl border border-slate-200 dark:border-zinc-700 overflow-hidden group">
+                      <img src={img} alt="پروژه" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setProjectImages(prev => prev.filter((_, i) => i !== idx))}
+                        className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ))}
+
+                  <label className="w-16 h-16 rounded-xl border-2 border-dashed border-slate-300 dark:border-zinc-700 flex flex-col items-center justify-center text-slate-400 hover:border-[#0284C7] hover:text-[#0284C7] transition-colors cursor-pointer shrink-0">
+                    {uploadingProjectImage ? (
+                      <Loader2 className="animate-spin text-[#0284C7]" size={20} />
+                    ) : (
+                      <>
+                        <Upload size={18} />
+                        <span className="text-[9px] font-bold mt-0.5">افزودن</span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleUploadProjectImage}
+                      disabled={uploadingProjectImage}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setIsProjectModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-300 text-xs font-bold min-h-[44px] cursor-pointer"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingProject || uploadingProjectImage}
+                  className="px-5 py-2.5 rounded-xl bg-[#0284C7] hover:bg-[#0369A1] text-white text-xs font-bold min-h-[44px] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {submittingProject && <Loader2 size={14} className="animate-spin" />}
+                  <span>{editingProject ? 'ذخیره تغییرات' : 'ثبت پروژه'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD / EDIT CONTRACTOR PRODUCT MODAL */}
+      {isProductModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs" dir="rtl">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-lg w-full p-5 sm:p-6 border border-slate-200 dark:border-zinc-800 shadow-2xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-zinc-800 mb-4">
+              <h3 className="font-black text-sm sm:text-base text-slate-900 dark:text-white">
+                {editingContractorProduct ? 'ویرایش تجهیز اختصاصی' : 'افزودن تجهیز اختصاصی پیمانکار (اختیاری)'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsProductModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveContractorProduct} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  نام تجهیز <span className="text-red-500">*</span>
+                </label>
+                <input
+                  required
+                  value={prodName}
+                  onChange={e => setProdName(e.target.value)}
+                  placeholder="مثال: پنل ۵۵۰ وات Longi Solar"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white min-h-[44px]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">دسته‌بندی</label>
+                  <select
+                    value={prodCategory}
+                    onChange={e => setProdCategory(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white min-h-[44px]"
+                  >
+                    <option value="پنل خورشیدی">پنل خورشیدی</option>
+                    <option value="اینورتر">اینورتر</option>
+                    <option value="استراکچر">استراکچر</option>
+                    <option value="باتری">باتری</option>
+                    <option value="سایر تجهیزات">سایر تجهیزات</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">قیمت واحد (تومان، اختیاری)</label>
+                  <input
+                    type="number"
+                    value={prodPrice}
+                    onChange={e => setProdPrice(e.target.value)}
+                    placeholder="مثال: ۴۲۰۰۰۰۰"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white min-h-[44px]"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">برند</label>
+                  <input
+                    value={prodBrand}
+                    onChange={e => setProdBrand(e.target.value)}
+                    placeholder="مثال: Longi"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white min-h-[44px]"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">مدل</label>
+                  <input
+                    value={prodModel}
+                    onChange={e => setProdModel(e.target.value)}
+                    placeholder="مثال: LR5-72HBD"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white min-h-[44px]"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">شرح مشخصات</label>
+                <textarea
+                  rows={2}
+                  value={prodDesc}
+                  onChange={e => setProdDesc(e.target.value)}
+                  placeholder="شرح کوتاه ویژگی‌های فنی یا گارانتی..."
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white resize-none"
+                />
+              </div>
+
+              {/* Product Images Upload */}
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  تصویر تجهیز
+                </label>
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  {prodImages.map((img, idx) => (
+                    <div key={idx} className="relative w-16 h-16 rounded-xl border border-slate-200 dark:border-zinc-700 overflow-hidden group">
+                      <img src={img} alt="تجهیز" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setProdImages(prev => prev.filter((_, i) => i !== idx))}
+                        className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ))}
+
+                  <label className="w-16 h-16 rounded-xl border-2 border-dashed border-slate-300 dark:border-zinc-700 flex flex-col items-center justify-center text-slate-400 hover:border-[#0284C7] hover:text-[#0284C7] transition-colors cursor-pointer shrink-0">
+                    {uploadingProdImage ? (
+                      <Loader2 className="animate-spin text-[#0284C7]" size={20} />
+                    ) : (
+                      <>
+                        <Upload size={18} />
+                        <span className="text-[9px] font-bold mt-0.5">افزودن</span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleUploadProdImage}
+                      disabled={uploadingProdImage}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setIsProductModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-300 text-xs font-bold min-h-[44px] cursor-pointer"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingProd || uploadingProdImage}
+                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold min-h-[44px] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {submittingProd && <Loader2 size={14} className="animate-spin" />}
+                  <span>{editingContractorProduct ? 'ذخیره تغییرات' : 'ثبت تجهیز'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Delete Modal */}
+      <PersianConfirmModal
+        isOpen={deleteConfirmState.isOpen}
+        title={deleteConfirmState.title}
+        message={deleteConfirmState.message}
+        confirmText="حذف نهایی"
+        cancelText="انصراف"
+        variant="danger"
+        onConfirm={deleteConfirmState.onConfirm}
+        onClose={() => setDeleteConfirmState(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }
