@@ -11,6 +11,25 @@ export interface DisplayAd {
   color: string;
   icon?: React.ReactNode;
   badge: string;
+  advertiser?: string;
+  ctaText?: string;
+}
+
+export type AdPlacementType = 'BANNER' | 'CARD' | 'SIDEBAR' | 'banner' | 'card' | 'sidebar';
+
+export interface AdPlacementProps {
+  placement: AdPlacementType;
+  className?: string;
+  previewAds?: DisplayAd[];
+}
+
+export function AdPlacement({ placement, className, previewAds }: AdPlacementProps) {
+  const normalized = placement.toLowerCase() as 'banner' | 'card' | 'sidebar';
+  return (
+    <div className={className} dir="rtl">
+      <AdBanner layout={normalized} previewAds={previewAds} />
+    </div>
+  );
 }
 
 const COLOR_PALETTES = [
@@ -51,18 +70,30 @@ function sanitizeAdImage(rawImg?: string): string {
   return '';
 }
 
-export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | 'inline' | 'marquee' | 'hero' | 'sidebar' }) {
-  const [ads, setAds] = useState<DisplayAd[]>([]);
-  const [loading, setLoading] = useState(true);
+export function AdBanner({ 
+  layout = 'banner',
+  previewAds
+}: { 
+  layout?: 'banner' | 'card' | 'inline' | 'marquee' | 'hero' | 'sidebar';
+  previewAds?: DisplayAd[];
+}) {
+  const [ads, setAds] = useState<DisplayAd[]>(previewAds || []);
+  const [loading, setLoading] = useState(previewAds === undefined);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
+    if (previewAds !== undefined) {
+      setAds(previewAds);
+      setLoading(false);
+      return;
+    }
     let isMounted = true;
     const fetchRealAds = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`/api/ads/list?placement=${layout}`);
+        const normalizedPlacement = (layout === 'hero' ? 'banner' : layout === 'inline' ? 'card' : layout).toLowerCase();
+        const res = await fetch(`/api/ads/list?placement=${normalizedPlacement}`);
         if (!res.ok) {
           if (isMounted) {
             setAds([]);
@@ -142,8 +173,9 @@ export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | '
         <div className="h-40 relative shrink-0">
           <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110" style={{ backgroundImage: `url(${currentAd.image})` }} />
           <div className={`absolute inset-0 bg-gradient-to-t ${currentAd.color} mix-blend-multiply opacity-90`} />
-          <div className="absolute top-3 right-3 bg-white/20 backdrop-blur-md border border-white/30 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1 font-bold">
-            آگهی ویژه
+          <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md border border-white/20 text-white text-[10px] px-2.5 py-0.5 rounded-full flex items-center gap-1 font-bold z-20">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+            محتوای تبلیغاتی
           </div>
           <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 w-12 h-12 rounded-xl bg-white p-1 shadow-md flex items-center justify-center z-10">
             <div className={`w-full h-full rounded-lg bg-gradient-to-br ${currentAd.color} flex items-center justify-center`}>
@@ -153,11 +185,19 @@ export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | '
         </div>
         <div className="p-5 pt-8 flex-1 flex flex-col items-center text-center">
           <span className="text-[10px] text-gray-400 font-bold mb-1">{currentAd.badge}</span>
+          {currentAd.advertiser && (
+            <span className="text-[11px] font-semibold text-slate-500 mb-1">{currentAd.advertiser}</span>
+          )}
           <h3 className="font-black text-gray-800 text-base mb-2 line-clamp-2">{currentAd.title}</h3>
           <p className="text-xs text-gray-500 mb-4 line-clamp-3 leading-relaxed">{currentAd.subtitle}</p>
           <div className="mt-auto w-full pt-4">
-            <a href={currentAd.link} className="flex items-center justify-center gap-2 w-full text-center bg-gray-900 hover:bg-blue-600 text-white py-2.5 rounded-xl text-xs font-bold transition-colors">
-              مشاهده پیشنهاد
+            <a 
+              href={currentAd.link} 
+              target={currentAd.link.startsWith('http') ? '_blank' : undefined}
+              rel={currentAd.link.startsWith('http') ? 'noopener noreferrer' : undefined}
+              className="flex items-center justify-center gap-2 w-full text-center bg-gray-900 hover:bg-blue-600 text-white py-2.5 min-h-[44px] rounded-xl text-xs font-bold transition-colors"
+            >
+              <span>{currentAd.ctaText || 'اطلاعات بیشتر'}</span>
               <ChevronLeft size={14} />
             </a>
           </div>
@@ -220,6 +260,8 @@ export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | '
                 
                 <motion.a 
                   href={currentAd.link}
+                  target={currentAd.link.startsWith('http') ? '_blank' : undefined}
+                  rel={currentAd.link.startsWith('http') ? 'noopener noreferrer' : undefined}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.5 }}
@@ -244,8 +286,9 @@ export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | '
           </div>
         )}
         
-        <div className="absolute top-4 left-4 bg-black/40 backdrop-blur-md text-white/80 text-xs px-2 py-1 rounded flex items-center gap-1 z-20">
-          آگهی 
+        <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md text-white/90 text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 z-20 border border-white/10 font-bold">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+          محتوای تبلیغاتی
         </div>
         
         <button onClick={() => setIsVisible(false)} className="absolute top-4 right-4 text-white/70 hover:text-white bg-black/20 hover:bg-black/40 rounded-full p-2 transition-colors backdrop-blur-sm z-20">
@@ -261,8 +304,9 @@ export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | '
         <div className="h-40 relative overflow-hidden">
           <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110" style={{ backgroundImage: `url(${currentAd.image})` }} />
           <div className={`absolute inset-0 bg-gradient-to-t ${currentAd.color} mix-blend-multiply opacity-90`} />
-          <div className="absolute top-3 right-3 bg-white/20 backdrop-blur-md border border-white/30 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 font-medium">
-            آگهی
+          <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md border border-white/20 text-white text-[10px] px-2.5 py-0.5 rounded-full flex items-center gap-1 font-bold z-20">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+            محتوای تبلیغاتی
           </div>
           <div className="absolute -bottom-6 left-6 w-14 h-14 rounded-2xl bg-white p-1.5 shadow-lg flex items-center justify-center z-10 group-hover:-translate-y-2 transition-transform">
             <div className={`w-full h-full rounded-xl bg-gradient-to-br ${currentAd.color} flex items-center justify-center`}>
@@ -271,11 +315,19 @@ export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | '
           </div>
         </div>
         <div className="p-6 pt-10 flex-1 flex flex-col">
-          <span className="text-[10px] text-gray-400 font-bold mb-2">{currentAd.badge}</span>
+          <span className="text-[10px] text-gray-400 font-bold mb-1">{currentAd.badge}</span>
+          {currentAd.advertiser && (
+            <span className="text-[11px] font-semibold text-slate-500 mb-1">{currentAd.advertiser}</span>
+          )}
           <h3 className="font-black text-gray-800 text-base mb-2 line-clamp-2 group-hover:text-blue-600 transition-colors">{currentAd.title}</h3>
           <p className="text-sm text-gray-500 mb-6 line-clamp-2 leading-relaxed flex-1">{currentAd.subtitle}</p>
-          <a href={currentAd.link} className="flex items-center justify-center gap-2 w-full text-center bg-gray-50 hover:bg-gray-900 hover:text-white text-gray-700 py-3 rounded-xl text-sm font-bold transition-all border border-gray-100 hover:border-gray-900">
-            مشاهده پیشنهاد
+          <a 
+            href={currentAd.link} 
+            target={currentAd.link.startsWith('http') ? '_blank' : undefined}
+            rel={currentAd.link.startsWith('http') ? 'noopener noreferrer' : undefined}
+            className="flex items-center justify-center gap-2 w-full text-center bg-gray-50 hover:bg-gray-900 hover:text-white text-gray-700 py-3 min-h-[44px] rounded-xl text-sm font-bold transition-all border border-gray-100 hover:border-gray-900"
+          >
+            <span>{currentAd.ctaText || 'مشاهده محصولات'}</span>
             <ChevronLeft size={16} />
           </a>
         </div>
@@ -292,8 +344,9 @@ export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | '
         <div className="w-full sm:w-1/3 md:w-1/4 h-32 sm:h-auto relative shrink-0 overflow-hidden">
           <div className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-105" style={{ backgroundImage: `url(${currentAd.image})` }} />
           <div className={`absolute inset-0 bg-gradient-to-br ${currentAd.color} mix-blend-multiply opacity-90`} />
-          <div className="absolute top-2 right-2 bg-black/40 backdrop-blur-sm text-white text-[9px] px-2 py-0.5 rounded flex items-center gap-1">
-            آگهی
+          <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[9px] px-2 py-0.5 rounded flex items-center gap-1 font-bold z-20">
+            <span className="w-1 h-1 rounded-full bg-amber-400"></span>
+            محتوای تبلیغاتی
           </div>
           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
             {currentAd.icon}
@@ -306,12 +359,22 @@ export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | '
               <h3 className="font-black text-[#1A1D23] text-base mb-1.5 group-hover:text-blue-700 transition-colors">{currentAd.title}</h3>
               <p className="text-sm text-[#5A6072] leading-relaxed line-clamp-2">{currentAd.subtitle}</p>
             </div>
-            <a href={currentAd.link} className="shrink-0 hidden sm:flex items-center justify-center w-10 h-10 rounded-full bg-gray-50 text-gray-600 hover:bg-blue-600 hover:text-white transition-all">
+            <a 
+              href={currentAd.link} 
+              target={currentAd.link.startsWith('http') ? '_blank' : undefined}
+              rel={currentAd.link.startsWith('http') ? 'noopener noreferrer' : undefined}
+              className="shrink-0 hidden sm:flex items-center justify-center w-10 h-10 rounded-full bg-gray-50 text-gray-600 hover:bg-blue-600 hover:text-white transition-all"
+            >
               <ChevronLeft size={20} />
             </a>
           </div>
           <div className="mt-4 sm:hidden flex justify-end">
-            <a href={currentAd.link} className="inline-flex items-center gap-1 text-sm font-bold text-blue-600 hover:text-blue-700">
+            <a 
+              href={currentAd.link} 
+              target={currentAd.link.startsWith('http') ? '_blank' : undefined}
+              rel={currentAd.link.startsWith('http') ? 'noopener noreferrer' : undefined}
+              className="inline-flex items-center gap-1 text-sm font-bold text-blue-600 hover:text-blue-700"
+            >
               مشاهده <ExternalLink size={14} />
             </a>
           </div>
@@ -342,9 +405,9 @@ export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | '
           <div className={`absolute inset-0 bg-gradient-to-l ${currentAd.color} opacity-95 mix-blend-multiply`} />
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
           
-          <div className="absolute top-4 right-4 bg-white/20 backdrop-blur-md border border-white/30 text-white text-[10px] sm:text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 font-bold z-20 shadow-sm">
-            <Sparkles size={14} className="text-yellow-300" />
-            آگهی ویژه
+          <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md border border-white/20 text-white text-[10px] sm:text-xs px-3 py-1 rounded-full flex items-center gap-1.5 font-bold z-20 shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+            محتوای تبلیغاتی
           </div>
           
           <button 
@@ -356,7 +419,12 @@ export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | '
           
           <div className="relative z-10 p-6 sm:p-10 w-full flex flex-col md:flex-row items-start md:items-center justify-between gap-6 h-full">
             <div className="text-white max-w-2xl mt-auto md:mt-0">
-              <span className="inline-block text-xs font-bold bg-white/20 text-white px-2 py-1 rounded mb-3 backdrop-blur-sm border border-white/20">{currentAd.badge}</span>
+              <span className="inline-block text-xs font-bold bg-white/20 text-white px-2 py-1 rounded mb-2 backdrop-blur-sm border border-white/20">{currentAd.badge}</span>
+              {currentAd.advertiser && (
+                <span className="text-xs font-medium text-white/80 block mb-1">
+                  توسط: {currentAd.advertiser}
+                </span>
+              )}
               <h3 className="text-2xl sm:text-3xl font-black mb-2 line-clamp-1 drop-shadow-md">
                 {currentAd.title}
               </h3>
@@ -367,9 +435,11 @@ export function AdBanner({ layout = 'banner' }: { layout?: 'banner' | 'card' | '
             
             <a 
               href={currentAd.link}
-              className="shrink-0 mt-auto md:mt-0 bg-white text-gray-900 px-6 py-3.5 rounded-xl text-sm font-black flex items-center gap-2 hover:bg-gray-100 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-1 group-hover:ring-4 ring-white/30"
+              target={currentAd.link.startsWith('http') ? '_blank' : undefined}
+              rel={currentAd.link.startsWith('http') ? 'noopener noreferrer' : undefined}
+              className="shrink-0 mt-auto md:mt-0 bg-white text-gray-900 px-6 py-3.5 min-h-[44px] rounded-xl text-sm font-black flex items-center gap-2 hover:bg-gray-100 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-1 group-hover:ring-4 ring-white/30"
             >
-              خرید و اطلاعات بیشتر
+              <span>{currentAd.ctaText || 'مشاهده خدمات'}</span>
               <ChevronLeft size={18} />
             </a>
           </div>

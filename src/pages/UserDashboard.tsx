@@ -9,7 +9,7 @@ import { LoadingState } from '../components/common/LoadingState';
 import { ErrorState } from '../components/common/ErrorState';
 import { EmptyState } from '../components/common/EmptyState';
 import { StatusBadge } from '../components/common/StatusBadge';
-import { AdBanner } from '../components/AdBanner';
+import { AdBanner, AdPlacement } from '../components/AdBanner';
 import {
   DashboardHeader,
   AttentionCenter,
@@ -1137,13 +1137,15 @@ export default function UserDashboard() {
           <div className="order-6 md:order-5 space-y-8">
             <OperationalAssets assets={assets} />
             <RecentActivity activities={activities} />
+            {/* Bronze / Sidebar Ad Placement */}
+            <AdPlacement placement="SIDEBAR" />
           </div>
         </div>
       )}
 
-      {/* Customer-Facing Partner Advertisement Banner */}
-      <section className="pt-2">
-        <AdBanner layout="inline" />
+      {/* Customer-Facing Partner Advertisement Gold Banner */}
+      <section className="pt-4">
+        <AdPlacement placement="BANNER" />
       </section>
     </PageContainer>
   );

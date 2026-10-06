@@ -93,6 +93,13 @@ export default function Landing() {
                 شبکه پیمانکاران EPC
               </Link>
               <Link 
+                to="/ads/portal" 
+                className="px-3 py-2 rounded-xl hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors"
+                aria-label="تبلیغات و معرفی برند"
+              >
+                تبلیغات و معرفی برند
+              </Link>
+              <Link 
                 to="/smart-maintenance" 
                 className="px-3 py-2 rounded-xl hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors"
               >
@@ -149,7 +156,7 @@ export default function Landing() {
             <Link
               to="/target-select"
               onClick={() => setMobileMenuOpen(false)}
-              className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 text-sm font-semibold"
+              className="flex items-center justify-between p-3 min-h-[44px] rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 text-sm font-semibold"
             >
               <span>امکان‌سنجی و طراحی هوشمند</span>
               <ArrowLeft size={16} className="text-slate-400" />
@@ -157,7 +164,7 @@ export default function Landing() {
             <a
               href="#lifecycle"
               onClick={() => setMobileMenuOpen(false)}
-              className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 text-sm font-semibold"
+              className="flex items-center justify-between p-3 min-h-[44px] rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 text-sm font-semibold"
             >
               <span>چرخه اجرای پروژه‌ها</span>
               <ArrowLeft size={16} className="text-slate-400" />
@@ -165,7 +172,7 @@ export default function Landing() {
             <a
               href="#solutions"
               onClick={() => setMobileMenuOpen(false)}
-              className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 text-sm font-semibold"
+              className="flex items-center justify-between p-3 min-h-[44px] rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 text-sm font-semibold"
             >
               <span>راهکارها برای صنایع و مالکان</span>
               <ArrowLeft size={16} className="text-slate-400" />
@@ -173,15 +180,27 @@ export default function Landing() {
             <Link
               to="/contractors"
               onClick={() => setMobileMenuOpen(false)}
-              className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 text-sm font-semibold"
+              className="flex items-center justify-between p-3 min-h-[44px] rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 text-sm font-semibold"
             >
               <span>شبکه پیمانکاران EPC و استعلام‌ها</span>
               <ArrowLeft size={16} className="text-slate-400" />
             </Link>
             <Link
+              to="/ads/portal"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center justify-between p-3 min-h-[44px] rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 text-sm font-semibold text-slate-700 dark:text-slate-300"
+              aria-label="تبلیغات و معرفی برند"
+            >
+              <div className="flex items-center gap-2.5">
+                <Megaphone size={16} className="text-slate-500 dark:text-slate-400" />
+                <span>تبلیغات و معرفی برند</span>
+              </div>
+              <ArrowLeft size={16} className="text-slate-400" />
+            </Link>
+            <Link
               to="/smart-maintenance"
               onClick={() => setMobileMenuOpen(false)}
-              className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 text-sm font-semibold"
+              className="flex items-center justify-between p-3 min-h-[44px] rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 text-sm font-semibold"
             >
               <span>تعمیرات و نگهداری هوشمند</span>
               <ArrowLeft size={16} className="text-slate-400" />

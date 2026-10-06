@@ -462,9 +462,16 @@ export default function AdsPortal() {
               <div className="space-y-4">
                 {myAds.map(item => {
                   const isPaid = item.paymentStatus === 'paid';
-                  const isModeratedActive = item.status === 'active';
+                  const isExpired = item.status === 'expired' || (item.status === 'active' && new Date(item.endDate) < new Date());
+                  const isModeratedActive = item.status === 'active' && !isExpired;
                   const isPending = item.status === 'pending_review';
                   const isRejected = item.status === 'rejected';
+
+                  const planLabel = item.planId === 'ad_plan_gold' 
+                    ? 'پلن طلایی (جایگاه بنر)' 
+                    : item.planId === 'ad_plan_silver' 
+                    ? 'پلن نقره‌ای (جایگاه کارت)' 
+                    : 'پلن برنزی (جایگاه سایدبار)';
 
                   return (
                     <div 
@@ -472,30 +479,40 @@ export default function AdsPortal() {
                       className="p-5 rounded-2xl border border-slate-200/90 bg-slate-50/50 hover:bg-slate-50 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4"
                     >
                       <div className="space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                            isModeratedActive 
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold ${
+                            isExpired
+                              ? 'bg-slate-200 text-slate-800'
+                              : isModeratedActive 
                               ? 'bg-emerald-100 text-emerald-800' 
                               : isRejected 
                               ? 'bg-rose-100 text-rose-800' 
                               : 'bg-amber-100 text-amber-800'
                           }`}>
-                            {isModeratedActive ? 'فعال و در حال نمایش' : isRejected ? 'رد شده توسط ناظر' : 'در انتظار بررسی مدیر'}
+                            {isExpired 
+                              ? 'منقضی‌شده' 
+                              : isModeratedActive 
+                              ? 'فعال و در حال نمایش' 
+                              : isRejected 
+                              ? 'رد شده توسط ناظر' 
+                              : 'در انتظار بررسی مدیر'}
                           </span>
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                          <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold ${
                             isPaid ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-700'
                           }`}>
                             {isPaid ? 'پرداخت موفق' : 'در انتظار پرداخت'}
                           </span>
-                          <span className="text-[11px] text-slate-400 font-mono">
-                            پلن: {item.planId}
+                          <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100">
+                            {planLabel}
                           </span>
                         </div>
                         <h4 className="font-bold text-sm text-slate-900">{item.title}</h4>
-                        <div className="text-xs text-slate-500 flex items-center gap-4">
+                        <div className="text-xs text-slate-500 flex flex-wrap items-center gap-4">
                           {item.status === 'pending_review' ? (
                             <span className="text-amber-700 font-medium">
-                              در انتظار تأیید — دوره تبلیغ پس از تأیید مدیر آغاز می‌شود
+                              {isPaid 
+                                ? 'پرداخت با موفقیت انجام شده است و تبلیغ شما در انتظار بررسی مدیر سامانه است (دوره ۳۰ روزه پس از تأیید آغاز خواهد شد).' 
+                                : 'در انتظار پرداخت بانکی برای ارسال به بررسی مدیر.'}
                             </span>
                           ) : (
                             <>

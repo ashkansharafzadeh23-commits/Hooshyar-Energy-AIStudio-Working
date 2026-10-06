@@ -4,6 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { TargetModule } from '../types';
 import { Sun, Zap, BatteryCharging, ArrowRight, Loader2, CheckCircle2, ShieldAlert, AlertTriangle, FileText, Info, Calculator } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { AdPlacement } from '../components/AdBanner';
 
 export default function RecommendationPage() {
   const { state, updateState } = useAppContext();
@@ -268,6 +269,11 @@ export default function RecommendationPage() {
               <span>جهت مشاهده برآورد اولیه حدودی هزینه‌ها بر اساس شاخص‌های مرجع، گزینه بالای صفحه را فعال نمایید.</span>
             </div>
           )}
+
+          {/* Sponsored Equipment & Partner Card Placement */}
+          <div className="mt-8">
+            <AdPlacement placement="CARD" />
+          </div>
         </>
       )}
     </motion.div>

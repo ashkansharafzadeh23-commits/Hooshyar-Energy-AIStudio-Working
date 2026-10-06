@@ -18,6 +18,15 @@ function isSafeUrl(url?: string): boolean {
   if (!url || typeof url !== 'string') return true;
   const trimmed = url.trim();
   if (!trimmed || trimmed === '#' || trimmed.startsWith('/')) return true;
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.startsWith('javascript:') ||
+    lower.startsWith('data:') ||
+    lower.startsWith('file:') ||
+    lower.startsWith('vbscript:')
+  ) {
+    return false;
+  }
   try {
     const parsed = new URL(trimmed);
     return parsed.protocol === 'http:' || parsed.protocol === 'https:';
@@ -366,32 +375,79 @@ adsRouter.get("/my-ads", verifyAuthToken, requireAuth, (req: Request, res: Respo
 });
 
 /**
- * Phase 9: Public Ad Listing
+ * Phase 9 / Stage 13.9.3: Customer-Facing Public Active Ad Listing
  * GET /api/ads/list
- * Commercial Rule:
- * Requires:
+ * Requirements:
  *  - ad.status === 'active'
- *  - paymentStatus is paid (or legacy active ad preserved)
- *  - startDate <= now <= endDate
+ *  - ad.paymentStatus === 'paid' (or legacy active ad without paymentStatus)
+ *  - startDate <= now <= endDate (strictly excludes future and expired ads)
+ *  - Case-insensitive placement filtering (banner, card, sidebar)
+ *  - Redacts private payment/admin metadata (transactionId, paymentAuthority, paymentRefId, etc.)
  */
 adsRouter.get("/list", (req: Request, res: Response) => {
-  const placement = req.query.placement as string | undefined;
-  let ads = adsRepository.getAds(placement);
+  const placementQuery = req.query.placement ? String(req.query.placement).toLowerCase().trim() : undefined;
   
-  const now = new Date();
-  ads = ads.filter((ad: any) => {
-    const isApprovedAndActive = ad.status === "active";
-    // For newly managed commercial ads, require paymentStatus === 'paid'.
-    // If an ad is an existing approved ad without a paymentStatus property, allow it for backward compatibility,
-    // but if paymentStatus exists and is NOT 'paid', exclude it.
-    const isPaidOrLegacy = ad.paymentStatus === undefined || ad.paymentStatus === "paid";
-    const isStarted = new Date(ad.startDate) <= now;
-    const isNotExpired = new Date(ad.endDate) >= now;
+  // Retrieve all ads from repository
+  let allAds: any[] = [];
+  if (typeof (adsRepository as any).getAllAds === 'function') {
+    allAds = (adsRepository as any).getAllAds('active');
+  } else {
+    allAds = adsRepository.getAds();
+  }
 
-    return isApprovedAndActive && isPaidOrLegacy && isStarted && isNotExpired;
+  const now = new Date();
+  const nowMs = now.getTime();
+
+  const eligibleAds = allAds.filter((ad: any) => {
+    // 1. Must be approved and active
+    if (ad.status !== 'active') return false;
+
+    // 2. Must be paid (or legacy active ad preserved without paymentStatus)
+    const isPaid = ad.paymentStatus === undefined || ad.paymentStatus === 'paid';
+    if (!isPaid) return false;
+
+    // 3. Time boundaries: started and not expired
+    const startMs = new Date(ad.startDate).getTime();
+    const endMs = new Date(ad.endDate).getTime();
+    if (isNaN(startMs) || isNaN(endMs)) return false;
+    if (startMs > nowMs) return false; // future ad
+    if (endMs <= nowMs) return false; // expired ad
+
+    // 4. Placement matching (if requested)
+    if (placementQuery) {
+      const adPlacement = (ad.placement || '').toLowerCase().trim();
+      if (placementQuery === 'banner') {
+        const matchesBanner = adPlacement === 'banner' || adPlacement === 'home_banner' || adPlacement === 'hero';
+        if (!matchesBanner) return false;
+      } else if (placementQuery === 'card') {
+        const matchesCard = adPlacement === 'card' || adPlacement === 'inline';
+        if (!matchesCard) return false;
+      } else if (placementQuery === 'sidebar') {
+        if (adPlacement !== 'sidebar') return false;
+      } else {
+        if (adPlacement !== placementQuery) return false;
+      }
+    }
+
+    return true;
   });
 
-  res.json({ ads });
+  // 5. Clean Public DTO (Redact internal payment metadata, authorities, and review audit details)
+  const sanitizedAds = eligibleAds.map((ad: any) => ({
+    id: ad.id,
+    title: ad.title,
+    imageUrl: ad.imageUrl,
+    linkTo: ad.linkTo,
+    placement: ad.placement,
+    planId: ad.planId,
+    startDate: ad.startDate,
+    endDate: ad.endDate,
+    ownerType: ad.ownerType,
+    ownerId: ad.ownerId,
+    description: ad.description || ad.subtitle || undefined
+  }));
+
+  res.json({ ads: sanitizedAds });
 });
 
 /**

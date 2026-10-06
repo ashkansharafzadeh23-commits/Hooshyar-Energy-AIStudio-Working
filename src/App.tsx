@@ -58,6 +58,7 @@ import PartnerExperiencePreview from './pages/dev/PartnerExperiencePreview';
 import SmartMaintenancePreview from './pages/dev/SmartMaintenancePreview';
 import SolarPlannerPreview from './pages/dev/SolarPlannerPreview';
 import Stage13FinalPreview from './pages/dev/Stage13FinalPreview';
+import AdsDeliveryPreview from './pages/dev/AdsDeliveryPreview';
 
 export default function App() {
   return (
@@ -76,6 +77,7 @@ export default function App() {
                   <Route path="/dev/partner-experience-preview" element={<PartnerExperiencePreview />} />
                   <Route path="/dev/smart-maintenance-preview" element={<SmartMaintenancePreview />} />
                   <Route path="/dev/solar-planner-preview" element={<SolarPlannerPreview />} />
+                  <Route path="/dev/ads-delivery-preview" element={<AdsDeliveryPreview />} />
                 </>
               )}
 

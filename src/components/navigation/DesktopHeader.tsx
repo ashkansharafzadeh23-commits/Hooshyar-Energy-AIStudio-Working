@@ -18,7 +18,9 @@ import {
   Megaphone,
   Calculator,
   Compass,
-  ArrowLeft
+  ArrowLeft,
+  Menu,
+  X
 } from 'lucide-react';
 import { NotificationCenter } from '../NotificationCenter';
 import { ThemeToggle } from '../ThemeToggle';
@@ -42,7 +44,12 @@ export const DesktopHeader: React.FC = () => {
   } = useAuth();
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setIsMobileNavOpen(false);
+  }, [location.pathname]);
 
   const role = (activeRole || user?.role || 'PROJECT_OWNER').toUpperCase();
   const isContractor = ['EPC', 'EPC_CONTRACTOR', 'CONTRACTOR'].includes(role);
@@ -120,6 +127,7 @@ export const DesktopHeader: React.FC = () => {
       return [
         { label: 'امکان‌سنجی و طراحی', path: '/target-select', icon: Calculator },
         { label: 'شبکه متخصصان و تأمین', path: '/contractors', icon: Store },
+        { label: 'تبلیغات و معرفی برند', path: '/ads/portal', icon: Megaphone },
         { label: 'تعمیرات هوشمند', path: '/smart-maintenance', icon: Wrench },
         { label: 'راهکارها و همکاران', path: '/partners', icon: Compass }
       ];
@@ -256,6 +264,14 @@ export const DesktopHeader: React.FC = () => {
                 <Calculator size={15} />
                 <span>شروع تحلیل</span>
               </Link>
+              {/* Mobile Menu Button for Unauthenticated Public */}
+              <button
+                onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
+                className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 md:hidden focus:outline-none cursor-pointer"
+                aria-label="منوی ناوبری"
+              >
+                {isMobileNavOpen ? <X size={20} /> : <Menu size={20} />}
+              </button>
             </div>
           ) : (
             /* AUTHENTICATED USERS */
@@ -480,6 +496,29 @@ export const DesktopHeader: React.FC = () => {
         </div>
 
       </div>
+
+      {/* Mobile Navigation Drawer for Unauthenticated Visitors */}
+      {isMobileNavOpen && !isAuthenticated && (
+        <div className="md:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 pt-3 pb-6 space-y-2 animate-in slide-in-from-top-2 duration-150">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                onClick={() => setIsMobileNavOpen(false)}
+                className="flex items-center justify-between p-3 min-h-[44px] rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 text-sm font-semibold transition-colors"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Icon size={16} className="text-slate-500 dark:text-slate-400" />
+                  <span>{item.label}</span>
+                </div>
+                <ArrowLeft size={16} className="text-slate-400" />
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </header>
   );
 };

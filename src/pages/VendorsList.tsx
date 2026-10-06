@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { AdBanner } from '../components/AdBanner';
+import { AdBanner, AdPlacement } from '../components/AdBanner';
 import { Link } from 'react-router-dom';
 import { Store, UserCircle, Megaphone, LogIn, ArrowLeft, Building2 } from 'lucide-react';
 
@@ -84,8 +84,13 @@ export default function VendorsList() {
         </Link>
       </div>
       
+      {/* Sponsored Vendor & Equipment Card */}
+      <div className="w-full mt-8">
+        <AdPlacement placement="CARD" />
+      </div>
+
       <div className="mt-12 w-full">
-        <AdBanner layout="hero" />
+        <AdPlacement placement="BANNER" />
       </div>
     </motion.div>
   );

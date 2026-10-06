@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Search, MapPin, Building2, ShieldCheck, Clock, ArrowUpRight, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { AdPlacement } from '../components/AdBanner';
 
 interface PublicEpc {
   id: string;
@@ -104,6 +105,9 @@ export default function ContractorsList() {
           </div>
         </div>
 
+        {/* Sponsored Partner Card */}
+        <AdPlacement placement="CARD" className="w-full" />
+
         {/* Content */}
         {loading ? (
           <div className="text-center py-16 text-slate-400 text-sm">
@@ -191,6 +195,11 @@ export default function ContractorsList() {
             ))}
           </div>
         )}
+
+        {/* Sponsored EPC Partner Gold Banner Placement */}
+        <div className="mt-12">
+          <AdPlacement placement="BANNER" />
+        </div>
       </div>
     </div>
   );

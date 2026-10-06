@@ -32,7 +32,7 @@ import SavingsCalculator from '../components/SavingsCalculator';
 import EnergyEfficiencyChart from '../components/EnergyEfficiencyChart';
 import MonthlyGenerationChart from '../components/MonthlyGenerationChart';
 import { SmartWarning } from '../components/SmartWarning';
-import { AdBanner } from '../components/AdBanner';
+import { AdBanner, AdPlacement } from '../components/AdBanner';
 import { PanelComparisonTable } from '../components/PanelComparisonTable';
 import InstallationOptimization from '../components/InstallationOptimization';
 import { DataTruthBadge } from '../components/common/DataTruthBadge';
@@ -856,7 +856,7 @@ export default function ResultPage() {
 
         {/* Partner Equipment & EPC Advertisement Banner */}
         <div className="w-full pt-1">
-          <AdBanner layout="banner" />
+          <AdPlacement placement="BANNER" />
         </div>
       </section>
 
