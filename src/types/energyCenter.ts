@@ -206,3 +206,111 @@ export const STAKEHOLDER_LABELS: Record<StakeholderGroup, string> = {
   TECHNICIAN: 'متخصصان، کارشناسان و تکنیسین‌ها',
   INDUSTRIAL_CONSUMER: 'مشترکان صنعتی و خریداران برق'
 };
+
+// ============================================================================
+// STAGE 13.10.2 SECURE INGESTION & SOURCE REGISTRY DOMAIN TYPES
+// ============================================================================
+
+export type TrustTier = 
+  | 'TIER_1_OFFICIAL_PRIMARY'
+  | 'TIER_2_OFFICIAL_SECONDARY'
+  | 'TIER_3_VERIFIED_INDUSTRY';
+
+export type FetchMethod = 
+  | 'MANUAL_CURATION'
+  | 'HTML_FETCH'
+  | 'DOCUMENT_FETCH'
+  | 'API'
+  | 'RSS';
+
+export interface EnergySource {
+  id: string;
+  name: string;
+  organization: string;
+  officialDomain: string;
+  baseUrl: string;
+  sourceType: 'GOVERNMENT' | 'REGULATOR' | 'GRID_OPERATOR' | 'EXCHANGE' | 'LEGAL';
+  trustTier: TrustTier;
+  contentCategories: EnergyCategory[];
+  fetchMethod: FetchMethod;
+  enabled: boolean;
+  requiresReview: boolean;
+  fetchIntervalMinutes: number;
+  lastFetchAt?: string;
+  lastSuccessfulFetchAt?: string;
+  lastErrorAt?: string;
+  lastError?: string;
+  consecutiveFailures: number;
+  circuitBreakerTripped: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CandidateReviewStatus = 
+  | 'NEW'
+  | 'NORMALIZED'
+  | 'DUPLICATE'
+  | 'PENDING_REVIEW'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'PUBLISHED'
+  | 'ARCHIVED'
+  | 'FETCH_ERROR';
+
+export interface EnergyIngestionCandidate {
+  id: string;
+  sourceId: string;
+  externalId?: string;
+  sourceUrl: string;
+  canonicalUrl: string;
+  title: string;
+  rawTitle: string;
+  summary?: string;
+  rawContent?: string;
+  contentType: EnergyContentType;
+  category: EnergyCategory;
+  topics: string[];
+  publishedAt?: string;
+  publishedAtOriginal?: string;
+  fetchedAt: string;
+  contentHash: string;
+  canonicalHash: string;
+  documentType: 'HTML' | 'PDF' | 'IMAGE';
+  attachmentUrls: string[];
+  reviewStatus: CandidateReviewStatus;
+  duplicateOfCandidateId?: string;
+  targetPublicRecordId?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
+  reviewNotes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EnergyFetchResult {
+  requestedUrl: string;
+  finalUrl: string;
+  status: number;
+  contentType: string;
+  contentLength: number;
+  body: string | Buffer;
+  etag?: string;
+  lastModified?: string;
+  fetchedAt: string;
+  sha256: string;
+}
+
+export type DeduplicationClassification = 
+  | 'UNIQUE'
+  | 'EXACT_DUPLICATE'
+  | 'POSSIBLE_DUPLICATE'
+  | 'REVISION';
+
+export interface DeduplicationCheckResult {
+  classification: DeduplicationClassification;
+  reason: string;
+  existingCandidateId?: string;
+  confidence: number;
+}
+

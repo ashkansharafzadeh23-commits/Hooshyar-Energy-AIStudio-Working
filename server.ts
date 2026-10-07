@@ -28,6 +28,7 @@ import { maintenanceRouter } from "./src/api/maintenance.js";
 import rfqRouter from "./src/api/rfq.js";
 import enterpriseRouter from "./src/api/enterprise.js";
 import healthRouter from "./src/api/health.js";
+import { energyCenterRouter } from "./src/api/energyCenter.js";
 import partnersRouter, { signMediaItem, signMediaArray } from "./src/api/partners.js";
 import { validateEnvironment, assertProductionReadiness } from "./src/config/environment.js";
 import { closePostgresDB } from "./src/database/postgres/connection.js";
@@ -354,6 +355,7 @@ app.use("/api", monitoringRouter);
 app.use("/api", maintenanceRouter);
 app.use("/api/rfq", rfqRouter);
 app.use("/api/enterprise", enterpriseRouter);
+app.use("/api/energy-center", energyCenterRouter);
 
 // Fallback for unmatched API routes: return JSON 404, never index.html
 app.all("/api/*", (req, res) => {

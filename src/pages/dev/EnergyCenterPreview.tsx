@@ -18,6 +18,7 @@ import EnergyRecordDetail from '../energy-center/EnergyRecordDetail';
 import { EnergyContentCard } from '../../components/energy-center/EnergyContentCard';
 import { FutureAiImpactHook } from '../../components/energy-center/FutureAiImpactHook';
 import { SourceProvenanceBadge } from '../../components/energy-center/SourceProvenanceBadge';
+import { IngestionPipelineQaPanel } from '../../components/energy-center/IngestionPipelineQaPanel';
 
 // SYNTHETIC DEV FIXTURES (Explicitly marked as DEV-only UI samples)
 export const DEV_ENERGY_FIXTURES: EnergyInformationRecord[] = [
@@ -94,7 +95,7 @@ export const DEV_ENERGY_FIXTURES: EnergyInformationRecord[] = [
 ];
 
 export default function EnergyCenterPreview() {
-  const [viewMode, setViewMode] = useState<'HOME_POPULATED' | 'HOME_EMPTY' | 'DETAIL_VIEW' | 'CARD_COMPONENTS'>('HOME_POPULATED');
+  const [viewMode, setViewMode] = useState<'HOME_POPULATED' | 'HOME_EMPTY' | 'DETAIL_VIEW' | 'CARD_COMPONENTS' | 'INGESTION_QA'>('HOME_POPULATED');
   const [deviceMode, setDeviceMode] = useState<'desktop' | 'mobile_390' | 'mobile_430' | 'mobile_375'>('desktop');
   const [selectedRecordId, setSelectedRecordId] = useState<string>('dev_fixture_regulation_01');
 
@@ -212,6 +213,16 @@ export default function EnergyCenterPreview() {
               >
                 ۴. مؤلفه‌های منفرد (Cards & Hooks)
               </button>
+              <button
+                onClick={() => setViewMode('INGESTION_QA')}
+                className={`px-3.5 py-2 rounded-xl font-bold transition-all ${
+                  viewMode === 'INGESTION_QA'
+                    ? 'bg-[#0284C7] text-white shadow-xs'
+                    : 'bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                ۵. خط‌لوله دریافت و ضد‌تکرار (Ingestion & Deduplication QA)
+              </button>
             </div>
 
             {viewMode === 'DETAIL_VIEW' && (
@@ -288,6 +299,10 @@ export default function EnergyCenterPreview() {
                   </div>
                 </div>
               </div>
+            )}
+
+            {viewMode === 'INGESTION_QA' && (
+              <IngestionPipelineQaPanel />
             )}
           </div>
         </div>
