@@ -59,6 +59,9 @@ import SmartMaintenancePreview from './pages/dev/SmartMaintenancePreview';
 import SolarPlannerPreview from './pages/dev/SolarPlannerPreview';
 import Stage13FinalPreview from './pages/dev/Stage13FinalPreview';
 import AdsDeliveryPreview from './pages/dev/AdsDeliveryPreview';
+import EnergyCenterHome from './pages/energy-center/EnergyCenterHome';
+import EnergyRecordDetail from './pages/energy-center/EnergyRecordDetail';
+import EnergyCenterPreview from './pages/dev/EnergyCenterPreview';
 
 export default function App() {
   return (
@@ -78,6 +81,7 @@ export default function App() {
                   <Route path="/dev/smart-maintenance-preview" element={<SmartMaintenancePreview />} />
                   <Route path="/dev/solar-planner-preview" element={<SolarPlannerPreview />} />
                   <Route path="/dev/ads-delivery-preview" element={<AdsDeliveryPreview />} />
+                  <Route path="/dev/energy-center-preview" element={<EnergyCenterPreview />} />
                 </>
               )}
 
@@ -94,6 +98,8 @@ export default function App() {
 
               {/* Main Application & Workspace Shell */}
               <Route element={<MainLayout />}>
+                <Route path="/energy-center" element={<EnergyCenterHome />} />
+                <Route path="/energy-center/:id" element={<EnergyRecordDetail />} />
                 <Route path="/user-dashboard" element={<UserDashboard />} />
                 <Route path="/dashboard" element={<UserDashboard />} />
                 <Route path="/projects" element={<UserDashboard />} />

@@ -21,7 +21,10 @@ import {
   TrendingUp,
   FileCheck2,
   Activity,
-  Megaphone
+  Megaphone,
+  Newspaper,
+  Scale,
+  Coins
 } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { useAuth } from '../context/AuthContext';
@@ -657,6 +660,153 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* 5.5. IRAN ENERGY INTELLIGENCE CENTER (Dedicated Landing Discovery Section) */}
+      <section className="py-16 sm:py-24 bg-[#F8FAFC] dark:bg-slate-950 border-b border-slate-200/80 dark:border-slate-800 relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(#0284C7_1px,transparent_1px)] [background-size:28px_28px] opacity-[0.03] dark:opacity-[0.05] pointer-events-none" />
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 space-y-10">
+          
+          {/* Header Row */}
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 pb-2 border-b border-slate-200/70 dark:border-slate-800/80">
+            <div className="space-y-3 max-w-2xl">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-[#0284C7] dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200/60 dark:border-blue-900/60">
+                <ShieldCheck size={14} />
+                <span>مرجع هوشمندی و رصد صنعت انرژی ایران</span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900 dark:text-slate-100 tracking-tight leading-tight">
+                مرکز اطلاعات انرژی ایران
+              </h2>
+              <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+                اخبار، مقررات، بازار، مناقصات و فرصت‌های صنعت انرژی ایران در یک مرجع تخصصی و قابل استناد
+              </p>
+            </div>
+
+            <div className="shrink-0">
+              <Link
+                to="/energy-center"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 min-h-[44px] rounded-2xl bg-[#0284C7] hover:bg-[#0369A1] text-white text-sm font-black transition-all shadow-sm hover:shadow-md hover:scale-[1.01] active:scale-[0.99]"
+              >
+                <span>ورود به مرکز اطلاعات انرژی</span>
+                <ArrowLeft size={16} />
+              </Link>
+            </div>
+          </div>
+
+          {/* Compact 6 Domain Navigation Grid (Technical, Institutional, Compact on Mobile) */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+            
+            {/* Domain 1: News */}
+            <Link
+              to="/energy-center"
+              className="group p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-[#0284C7]/60 dark:hover:border-blue-500/60 transition-all hover:shadow-xs flex flex-col justify-between min-h-[110px]"
+            >
+              <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-[#0284C7] dark:text-blue-400 flex items-center justify-center group-hover:scale-105 transition-transform mb-2">
+                <Newspaper size={18} />
+              </div>
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-[#0284C7] dark:group-hover:text-blue-400 transition-colors">
+                  اخبار و اطلاعیه‌ها
+                </h3>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 block mt-0.5">
+                  رخدادهای رسمی صنعت
+                </span>
+              </div>
+            </Link>
+
+            {/* Domain 2: Regulations */}
+            <Link
+              to="/energy-center"
+              className="group p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-purple-500/60 dark:hover:border-purple-500/60 transition-all hover:shadow-xs flex flex-col justify-between min-h-[110px]"
+            >
+              <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center group-hover:scale-105 transition-transform mb-2">
+                <Scale size={18} />
+              </div>
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                  قوانین و مقررات
+                </h3>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 block mt-0.5">
+                  مصوبات و ضوابط فنی
+                </span>
+              </div>
+            </Link>
+
+            {/* Domain 3: Energy Exchange */}
+            <Link
+              to="/energy-center"
+              className="group p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500/60 dark:hover:border-emerald-500/60 transition-all hover:shadow-xs flex flex-col justify-between min-h-[110px]"
+            >
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform mb-2">
+                <TrendingUp size={18} />
+              </div>
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                  بازار برق و بورس انرژی
+                </h3>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 block mt-0.5">
+                  تابلو سبز و گواهی ظرفیت
+                </span>
+              </div>
+            </Link>
+
+            {/* Domain 4: Tariffs */}
+            <Link
+              to="/energy-center"
+              className="group p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-amber-500/60 dark:hover:border-amber-500/60 transition-all hover:shadow-xs flex flex-col justify-between min-h-[110px]"
+            >
+              <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center group-hover:scale-105 transition-transform mb-2">
+                <Coins size={18} />
+              </div>
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                  تعرفه‌ها و خرید برق
+                </h3>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 block mt-0.5">
+                  خرید تضمینی و PPA
+                </span>
+              </div>
+            </Link>
+
+            {/* Domain 5: Tenders */}
+            <Link
+              to="/energy-center"
+              className="group p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-indigo-500/60 dark:hover:border-indigo-500/60 transition-all hover:shadow-xs flex flex-col justify-between min-h-[110px]"
+            >
+              <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center group-hover:scale-105 transition-transform mb-2">
+                <FileCheck2 size={18} />
+              </div>
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                  مناقصات و فراخوان‌ها
+                </h3>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 block mt-0.5">
+                  استعلام‌ها و واگذاری ساختگاه
+                </span>
+              </div>
+            </Link>
+
+            {/* Domain 6: Investment */}
+            <Link
+              to="/energy-center"
+              className="group p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-teal-500/60 dark:hover:border-teal-500/60 transition-all hover:shadow-xs flex flex-col justify-between min-h-[110px]"
+            >
+              <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400 flex items-center justify-center group-hover:scale-105 transition-transform mb-2">
+                <Briefcase size={18} />
+              </div>
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
+                  سرمایه‌گذاری و فرصت‌ها
+                </h3>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 block mt-0.5">
+                  طرح‌های توسعه و بازگشت سرمایه
+                </span>
+              </div>
+            </Link>
+
+          </div>
+        </div>
+      </section>
+
       {/* 6. CONVERSION CTA SECTION */}
       <section className="py-16 sm:py-20 bg-gradient-to-br from-slate-900 via-[#0C4A6E] to-slate-900 text-white relative overflow-hidden">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6 relative z-10">
@@ -714,6 +864,7 @@ export default function Landing() {
               <ul className="space-y-1.5">
                 <li><Link to="/target-select" className="hover:text-[#0284C7] transition-colors">امکان‌سنجی هوشمند انرژی</Link></li>
                 <li><Link to="/solar-planner" className="hover:text-[#0284C7] transition-colors">طراحی سه‌بعدی چینش پنل‌ها</Link></li>
+                <li><Link to="/energy-center" className="hover:text-[#0284C7] transition-colors">مرکز اطلاعات انرژی ایران</Link></li>
                 <li><Link to="/smart-maintenance" className="hover:text-[#0284C7] transition-colors">عیب‌یابی و تعمیرات هوشمند</Link></li>
                 <li><Link to="/contractors" className="hover:text-[#0284C7] transition-colors">استعلام قیمت و مناقصات (RFQ)</Link></li>
               </ul>

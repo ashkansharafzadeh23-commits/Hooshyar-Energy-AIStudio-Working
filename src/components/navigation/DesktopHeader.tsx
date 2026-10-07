@@ -20,7 +20,8 @@ import {
   Compass,
   ArrowLeft,
   Menu,
-  X
+  X,
+  Newspaper
 } from 'lucide-react';
 import { NotificationCenter } from '../NotificationCenter';
 import { ThemeToggle } from '../ThemeToggle';
@@ -113,6 +114,9 @@ export const DesktopHeader: React.FC = () => {
     }
     if (path === '/partners') {
       return location.pathname === '/partners';
+    }
+    if (path === '/energy-center') {
+      return location.pathname === '/energy-center' || location.pathname.startsWith('/energy-center/');
     }
     if (path === '/ads/portal') {
       return location.pathname === '/ads/portal' || location.pathname === '/ads-portal';
