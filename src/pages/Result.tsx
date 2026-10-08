@@ -43,6 +43,7 @@ import {
   FinancialOverview, 
   AIResultExplanation 
 } from '../components/analysis';
+import { OptionalGeneratorOffer } from '../components/analysis/OptionalGeneratorOffer';
 
 export default function ResultPage() {
   const { state } = useAppContext();
@@ -858,6 +859,15 @@ export default function ResultPage() {
         <div className="w-full pt-1">
           <AdPlacement placement="BANNER" />
         </div>
+
+        {/* Optional Backup Generator & Portable Generator Offer (Complementary & Strictly Secondary) */}
+        <OptionalGeneratorOffer
+          usageType={state.locationType || undefined}
+          province={currentProvince}
+          city={currentCity}
+          gridStable={state.gridStable ?? true}
+          goal={(state as any).goal}
+        />
       </section>
 
       {/* Persian Scenario Save Prompt Modal */}

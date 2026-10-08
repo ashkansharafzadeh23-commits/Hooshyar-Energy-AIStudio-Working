@@ -21,6 +21,7 @@ import {
   AnalysisNextStep,
   AnalysisErrorState
 } from '../components/analysis';
+import { OptionalGeneratorOffer } from '../components/analysis/OptionalGeneratorOffer';
 
 type StepNumber = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
@@ -525,6 +526,15 @@ export default function SolarAnalysisExperience() {
         isSaved={isSaved}
         onSaveAnalysis={handleSaveAnalysis}
         onCreateProject={handleConvertToProject}
+      />
+
+      {/* 7. Optional Backup Generator & Portable Generator Offer (Complementary & Strictly Secondary) */}
+      <OptionalGeneratorOffer
+        usageType={usageType}
+        province={province}
+        city={city}
+        gridStable={gridStable}
+        goal={goal}
       />
     </div>
   );
