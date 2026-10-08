@@ -48,12 +48,24 @@ assert(componentContent.includes('بررسی موتور برق و ژنراتور
 assert(componentContent.includes('فعلاً نیازی ندارم'), 'Secondary dismiss button label is exact Persian copy');
 assert(componentContent.includes('سرویس مکمل و اختیاری'), 'Badge explicitly marks service as optional and complementary');
 
-// 2. Truthful Development Notice & No Fake Data
-console.log('\n--- 2. Transparent Development Notice & Anti-Hallucination ---');
-assert(
-  componentContent.includes('امکان محاسبه و پیشنهاد تخصصی ژنراتور در مرحله بعد تکمیل میشود.'),
-  'Contains exact development roadmap notice'
-);
+// 2. Assessment Experience & Transparent Roadmap Contract
+console.log('\n--- 2. Transparent Assessment Experience & Anti-Hallucination ---');
+const assessmentComponentPath = path.resolve(process.cwd(), 'src/components/generator/GeneratorAssessment.tsx');
+const hasAssessmentComponent = fs.existsSync(assessmentComponentPath);
+
+if (hasAssessmentComponent) {
+  const assessmentCode = fs.readFileSync(assessmentComponentPath, 'utf8');
+  assert(
+    componentContent.includes('<GeneratorAssessment') && assessmentCode.includes('role="dialog"'),
+    'Stage C: OptionalGeneratorOffer opens functional, accessible GeneratorAssessment dialog'
+  );
+} else {
+  assert(
+    componentContent.includes('امکان محاسبه و پیشنهاد تخصصی ژنراتور در مرحله بعد تکمیل میشود.'),
+    'Contains exact development roadmap notice'
+  );
+}
+
 assert(
   !componentContent.includes('/generators/assessment') && !componentContent.includes('/generators/recommendation'),
   'Does not link to non-existent broken generator routes'
@@ -67,8 +79,8 @@ assert(
   'Does not invent fake brand endorsements or vendor stocks in this stage'
 );
 assert(
-  componentContent.includes('role="dialog"') && componentContent.includes('aria-modal="true"'),
-  'Information modal includes standard accessibility dialog attributes'
+  componentContent.includes('<GeneratorAssessment') || (componentContent.includes('role="dialog"') && componentContent.includes('aria-modal="true"')),
+  'Accessible dialog attributes or GeneratorAssessment modal present'
 );
 
 // 3. Dismissal & State Isolation
