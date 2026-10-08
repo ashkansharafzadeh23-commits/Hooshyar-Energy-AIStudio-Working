@@ -25,17 +25,26 @@ export type GatewayErrorCode =
   | 'REQUEST_ID_MISMATCH'
   | 'GATEWAY_REQUEST_NONCE_MISMATCH'
   | 'SOURCE_ID_MISMATCH'
-  | 'RESOURCE_POLICY_VIOLATION';
+  | 'RESOURCE_POLICY_VIOLATION'
+  | 'RATE_LIMIT_EXCEEDED'
+  | 'REQUEST_BODY_TOO_LARGE'
+  | 'ARBITRARY_URL_NOT_PERMITTED'
+  | 'UPSTREAM_FETCH_FAILED'
+  | 'GATEWAY_TIMEOUT'
+  | 'GATEWAY_UNAVAILABLE'
+  | 'GATEWAY_HTTP_ERROR';
 
 export class GatewaySecurityError extends Error {
   public readonly code: GatewayErrorCode;
   public readonly statusCode: number;
+  public readonly requestId?: string;
 
-  constructor(message: string, code: GatewayErrorCode, statusCode = 400) {
+  constructor(message: string, code: GatewayErrorCode, statusCode = 400, requestId?: string) {
     super(message);
     this.name = 'GatewaySecurityError';
     this.code = code;
     this.statusCode = statusCode;
+    this.requestId = requestId;
     Object.setPrototypeOf(this, GatewaySecurityError.prototype);
   }
 }
