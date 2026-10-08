@@ -3,6 +3,7 @@ import {
   GeneratorSizingResult as IGeneratorSizingResult,
   SizingConfidenceStatus
 } from '../../types/generator';
+import { GeneratorSupplierDiscovery } from './GeneratorSupplierDiscovery';
 import {
   Zap,
   AlertTriangle,
@@ -19,12 +20,16 @@ import {
 
 interface GeneratorSizingResultProps {
   result: IGeneratorSizingResult;
+  userProvince?: string;
+  userCity?: string;
   onModifyInputs: () => void;
   onClose: () => void;
 }
 
 export const GeneratorSizingResult: React.FC<GeneratorSizingResultProps> = ({
   result,
+  userProvince,
+  userCity,
   onModifyInputs,
   onClose
 }) => {
@@ -193,6 +198,13 @@ export const GeneratorSizingResult: React.FC<GeneratorSizingResultProps> = ({
           ))}
         </ul>
       </div>
+
+      {/* Stage 13.11-D.2: Verified Generator Supplier Discovery */}
+      <GeneratorSupplierDiscovery
+        sizingResult={result}
+        userProvince={userProvince}
+        userCity={userCity}
+      />
 
       {/* Disclaimers */}
       <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 leading-relaxed border-t border-slate-100 dark:border-zinc-800 pt-3">

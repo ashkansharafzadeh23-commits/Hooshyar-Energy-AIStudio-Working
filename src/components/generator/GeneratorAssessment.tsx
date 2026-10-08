@@ -488,6 +488,8 @@ export const GeneratorAssessment: React.FC<GeneratorAssessmentProps> = ({
           sizingResult && (
             <GeneratorSizingResult
               result={sizingResult}
+              userProvince={initialProvince}
+              userCity={initialCity}
               onModifyInputs={() => setStep('FORM')}
               onClose={onClose}
             />

@@ -128,3 +128,66 @@ export interface GeneratorSizingResult {
   // Metadata
   calculatedAt: string;
 }
+
+export interface GeneratorDiscoveryFilter {
+  minKw?: number;
+  maxKw?: number;
+  minKva?: number;
+  maxKva?: number;
+  phase?: ElectricalPhaseType;
+  fuelType?: GeneratorFuelType;
+  province?: string;
+  city?: string;
+}
+
+export interface GeneratorMatchedProduct {
+  id: string;
+  name: string;
+  brand?: string;
+  model?: string;
+  category: string;
+  price?: number;
+  capacityKw?: number;
+  capacityKva?: number;
+  phase?: string;
+  fuelType?: string;
+  inStock?: boolean;
+  availability?: string;
+  images?: string[];
+  steadyStateComparisonNote: string;
+  startingCapabilityVerified: boolean;
+}
+
+export interface GeneratorSupplierMatch {
+  id: string;
+  companyName: string;
+  logoUrl?: string;
+  aboutUs?: string;
+  categories: string[];
+  city?: string;
+  province?: string;
+  address?: string;
+  workingHours?: string;
+  website?: string;
+  verified: boolean;
+  phones?: { label: string; number: string }[];
+  matchedProductsCount: number;
+  hasCapacityMatch: boolean;
+  hasPreliminaryRatingNearTarget: boolean;
+  matchedProducts: GeneratorMatchedProduct[];
+}
+
+export interface GeneratorSupplierDiscoveryResponse {
+  query: GeneratorDiscoveryFilter;
+  totalSuppliersCount: number;
+  matchedSuppliersCount: number;
+  hasMatches: boolean;
+  suppliers: GeneratorSupplierMatch[];
+  searchCriteriaSummary: {
+    targetCapacityKw: number | null;
+    phase: ElectricalPhaseType;
+    fuelTypes: GeneratorFuelType[];
+    location?: string;
+  };
+  engineeringDisclaimer: string;
+}

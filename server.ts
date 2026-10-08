@@ -177,6 +177,306 @@ app.get("/api/vendors", async (req, res) => {
   res.json(publicVendors);
 });
 
+// Stage 13.11-D.4: Authoritative Generator Supplier Discovery Endpoint with Strict Query Validation
+// Placed strictly BEFORE /api/vendors/:id to prevent wildcard route collision
+app.get("/api/vendors/generator-discovery", async (req, res) => {
+  try {
+    const {
+      kw,
+      kva,
+      phase,
+      fuelType,
+      city,
+      province
+    } = req.query;
+
+    const validationErrors: { field: string; message: string }[] = [];
+
+    // Helper: strict positive finite number parser
+    const parseStrictPositiveNumber = (val: any, fieldName: string): number | undefined => {
+      if (val === undefined || val === null || val === '') return undefined;
+      if (typeof val !== 'string' && typeof val !== 'number') {
+        validationErrors.push({ field: fieldName, message: `${fieldName} must be a valid numeric string or number` });
+        return undefined;
+      }
+      const strVal = String(val).trim();
+      // Strict regex for positive integer or decimal
+      if (!/^\d+(\.\d+)?$/.test(strVal)) {
+        validationErrors.push({ field: fieldName, message: `${fieldName} must be a valid positive number` });
+        return undefined;
+      }
+      const num = Number(strVal);
+      if (!Number.isFinite(num) || num <= 0) {
+        validationErrors.push({ field: fieldName, message: `${fieldName} must be a finite positive number greater than 0` });
+        return undefined;
+      }
+      return num;
+    };
+
+    const targetKw = parseStrictPositiveNumber(kw, 'kw');
+    const targetKva = parseStrictPositiveNumber(kva, 'kva');
+
+    // Phase validation: SINGLE_PHASE, THREE_PHASE, UNKNOWN, 1, 3
+    let normalizedPhase: string | undefined = undefined;
+    if (phase !== undefined && phase !== null && phase !== '') {
+      const pStr = String(phase).trim().toUpperCase();
+      if (['SINGLE_PHASE', '1', 'تک فاز', 'تک‌فاز'].includes(pStr)) {
+        normalizedPhase = 'SINGLE_PHASE';
+      } else if (['THREE_PHASE', '3', 'سه فاز', 'سه‌فاز'].includes(pStr)) {
+        normalizedPhase = 'THREE_PHASE';
+      } else if (pStr === 'UNKNOWN') {
+        normalizedPhase = 'UNKNOWN';
+      } else {
+        validationErrors.push({
+          field: 'phase',
+          message: `فاز نامعتبر است. مقادیر مجاز: SINGLE_PHASE, THREE_PHASE, UNKNOWN`
+        });
+      }
+    }
+
+    // FuelType validation: GASOLINE, NATURAL_GAS, DIESEL, DUAL_FUEL
+    let normalizedFuel: string | undefined = undefined;
+    if (fuelType !== undefined && fuelType !== null && fuelType !== '') {
+      const fStr = String(fuelType).trim().toUpperCase();
+      const validFuels = ['GASOLINE', 'NATURAL_GAS', 'DIESEL', 'DUAL_FUEL'];
+      if (validFuels.includes(fStr)) {
+        normalizedFuel = fStr;
+      } else {
+        validationErrors.push({
+          field: 'fuelType',
+          message: `نوع سوخت نامعتبر است. مقادیر مجاز: ${validFuels.join(', ')}`
+        });
+      }
+    }
+
+    // String length limits for city and province
+    let validCity: string | undefined = undefined;
+    if (city !== undefined && city !== null && city !== '') {
+      const cStr = String(city).trim();
+      if (cStr.length > 60) {
+        validationErrors.push({ field: 'city', message: 'طول نام شهر نباید بیش از ۶۰ کاراکتر باشد' });
+      } else {
+        validCity = cStr;
+      }
+    }
+
+    let validProvince: string | undefined = undefined;
+    if (province !== undefined && province !== null && province !== '') {
+      const pStr = String(province).trim();
+      if (pStr.length > 60) {
+        validationErrors.push({ field: 'province', message: 'طول نام استان نباید بیش از ۶۰ کاراکتر باشد' });
+      } else {
+        validProvince = pStr;
+      }
+    }
+
+    if (validationErrors.length > 0) {
+      return res.status(400).json({
+        error: "پارامترهای جستجوی تأمین‌کننده نامعتبر است",
+        validationErrors
+      });
+    }
+
+    const allVendors = db.getVendors() || [];
+    const allProducts = db.getProducts?.() || [];
+
+    // Generator-related category tokens for specialization check
+    const GENERATOR_CATEGORY_TOKENS = [
+      'generator',
+      'diesel_generator',
+      'gas_generator',
+      'gasoline_generator',
+      'portable_generator',
+      'genset',
+      'موتور برق',
+      'دیزل ژنراتور',
+      'ژنراتور گازسوز',
+      'موتوربرق',
+      'ژنراتور دیزلی',
+      'ژنراتور اضطراری',
+      'تجهیزات برق اضطراری و دیزل ژنراتور'
+    ];
+
+    const isGeneratorCategory = (cat: string) => {
+      if (!cat || typeof cat !== 'string') return false;
+      const lower = cat.toLowerCase().trim();
+      return GENERATOR_CATEGORY_TOKENS.some(token => lower.includes(token));
+    };
+
+    // Stage 13.11-D.3 Security Enforcement: Strictly approved vendors only
+    // Never allow isPublished === true to bypass status !== 'approved'
+    // Exclude pending_review, rejected, suspended, missing-status, and unknown-status vendors
+    const approvedVendors = allVendors.filter((v: any) => v && typeof v.id === 'string' && v.status === 'approved');
+
+    const matchedSuppliers = [];
+
+    for (const v of approvedVendors) {
+      // Optional Location Filtering
+      if (validProvince) {
+        const pNorm = (v.province || '').toLowerCase();
+        const cNorm = (v.city || '').toLowerCase();
+        const qNorm = validProvince.toLowerCase();
+        if (!pNorm.includes(qNorm) && !cNorm.includes(qNorm)) {
+          continue;
+        }
+      }
+
+      if (validCity) {
+        const cNorm = (v.city || '').toLowerCase();
+        const qNorm = validCity.toLowerCase();
+        if (!cNorm.includes(qNorm)) {
+          continue;
+        }
+      }
+
+      // Stage 13.11-D.3 Product Ownership Verification:
+      // Only associate products that explicitly belong to this vendor via vendorId or ownerId.
+      // Orphan products with no owner/vendor are strictly excluded.
+      const vendorProducts = allProducts.filter((p: any) => {
+        if (!p || !p.id || !v.id) return false;
+        const isOwned = (p.vendorId && p.vendorId === v.id) ||
+                        (p.ownerId && p.ownerId === v.id && (p.ownerType === 'VENDOR' || !p.ownerType));
+        return Boolean(isOwned);
+      });
+
+      // Check if vendor profile has registered generator categories
+      const vendorCategories: string[] = Array.isArray(v.categories) ? v.categories : [];
+      const hasGeneratorCategory = vendorCategories.some(cat => isGeneratorCategory(cat));
+
+      // Filter vendor-owned products that are generators
+      const generatorProducts = vendorProducts.filter((p: any) => {
+        const cat = typeof p.category === 'string' ? p.category : '';
+        const name = typeof p.name === 'string' ? p.name : '';
+        return isGeneratorCategory(cat) || isGeneratorCategory(name);
+      });
+
+      // Specialization Gate: Vendor qualifies ONLY if:
+      // 1. Explicit generator category in vendor profile, OR
+      // 2. Verified vendor-owned generator products in catalog
+      // Generic solar EPC contractors without generators are rejected!
+      if (!hasGeneratorCategory && generatorProducts.length === 0) {
+        continue;
+      }
+
+      // Filter by fuelType or phase if requested and vendor has products
+      let filteredProducts = generatorProducts;
+      if (normalizedFuel) {
+        const fuelQuery = normalizedFuel.toLowerCase();
+        const fuelMatches = generatorProducts.filter((p: any) => {
+          const pFuel = String(p.specs?.fuelType || p.fuelType || '').toLowerCase();
+          const pName = String(p.name || '').toLowerCase();
+          return pFuel.includes(fuelQuery) || pName.includes(fuelQuery);
+        });
+        if (fuelMatches.length > 0) {
+          filteredProducts = fuelMatches;
+        }
+      }
+
+      if (normalizedPhase) {
+        const phaseMatches = generatorProducts.filter((p: any) => {
+          const rawPhase = String(p.specs?.phase || p.phase || '').toUpperCase();
+          if (normalizedPhase === 'THREE_PHASE') {
+            return rawPhase === 'THREE_PHASE' || rawPhase === '3';
+          }
+          if (normalizedPhase === 'SINGLE_PHASE') {
+            return rawPhase === 'SINGLE_PHASE' || rawPhase === '1';
+          }
+          return rawPhase.includes(normalizedPhase);
+        });
+        if (phaseMatches.length > 0) {
+          filteredProducts = phaseMatches;
+        }
+      }
+
+      let hasPreliminaryRatingNearTarget = false;
+      const matchedProducts = [];
+
+      for (const p of filteredProducts) {
+        const specs = p.specs || {};
+        const pKw = specs.powerKw || specs.capacityKw || p.powerKw || (p.power && p.powerUnit === 'KW' ? p.power : undefined);
+        const pKva = specs.powerKva || specs.capacityKva || p.powerKva || (p.power && p.powerUnit === 'KVA' ? p.power : undefined);
+
+        let ratingNearTarget = false;
+        if (targetKw && pKw) {
+          ratingNearTarget = Math.abs(pKw - targetKw) <= Math.max(targetKw * 0.25, 2.0);
+        } else if (targetKva && pKva) {
+          ratingNearTarget = Math.abs(pKva - targetKva) <= Math.max(targetKva * 0.25, 2.5);
+        }
+
+        if (ratingNearTarget) {
+          hasPreliminaryRatingNearTarget = true;
+        }
+
+        matchedProducts.push({
+          id: p.id,
+          name: p.name,
+          brand: p.brand,
+          model: p.model,
+          category: p.category,
+          price: p.price,
+          capacityKw: pKw,
+          capacityKva: pKva,
+          phase: specs.phase || p.phase,
+          fuelType: specs.fuelType || p.fuelType,
+          inStock: p.inStock !== false,
+          availability: p.availability || (p.inStock === false ? 'UNAVAILABLE' : 'AVAILABLE'),
+          images: await signMediaArray(p.images),
+          // Clear engineering distinction: preliminary steady-state only, motor starting unverified
+          steadyStateComparisonNote: "مقایسه صرفاً بر مبنای بار نامی حالت پایدار (Steady-State) است. توان راه‌اندازی الکتروموتورها و الزامات فنی نصب در محل باید حتماً توسط کارشناس و بر اساس کاتالوگ سازنده تأیید شود.",
+          startingCapabilityVerified: false
+        });
+      }
+
+      const signedLogo = v.logoKey ? await signMediaItem(v.logoKey) : (v.logoUrl || "");
+
+      matchedSuppliers.push({
+        id: v.id,
+        companyName: v.companyName,
+        logoUrl: signedLogo,
+        aboutUs: v.aboutUs || "",
+        categories: v.categories || [],
+        city: v.city || "",
+        province: v.province || "",
+        address: v.address || "",
+        workingHours: v.workingHours || "",
+        website: v.website || "",
+        verified: v.status === "approved",
+        phones: v.phones || [],
+        matchedProductsCount: generatorProducts.length,
+        hasCapacityMatch: hasPreliminaryRatingNearTarget,
+        hasPreliminaryRatingNearTarget,
+        matchedProducts
+      });
+    }
+
+    res.json({
+      query: {
+        kw: targetKw,
+        kva: targetKva,
+        phase: (normalizedPhase as any) || undefined,
+        fuelType: (normalizedFuel as any) || undefined,
+        city: validCity,
+        province: validProvince
+      },
+      totalSuppliersCount: approvedVendors.length,
+      matchedSuppliersCount: matchedSuppliers.length,
+      hasMatches: matchedSuppliers.length > 0,
+      suppliers: matchedSuppliers,
+      searchCriteriaSummary: {
+        targetCapacityKw: targetKw || null,
+        phase: (normalizedPhase as any) || 'UNKNOWN',
+        fuelTypes: normalizedFuel ? [normalizedFuel as any] : [],
+        location: validCity ? `${validCity}${validProvince ? ` - ${validProvince}` : ''}` : (validProvince || undefined)
+      },
+      engineeringDisclaimer: "مقایسه صرفاً بر مبنای بار نامی حالت پایدار (Steady-State) است. توان راه‌اندازی الکتروموتورها و الزامات فنی نصب در محل باید حتماً توسط کارشناس و بر اساس کاتالوگ سازنده تأیید شود."
+    });
+  } catch (err: any) {
+    console.error("Generator discovery error:", err);
+    res.status(500).json({ error: "خطا در جستجوی تأمین‌کنندگان موتور برق و ژنراتور" });
+  }
+});
+
+
 app.get("/api/vendors/:id", async (req, res) => {
   const v = db.getVendorById?.(req.params.id) || (db.getVendors() || []).find((x: any) => x.id === req.params.id);
   if (!v) return res.status(404).json({ error: "فروشگاه یافت نشد." });
