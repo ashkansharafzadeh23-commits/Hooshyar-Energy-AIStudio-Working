@@ -11,6 +11,11 @@ import {
 import { GoogleGenAI } from '@google/genai';
 import { externalCircuitBreakers } from '../reliability/circuitBreaker.js';
 import { logger } from '../observability/logger.js';
+import {
+  isGeneratorEquipment,
+  evaluateGeneratorPreliminaryFaults
+} from './generatorDiagnosisEngine.js';
+import { GeneratorOperatingContext } from '../types/generatorMaintenance.js';
 
 let geminiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
@@ -48,6 +53,7 @@ export const diagnosisService = {
     billData?: any;
     locationCity?: string;
     triggerAiAssisted?: boolean;
+    operatingContext?: GeneratorOperatingContext;
   }): Promise<MaintenanceDiagnosis> => {
     const { alertId, componentId, triggerAiAssisted } = params;
 
@@ -69,6 +75,9 @@ export const diagnosisService = {
     if (params.description) {
       collectedSymptoms.push(`شرح مشکل: ${params.description}`);
     }
+
+    // Check for Generator Equipment
+    const isGenerator = isGeneratorEquipment(params.equipmentType) || isGeneratorEquipment(asset?.assetType);
 
     if (alert) {
       collectedSymptoms.push(`${alert.title}: ${alert.description}`);
@@ -155,6 +164,11 @@ export const diagnosisService = {
     let confidenceScore = 80;
     let diagnosisStatus: 'INSUFFICIENT_DATA' | 'POSSIBLE_CAUSE_IDENTIFIED' | 'MANUAL_REVIEW_REQUIRED' | 'ACTION_RECOMMENDED' = 'ACTION_RECOMMENDED';
 
+    // Required Tools, Parts, Safety Guidance
+    const requiredTools: string[] = [];
+    const requiredParts: string[] = [];
+    let safetyGuidance: string[] = [];
+
     const isInverterRelated = symptomsText.includes('inverter') || symptomsText.includes('اینورتر') || alert?.alertType === 'INVERTER_FAULT' || alert?.metricType === 'V_DC' || params.equipmentType === 'INVERTER';
     const isBatteryRelated = symptomsText.includes('battery') || symptomsText.includes('soc') || symptomsText.includes('باتری') || alert?.metricType === 'BATTERY_SOC' || params.equipmentType === 'BATTERY';
     const isTempRelated = symptomsText.includes('temperature') || symptomsText.includes('دما') || symptomsText.includes('حرارت') || alert?.metricType === 'MODULE_TEMPERATURE';
@@ -162,7 +176,36 @@ export const diagnosisService = {
     const isGridRelated = symptomsText.includes('frequency') || symptomsText.includes('voltage') || symptomsText.includes('فرکانس') || symptomsText.includes('ولتاژ') || alert?.metricType === 'FREQUENCY' || alert?.metricType === 'VOLTAGE';
     const isTelemetryLoss = symptomsText.includes('loss') || symptomsText.includes('مفقودی') || symptomsText.includes('قطع ارتباط') || alert?.source === 'TELEMETRY_LOSS';
 
-    if (isInverterRelated) {
+    let isGeneratorSafetyEscalation = false;
+    let generatorCriticalHazards: string[] = [];
+
+    if (isGenerator) {
+      const genResult = evaluateGeneratorPreliminaryFaults({
+        equipmentCategory: params.equipmentType || 'PORTABLE_GENERATOR',
+        symptoms: collectedSymptoms,
+        description: params.description,
+        operatingContext: params.operatingContext
+      });
+
+      likelyRootCauses.push(...genResult.rootCauses);
+      recommendedActions.push(...genResult.actions);
+      requiredTools.push(...genResult.requiredTools);
+      requiredParts.push(...genResult.requiredParts);
+      safetyGuidance = [...genResult.safetyGuidance];
+      isGeneratorSafetyEscalation = genResult.isUrgentSafetyEscalation;
+      generatorCriticalHazards = genResult.criticalHazardsIdentified;
+
+      // Map qualitative generator status into legacy diagnosisStatus safely
+      if (genResult.qualitativeStatus === 'URGENT_SAFETY_ESCALATION') {
+        diagnosisStatus = 'ACTION_RECOMMENDED';
+      } else if (genResult.qualitativeStatus === 'INSUFFICIENT_INFORMATION') {
+        diagnosisStatus = 'INSUFFICIENT_DATA';
+      } else {
+        diagnosisStatus = 'ACTION_RECOMMENDED';
+      }
+      // Zero out confidence score for generators: no arbitrary percentage claims
+      confidenceScore = 0;
+    } else if (isInverterRelated) {
       likelyRootCauses.push(
         { cause: 'خطای ایزولاسیون سمت DC یا اتصال زمین استرینگ‌ها (Isolation Fault / Ground Fault)', probability: 0.55, description: 'افت مقاومت عایقی کابل‌های DC متصل به ورودی اینورتر' },
         { cause: 'اشکال در ماژول‌های قدرت IGBT یا خرابی برد کنترل اینورتر', probability: 0.30, description: 'داغ شدن بیش از حد یا اتصال کوتاه در طبقه اینورتینگ' },
@@ -275,6 +318,14 @@ export const diagnosisService = {
       `وضعیت گارانتی: اطلاعات گارانتی در دسترس نیست یا ثبت نشده است.`
     ];
 
+    if (isGenerator) {
+      if (isGeneratorSafetyEscalation) {
+        facts.unshift(`[وضعیت ایمنی اضطراری]: تشدید فوری وضعیت ایمنی به دلیل خطرات حیاتی شناسایی‌شده (${generatorCriticalHazards.join(' | ')})`);
+      } else {
+        facts.unshift(`[ارزیابی کیفی اولیه]: نیازمند بررسی حضوری کارشناس و بازدید فنی O&M`);
+      }
+    }
+
     if (alert) {
       facts.push(`هشدار دریافتی: کد ${alert.alertCode}، عنوان: ${alert.title} (شدت: ${alert.severity})`);
       if (alert.metricType) {
@@ -284,34 +335,35 @@ export const diagnosisService = {
 
     // Inferences explicitly distinct from facts
     const inferences: string[] = likelyRootCauses.map(
-      rc => `[استنتاج تحلیلی - احتمال ${(rc.probability * 100).toFixed(0)}٪]: ${rc.cause}`
+      rc => isGenerator
+        ? `[علت احتمالی نیازمند بررسی]: ${rc.cause}`
+        : `[استنتاج تحلیلی - احتمال ${(rc.probability * 100).toFixed(0)}٪]: ${rc.cause}`
     );
 
-    // Required Tools, Parts, Safety Guidance
-    const requiredTools: string[] = [];
-    const requiredParts: string[] = [];
-    const safetyGuidance: string[] = [
-      'هشدار ایمنی ولتاژ بالا: مدارهای استرینگ DC نیروگاه خورشیدی حتی در روزهای ابری برق‌دار و خطرناک هستند.',
-      'پیش از هرگونه دستکاری یا بازرسی مکانیکی، کلید قطع زیر بار DC (Isolator) و کلید مینیاتوری AC را قطع نمایید.',
-      'هرگز اتصالات کانکتورهای MC4 را در شرایط زیر بار قطع یا وصل نکنید (خطر ایجاد قوس الکتریکی شدید Arc Flash).',
-      'در صورت مشاهده بوی سوختگی، صدای جرقه یا دود، بلافاصله کلید اصلی تابلو را قطع و از تجهیز فاصله بگیرید.'
-    ];
+    if (!isGenerator) {
+      safetyGuidance = [
+        'هشدار ایمنی ولتاژ DC بالا: مدارهای استرینگ DC نیروگاه خورشیدی حتی در روزهای ابری برق‌دار و خطرناک هستند.',
+        'پیش از هرگونه دستکاری یا بازرسی مکانیکی، کلید قطع زیر بار DC (Isolator) و کلید مینیاتوری AC را قطع نمایید.',
+        'هرگز اتصالات کانکتورهای MC4 را در شرایط زیر بار قطع یا وصل نکنید (خطر ایجاد قوس الکتریکی شدید Arc Flash).',
+        'در صورت مشاهده بوی سوختگی، صدای جرقه یا دود، بلافاصله کلید اصلی تابلو را قطع و از تجهیز فاصله بگیرید.'
+      ];
 
-    if (isInverterRelated) {
-      requiredTools.push('مولتی‌متر دیجیتال کلمپی ۱۰۰۰ ولت DC با استاندارد CAT III/IV', 'تستر مقاومت عایقی و میگر (Megohmmeter)', 'تستر توالی فاز و فرکانس شبکه AC');
-      requiredParts.push('سرج ارستر / محافظ اضافه ولتاژ DC (Surge Protective Device - SPD)', 'فیوزهای سرامیکی تندکار استرینگ gPV', 'فن خنک‌کننده یا برد پاور/کنترل اینورتر');
-    } else if (isBatteryRelated) {
-      requiredTools.push('تستر مقاومت داخلی باتری و ولت‌متر میلی‌ولت دقیق', 'دستگاه تست دشارژ و لود بانک باتری', 'تجهیزات حفاظت فردی ضداسید و شوک الکتریکی');
-      requiredParts.push('کابل‌های ارتباطی جامپر باتری با روکش نسوز', 'فیوز حفاظتی خط باتری استاندارد NH', 'ماژول بالانسر ولتاژ سلول‌های باتری');
-    } else if (isTempRelated || isPerformanceDrop) {
-      requiredTools.push('دوربین ترموویژن مادون قرمز جهت شناسایی Hotspot', 'دستگاه سنجش تابش خورشیدی (Solar Pyranometer / Solarmeter)', 'آچار استاندارد باز و بست و پرس کانکتورهای MC4');
-      requiredParts.push('دیودهای بای‌پاس جعبه تقسیم پنل (Bypass Diode)', 'کانکتورهای استاندارد ضدآب MC4 نر و مادگی', 'کابل خورشیدی ۴ یا ۶ میلی‌متر مربع مقاوم در برابر اشعه UV');
-    } else if (isGridRelated) {
-      requiredTools.push('دستگاه سنجش کیفیت توان و آنالایزر شبکه AC');
-      requiredParts.push('رله اضافه/کاهش ولتاژ و فرکانس');
-    } else if (isTelemetryLoss) {
-      requiredTools.push('تستر کابل شبکه RJ45 و مولتی‌متر تست پیوستگی RS-485');
-      requiredParts.push('مودم/روتر صنعتی ۴G یا مبدل ارتباطی RS-485 به TCP/IP');
+      if (isInverterRelated) {
+        requiredTools.push('مولتی‌متر دیجیتال کلمپی ۱۰۰۰ ولت DC با استاندارد CAT III/IV', 'تستر مقاومت عایقی و میگر (Megohmmeter)', 'تستر توالی فاز و فرکانس شبکه AC');
+        requiredParts.push('سرج ارستر / محافظ اضافه ولتاژ DC (Surge Protective Device - SPD)', 'فیوزهای سرامیکی تندکار استرینگ gPV', 'فن خنک‌کننده یا برد پاور/کنترل اینورتر');
+      } else if (isBatteryRelated) {
+        requiredTools.push('تستر مقاومت داخلی باتری و ولت‌متر میلی‌ولت دقیق', 'دستگاه تست دشارژ و لود بانک باتری', 'تجهیزات حفاظت فردی ضداسید و شوک الکتریکی');
+        requiredParts.push('کابل‌های ارتباطی جامپر باتری با روکش نسوز', 'فیوز حفاظتی خط باتری استاندارد NH', 'ماژول بالانسر ولتاژ سلول‌های باتری');
+      } else if (isTempRelated || isPerformanceDrop) {
+        requiredTools.push('دوربین ترموویژن مادون قرمز جهت شناسایی Hotspot', 'دستگاه سنجش تابش خورشیدی (Solar Pyranometer / Solarmeter)', 'آچار استاندارد باز و بست و پرس کانکتورهای MC4');
+        requiredParts.push('دیودهای بای‌پاس جعبه تقسیم پنل (Bypass Diode)', 'کانکتورهای استاندارد ضدآب MC4 نر و مادگی', 'کابل خورشیدی ۴ یا ۶ میلی‌متر مربع مقاوم در برابر اشعه UV');
+      } else if (isGridRelated) {
+        requiredTools.push('دستگاه سنجش کیفیت توان و آنالایزر شبکه AC');
+        requiredParts.push('رله اضافه/کاهش ولتاژ و فرکانس');
+      } else if (isTelemetryLoss) {
+        requiredTools.push('تستر کابل شبکه RJ45 و مولتی‌متر تست پیوستگی RS-485');
+        requiredParts.push('مودم/روتر صنعتی ۴G یا مبدل ارتباطی RS-485 به TCP/IP');
+      }
     }
 
     if (params.photos && params.photos.length > 0) {
@@ -378,7 +430,23 @@ export const diagnosisService = {
     const ai = getGeminiClient();
     if (ai && triggerAiAssisted !== false) {
       try {
-        const prompt = `شما یک مهندس ارشد و کارشناس عیب‌یابی نیروگاه‌های خورشیدی و سیستم‌های انرژی تجدیدپذیر هستید.
+        const prompt = isGenerator
+          ? `شما یک مهندس ارشد و کارشناس عیب‌یابی انواع دیزل‌ژنراتورها و موتورهای برق پرتابل بنزینی/گازسوز هستید.
+${hasImages ? 'تصویر/تصاویر ارسالی از ژنراتور، کاربراتور، پمپ گازوئیل، سیم‌پیچ دینام، یا نشتی سوخت و دود ضمیمه شده است. لطفاً وضعیت ظاهری، علائم سوختگی، نشتی سوخت/روغن، دوده اگزوز، سایش قطعات و وضعیت مکانیکی را دقیق بررسی کنید.' : ''}
+
+اطلاعات تجهیز ژنراتور:
+- نوع تجهیز: ${params.equipmentType === 'PORTABLE_GENERATOR' ? 'موتور برق پرتابل' : 'دیزل‌ژنراتور / ژنراتور ثابت'}
+- نشانه‌ها و علائم ثبت‌شده کاربر: ${collectedSymptoms.join(' | ') || 'بررسی وضعیت عمومی'}
+- محل استقرار: ${params.locationCity || 'ثبت‌نشده'}
+
+دستورالعمل ایمنی حیاتی:
+۱. خطر مونوکسید کربن (CO): تاکید فوری بر عدم راه‌اندازی در فضای بسته و الزام به کاربری در فضای باز با تهویه کامل.
+۲. خطر اشتعال سوخت: در صورت مشاهده نشتی بنزین/گازوئیل، تاکید بر توقف فوری بهره‌برداری، دور شدن از دستگاه، پرهیز از ایجاد هرگونه جرقه یا استارت، و استمداد فوری از تکنسین مجرب یا آتش‌نشانی. هرگز نباید اقدام به دستکاری باتری یا اتصالات در مجاورت بخارات سوخت شود.
+۳. خطر ولتاژ برگشتی (Backfeed): تاکید بر لزوم استفاده از کلید چنج‌اور استاندارد جهت حفظ جان تکنسین‌های شبکه برق.
+${hasImages ? 'اگر تصویر برای تشخیص دقیق کافی نیست، صراحتاً اعلام کنید: «تصویر برای تشخیص قطعی کافی نیست. لطفاً تصویر واضح‌تری از محل مورد نظر بارگذاری کنید.»' : ''}
+
+بر اساس این شواهد، لطفاً تحلیل فنی محافظه‌کارانه از علت ریشه‌ای و ۳ اقدام اولویت‌دار بعدی را ارائه دهید. پاسخ خلاصه، تخصصی و به زبان فارسی باشد.`
+          : `شما یک مهندس ارشد و کارشناس عیب‌یابی نیروگاه‌های خورشیدی و سیستم‌های انرژی تجدیدپذیر هستید.
 ${hasImages ? 'تصویر/تصاویر ارسالی از تجهیز یا قطعه آسیب‌دیده ضمیمه شده است. لطفاً به دقت وضعیت ظاهری، علائم سوختگی، تغییر رنگ، شکستگی، داغ‌شدگی، دوده، آثار شل‌شدگی اتصالات یا آسیب مکانیکی/الکتریکی را در تصویر بررسی کنید.' : ''}
 
 اطلاعات دارایی یا تجهیز:
@@ -415,7 +483,12 @@ ${hasImages ? 'تصویر/تصاویر ارسالی از تجهیز یا قطع�
         if (response && response.text) {
           rawAiResponse = response.text;
           diagnosisMethod = 'AI_ASSISTED';
-          confidenceScore = Math.min(95, confidenceScore + (hasImages ? 10 : 5));
+          // Preserve confidence score = 0 for generators (only solar adjusts calibrated confidence)
+          if (!isGenerator) {
+            confidenceScore = Math.min(95, confidenceScore + (hasImages ? 10 : 5));
+          } else {
+            confidenceScore = 0;
+          }
 
           if (hasImages) {
             inferences.push('تحلیل چندوجهی تصویر و متن با هوش مصنوعی (Visual Multimodal AI) انجام شد.');
@@ -436,6 +509,12 @@ ${hasImages ? 'تصویر/تصاویر ارسالی از تجهیز یا قطع�
           evidenceCategorized.PHOTO_OBSERVED.push('تصویر دریافت شد؛ به علت عدم پاسخ‌دهی موتور بینایی هوش مصنوعی، تحلیل بر مبنای قوانین مهندسی انجام گرفت.');
         }
       }
+    }
+
+    // Critical Hazard Integrity: Never allow AI or any layer to downgrade urgent generator safety
+    if (isGenerator && isGeneratorSafetyEscalation) {
+      diagnosisStatus = 'ACTION_RECOMMENDED';
+      confidenceScore = 0;
     }
 
     const created = maintenanceRepository.createDiagnosis({

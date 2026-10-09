@@ -28,6 +28,15 @@ import {
   LogIn
 } from 'lucide-react';
 import { MaintenanceCase, MaintenanceDiagnosis, TechnicianMatch } from '../../types/maintenance';
+import {
+  GENERATOR_COMMON_SYMPTOMS,
+  GeneratorOperatingContext,
+  GeneratorFuelSource,
+  GeneratorStorageDuration,
+  GeneratorStartingMethod,
+  GeneratorPhaseContext,
+  GENERATOR_SAFETY_RULES
+} from '../../types/generatorMaintenance';
 
 interface CustomerMaintenanceRequestProps {
   onCaseCreated: (newCase: MaintenanceCase) => void;
@@ -58,6 +67,15 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
   const [equipmentModel, setEquipmentModel] = useState<string>('');
   const [locationCity, setLocationCity] = useState<string>('تهران');
   const [approxCapacityKw, setApproxCapacityKw] = useState<string>('');
+
+  // Generator Operating Context (Step 1 & Step 2)
+  const isGenerator = equipmentType === 'PORTABLE_GENERATOR' || equipmentType === 'STATIONARY_GENSET';
+  const [genFuelType, setGenFuelType] = useState<GeneratorFuelSource>('GASOLINE');
+  const [genPhase, setGenPhase] = useState<GeneratorPhaseContext>('SINGLE_PHASE');
+  const [genStartingMethod, setGenStartingMethod] = useState<GeneratorStartingMethod>('ELECTRIC_KEY');
+  const [genStorageDuration, setGenStorageDuration] = useState<GeneratorStorageDuration>('ACTIVE_WEEKLY');
+  const [genRunningHours, setGenRunningHours] = useState<string>('');
+  const [genLastServiceMonths, setGenLastServiceMonths] = useState<string>('');
 
   // Step 2: Symptoms & Problem
   const [problemTitle, setProblemTitle] = useState<string>('');
@@ -195,6 +213,14 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
         symptoms: selectedSymptoms,
         description: problemDescription,
         locationCity,
+        operatingContext: isGenerator ? {
+          fuelType: genFuelType,
+          phase: genPhase,
+          startingMethod: genStartingMethod,
+          storageDuration: genStorageDuration,
+          runningHoursEstimate: genRunningHours ? Number(genRunningHours) : undefined,
+          lastServiceMonthsAgo: genLastServiceMonths ? Number(genLastServiceMonths) : undefined
+        } : undefined,
         photos: photos.map(p => ({
           name: p.name,
           data: p.base64,
@@ -277,12 +303,73 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
       const selectedAsset = userAssets.find(a => a.id === selectedAssetId);
       const effectiveTech = autoMatch ? (technicians[0] || null) : selectedTechnician;
 
+      // Format human-readable generator technical specifications if generator is selected
+      let finalDescription = problemDescription || `درخواست ثبت‌شده برای تجهیز ${equipmentType} با علائم: ${selectedSymptoms.join('، ')}`;
+
+      if (isGenerator) {
+        const specLines: string[] = [];
+        specLines.push(`• نوع تجهیز مولد: ${equipmentType === 'PORTABLE_GENERATOR' ? 'موتور برق پرتابل' : 'ژنراتور ثابت / دیزل‌ژنراتور'}`);
+        if (equipmentBrand && equipmentBrand.trim()) specLines.push(`• سازنده / برند: ${equipmentBrand.trim().slice(0, 50)}`);
+        if (approxCapacityKw && approxCapacityKw.trim() && !isNaN(Number(approxCapacityKw))) {
+          specLines.push(`• توان اعلامی کاربر: ${approxCapacityKw.trim()} کیلووات/kVA`);
+        }
+        if (genFuelType) {
+          const fuelLabels: Record<string, string> = {
+            GASOLINE: 'بنزینی',
+            DIESEL: 'دیزل / گازوئیل',
+            NATURAL_GAS_CNG: 'گازسوز شهری / CNG',
+            DUAL_FUEL: 'دوگانه‌سوز'
+          };
+          if (fuelLabels[genFuelType]) specLines.push(`• نوع سوخت: ${fuelLabels[genFuelType]}`);
+        }
+        if (genPhase) {
+          const phaseLabels: Record<string, string> = {
+            SINGLE_PHASE: 'تک‌فاز (۲۲۰ ولت)',
+            THREE_PHASE: 'سه‌فاز (۳۸۰/۴۰۰ ولت)'
+          };
+          if (phaseLabels[genPhase]) specLines.push(`• فاز خروجی: ${phaseLabels[genPhase]}`);
+        }
+        if (genStartingMethod) {
+          const startLabels: Record<string, string> = {
+            ELECTRIC_KEY: 'استارت برقی با سوییچ',
+            RECOIL_MANUAL: 'هندلی دستی (طنابی)',
+            ATS_AUTOMATIC: 'تابلو چنج‌اور اتوماتیک (ATS)'
+          };
+          if (startLabels[genStartingMethod]) specLines.push(`• مکانیزم استارت: ${startLabels[genStartingMethod]}`);
+        }
+        if (genStorageDuration) {
+          const storageLabels: Record<string, string> = {
+            ACTIVE_WEEKLY: 'به‌طور منظم در حال استفاده (هفتگی/روزانه)',
+            STORED_UNDER_3_MO: 'خاموش کمتر از ۳ ماه',
+            STORED_OVER_3_MO: 'خوابیده در انبار بیش از ۳ ماه'
+          };
+          if (storageLabels[genStorageDuration]) specLines.push(`• وضعیت کارکرد/انبارش: ${storageLabels[genStorageDuration]}`);
+        }
+        if (genRunningHours && !isNaN(Number(genRunningHours)) && Number(genRunningHours) >= 0) {
+          specLines.push(`• کارکرد تقریبی دستگاه: ${Number(genRunningHours)} ساعت`);
+        }
+        if (genLastServiceMonths && !isNaN(Number(genLastServiceMonths)) && Number(genLastServiceMonths) >= 0) {
+          specLines.push(`• آخرین سرویس دوره‌ای: ${Number(genLastServiceMonths)} ماه قبل`);
+        }
+        if (locationCity && locationCity.trim()) {
+          specLines.push(`• شهر / محل استقرار: ${locationCity.trim().slice(0, 50)}`);
+        }
+        if (selectedSymptoms && selectedSymptoms.length > 0) {
+          specLines.push(`• علائم و نشانه‌های انتخابی: ${selectedSymptoms.join(' | ')}`);
+        }
+
+        const generatorHeader = '\n\n--- مشخصات فنی و شرایط بهره‌برداری ژنراتور (اظهار مشتری) ---\n' + specLines.join('\n');
+        if (!finalDescription.includes('--- مشخصات فنی و شرایط بهره‌برداری ژنراتور')) {
+          finalDescription = finalDescription + generatorHeader;
+        }
+      }
+
       const payload = {
         assetId: assetChoice === 'REGISTERED' ? selectedAssetId : 'UNREGISTERED',
         componentId: selectedComponentId || undefined,
         equipmentType: assetChoice === 'REGISTERED' ? selectedAsset?.assetType : equipmentType,
-        title: problemTitle || (selectedSymptoms.length > 0 ? selectedSymptoms[0] : 'درخواست تعمیرات و سرویس خورشیدی'),
-        description: problemDescription || `درخواست ثبت‌شده برای تجهیز ${equipmentType} با علائم: ${selectedSymptoms.join('، ')}`,
+        title: problemTitle || (selectedSymptoms.length > 0 ? selectedSymptoms[0] : (isGenerator ? 'درخواست تعمیرات و سرویس ژنراتور' : 'درخواست تعمیرات و سرویس خورشیدی')),
+        description: finalDescription,
         priority,
         category: 'CORRECTIVE',
         symptoms: selectedSymptoms,
@@ -676,13 +763,19 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
                     onChange={e => setEquipmentType(e.target.value)}
                     className="w-full p-3 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="INVERTER">اینورتر متصل به شبکه (On-Grid Inverter)</option>
-                    <option value="PANEL">پنل‌های خورشیدی (Solar PV Panels)</option>
-                    <option value="HYBRID_INVERTER">اینورتر هیبرید / متصل به باتری</option>
-                    <option value="BATTERY">باتری و سیستم ذخیره‌ساز انرژی</option>
-                    <option value="STRUCTURE">سازه و پایه‌های نصب پنل</option>
-                    <option value="ELECTRICAL">کابل‌کشی، کلیدها و تابلوی حفاظت برق</option>
-                    <option value="MONITORING">سیستم دیتالاگر، مودم و پایش آنلاین</option>
+                    <optgroup label="تجهیزات خورشیدی و فتوولتائیک">
+                      <option value="INVERTER">اینورتر متصل به شبکه (On-Grid Inverter)</option>
+                      <option value="PANEL">پنل‌های خورشیدی (Solar PV Panels)</option>
+                      <option value="HYBRID_INVERTER">اینورتر هیبرید / متصل به باتری</option>
+                      <option value="BATTERY">باتری و سیستم ذخیره‌ساز انرژی</option>
+                      <option value="STRUCTURE">سازه و پایه‌های نصب پنل</option>
+                      <option value="ELECTRICAL">کابل‌کشی، کلیدها و تابلوی حفاظت برق</option>
+                      <option value="MONITORING">سیستم دیتالاگر، مودم و پایش آنلاین</option>
+                    </optgroup>
+                    <optgroup label="مولدهای برق و ژنراتورها (Standby / Backup)">
+                      <option value="PORTABLE_GENERATOR">موتور برق پرتابل (بنزینی / گازسوز سبک)</option>
+                      <option value="STATIONARY_GENSET">دیزل‌ژنراتور ثابت / ژنراتور صنعتی (Genset)</option>
+                    </optgroup>
                     <option value="OTHER">سایر ادوات سیستم انرژی</option>
                   </select>
                 </div>
@@ -708,24 +801,122 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
                     type="text"
                     value={equipmentBrand}
                     onChange={e => setEquipmentBrand(e.target.value)}
-                    placeholder="مثال: SMA, Sungrow, Growatt, Fronius, Jinko..."
+                    placeholder={isGenerator ? "مثال: Perkins, Cummins, Volvo, Honda, Loncin, Kipor..." : "مثال: SMA, Sungrow, Growatt, Fronius, Jinko..."}
                     className="w-full p-3 rounded-xl border border-slate-200 bg-white text-xs outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    ظرفیت تقریبی سامانه به کیلووات (اختیاری):
+                    {isGenerator ? "توان تقریبی ژنراتور (کیلووات یا kVA - اختیاری):" : "ظرفیت تقریبی سامانه به کیلووات (اختیاری):"}
                   </label>
                   <input
                     type="number"
                     value={approxCapacityKw}
                     onChange={e => setApproxCapacityKw(e.target.value)}
-                    placeholder="مثال: 5, 20, 100..."
+                    placeholder={isGenerator ? "مثال: 3, 7.5, 50, 150..." : "مثال: 5, 20, 100..."}
                     className="w-full p-3 rounded-xl border border-slate-200 bg-white text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
+
+              {/* Generator Operating Context Card if Generator Selected */}
+              {isGenerator && (
+                <div className="mt-4 p-4 rounded-xl border border-blue-200 bg-blue-50/50 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-blue-900">
+                    <Zap size={16} className="text-blue-600" />
+                    <span>مشخصات فنی و شرایط بهره‌برداری ژنراتور (جهت ارزیابی اولیه دقیق):</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        نوع سوخت مصرفی:
+                      </label>
+                      <select
+                        value={genFuelType}
+                        onChange={e => setGenFuelType(e.target.value as GeneratorFuelSource)}
+                        className="w-full p-2.5 rounded-lg border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="GASOLINE">بنزینی (Gasoline)</option>
+                        <option value="DIESEL">دیزل / گازوئیل (Diesel)</option>
+                        <option value="NATURAL_GAS_CNG">گازسوز شهری / CNG</option>
+                        <option value="DUAL_FUEL">دوگانه‌سوز (Dual Fuel)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        تعداد فاز خروجی:
+                      </label>
+                      <select
+                        value={genPhase}
+                        onChange={e => setGenPhase(e.target.value as GeneratorPhaseContext)}
+                        className="w-full p-2.5 rounded-lg border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="SINGLE_PHASE">تک‌فاز (۲۲۰ ولت خانگی/کارگاهی)</option>
+                        <option value="THREE_PHASE">سه‌فاز (۳۸۰/۴۰۰ ولت صنعتی)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        مکانیزم استارت دستگاه:
+                      </label>
+                      <select
+                        value={genStartingMethod}
+                        onChange={e => setGenStartingMethod(e.target.value as GeneratorStartingMethod)}
+                        className="w-full p-2.5 rounded-lg border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="ELECTRIC_KEY">استارت برقی با سوییچ/کلید</option>
+                        <option value="RECOIL_MANUAL">هندلی دستی (طنابی)</option>
+                        <option value="ATS_AUTOMATIC">تابلو چنج‌اور اتوماتیک (ATS)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        مدت زمان عدم کارکرد / انبارش:
+                      </label>
+                      <select
+                        value={genStorageDuration}
+                        onChange={e => setGenStorageDuration(e.target.value as GeneratorStorageDuration)}
+                        className="w-full p-2.5 rounded-lg border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="ACTIVE_WEEKLY">به‌طور منظم در حال استفاده (هفتگی/ماهانه)</option>
+                        <option value="STORED_UNDER_3_MO">خاموش بوده (کمتر از ۳ ماه)</option>
+                        <option value="STORED_OVER_3_MO">خوابیده در انبار بیش از ۳ ماه (احتمال رسوب سوخت)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        کارکرد تقریبی به ساعت (اختیاری):
+                      </label>
+                      <input
+                        type="number"
+                        value={genRunningHours}
+                        onChange={e => setGenRunningHours(e.target.value)}
+                        placeholder="مثال: 150, 850..."
+                        className="w-full p-2.5 rounded-lg border border-slate-200 bg-white text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        آخرین سرویس دوره‌ای (چند ماه قبل):
+                      </label>
+                      <input
+                        type="number"
+                        value={genLastServiceMonths}
+                        onChange={e => setGenLastServiceMonths(e.target.value)}
+                        placeholder="مثال: 2, 6, 12..."
+                        className="w-full p-2.5 rounded-lg border border-slate-200 bg-white text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -758,13 +949,28 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
             </p>
           </div>
 
+          {/* Generator Immediate Safety Warning Banner */}
+          {isGenerator && (
+            <div className="p-4 bg-amber-500/10 border-2 border-amber-500/30 rounded-2xl space-y-2 text-xs">
+              <div className="flex items-center gap-2 text-amber-900 font-black">
+                <ShieldAlert size={18} className="text-amber-600 shrink-0" />
+                <span>نکات ایمنی حیاتی پیش از هرگونه بررسی ژنراتور:</span>
+              </div>
+              <ul className="text-amber-950 space-y-1 list-disc list-inside text-[11px] leading-relaxed">
+                <li><strong>خطر مونوکسید کربن:</strong> هرگز دستگاه را در فضای بسته، پارکینگ یا مجاورت پنجره روشن نگذارید.</li>
+                <li><strong>نشتی سوخت:</strong> در صورت حس بوی بنزین/گازوئیل یا مشاهده نشتی، فوراً شیر باک را ببندید و سرباتری منفی را قطع کنید.</li>
+                <li><strong>خطر برق‌برگشتی (Backfeed):</strong> قبل از راه‌اندازی، از قطع بودن کلید اصلی کنتور برق شهری اطمینان حاصل فرمایید.</li>
+              </ul>
+            </div>
+          )}
+
           {/* Symptoms Checklist */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-2">
-              علائم شایع (می‌توانید یک یا چند مورد را علامت بزنید):
+              {isGenerator ? 'علائم و نشانه‌های مشاهده‌شده در ژنراتور / موتور برق:' : 'علائم شایع (می‌توانید یک یا چند مورد را علامت بزنید):'}
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {commonSymptoms.map(item => {
+              {(isGenerator ? GENERATOR_COMMON_SYMPTOMS : commonSymptoms).map(item => {
                 const isSelected = selectedSymptoms.includes(item.label);
                 return (
                   <button
@@ -797,7 +1003,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
                 type="text"
                 value={problemTitle}
                 onChange={e => setProblemTitle(e.target.value)}
-                placeholder="مثال: اینورتر در ساعات اوج تابش ارور 102 می‌دهد و قطع می‌شود"
+                placeholder={isGenerator ? "مثال: موتور برق هندل می‌خورد ولی روشن نمی‌شود یا ولتاژ خروجی صفر است" : "مثال: اینورتر در ساعات اوج تابش ارور 102 می‌دهد و قطع می‌شود"}
                 className="w-full p-3 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -809,7 +1015,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
               <textarea
                 value={problemDescription}
                 onChange={e => setProblemDescription(e.target.value)}
-                placeholder="توضیح دهید مشکل از چه زمانی آغاز شد، نمایشگر چه کدی نشان می‌دهد و چه اقداماتی تاکنون صورت گرفته است..."
+                placeholder={isGenerator ? "توضیح دهید مشکل در بی‌باری است یا زیر بار، چه رنگ دودی خارج می‌شود و آخرین بار چه زمانی روشن شده بود..." : "توضیح دهید مشکل از چه زمانی آغاز شد، نمایشگر چه کدی نشان می‌دهد و چه اقداماتی تاکنون صورت گرفته است..."}
                 rows={3}
                 className="w-full p-3 rounded-xl border border-slate-200 bg-white text-xs outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               />
@@ -1112,11 +1318,16 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-xs font-bold text-indigo-950">
                     <Sparkles size={16} className="text-indigo-600" />
-                    <span>علل احتمالی ریشه‌ای بر اساس استنتاج مهندسی (AI_INFERENCE):</span>
+                    <span>{isGenerator ? 'فرضیات فنی و علل ریشه‌ای محتمل (بررسی توسط کارشناس):' : 'علل احتمالی ریشه‌ای بر اساس استنتاج مهندسی (AI_INFERENCE):'}</span>
                   </div>
-                  {diagnosis.confidenceScore !== undefined && diagnosis.confidenceScore !== null && (
+                  {!isGenerator && diagnosis.confidenceScore !== undefined && diagnosis.confidenceScore !== null && diagnosis.confidenceScore > 0 && (
                     <span className="text-[11px] font-bold text-indigo-700 bg-white px-2.5 py-0.5 rounded-full border border-indigo-200">
                       سطح اطمینان تحلیلی: {Math.round(diagnosis.confidenceScore)}٪
+                    </span>
+                  )}
+                  {isGenerator && (
+                    <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                      نیازمند بازرسی کارشناسی
                     </span>
                   )}
                 </div>
@@ -1131,11 +1342,15 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
                             <p className="text-[11px] text-slate-500 mt-0.5">{rc.description}</p>
                           )}
                         </div>
-                        {rc.probability !== undefined && (
+                        {!isGenerator && rc.probability !== undefined && rc.probability > 0 ? (
                           <span className="font-mono text-[11px] font-bold text-indigo-700 shrink-0">
                             احتمال: {Math.round(rc.probability * 100)}٪
                           </span>
-                        )}
+                        ) : isGenerator ? (
+                          <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 shrink-0">
+                            علت محتمل
+                          </span>
+                        ) : null}
                       </div>
                     ))
                   ) : (
@@ -1207,7 +1422,9 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
                 <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 space-y-2 text-xs">
                   <div className="flex items-center gap-2 text-amber-900 font-bold">
                     <ShieldAlert size={18} className="text-amber-600 shrink-0" />
-                    <span>راهنمای ایمنی و هشدارهای مهم ولتاژ DC:</span>
+                    <span>
+                      {isGenerator ? 'راهنمای ایمنی و هشدارهای حیاتی ژنراتور (مونوکسید کربن / اشتعال سوخت / برق‌برگشتی):' : 'راهنمای ایمنی و هشدارهای مهم ولتاژ DC:'}
+                    </span>
                   </div>
                   <ul className="space-y-1 text-amber-800 list-disc list-inside text-[11px]">
                     {diagnosis.safetyGuidance.map((sg, idx) => (
@@ -1270,7 +1487,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
         <div className="space-y-6 animate-fadeIn">
           <div>
             <span className="text-xs font-bold text-purple-700 bg-purple-50 px-3 py-1 rounded-full">
-              شبکه متخصصان و کارشناسان انرژی خورشیدی
+              {isGenerator ? 'شبکه تکنسین‌ها و کارشناسان دیزل‌ژنراتور و موتور برق' : 'شبکه متخصصان و کارشناسان انرژی خورشیدی'}
             </span>
             <h3 className="text-base font-black text-slate-900 mt-2">
               گام ۵: انتخاب متخصص یا شیوه ارجاع درخواست

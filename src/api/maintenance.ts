@@ -707,13 +707,92 @@ maintenanceRouter.post(['/diagnose', '/maintenance/diagnose', '/analyze-maintena
       equipmentType,
       symptoms,
       locationCity,
-      triggerAiAssisted
+      triggerAiAssisted,
+      operatingContext
     } = req.body || {};
 
     const description = req.body?.description || req.body?.textContext;
     const rawPhotos = req.body?.photos || req.body?.images;
     const documents = req.body?.documents;
     const billData = req.body?.billData;
+
+    // Strict validation and normalization of generator operatingContext if provided
+    let normalizedOperatingContext: any = undefined;
+    if (operatingContext && typeof operatingContext === 'object') {
+      const {
+        fuelType,
+        phase,
+        coolingType,
+        startingMethod,
+        storageDuration,
+        runningHoursEstimate,
+        lastServiceMonthsAgo,
+        ratedCapacityKw,
+        indoorOperation,
+        loadStateWhenFaultOccurred
+      } = operatingContext;
+
+      // Validate enums
+      const validFuels = ['GASOLINE', 'DIESEL', 'NATURAL_GAS_CNG', 'DUAL_FUEL', 'UNKNOWN'];
+      if (fuelType && !validFuels.includes(fuelType)) {
+        return res.status(400).json({ error: 'نوع سوخت انتخاب‌شده نامعتبر است.' });
+      }
+
+      const validPhases = ['SINGLE_PHASE', 'THREE_PHASE', 'UNKNOWN'];
+      if (phase && !validPhases.includes(phase)) {
+        return res.status(400).json({ error: 'نوع فاز انتخاب‌شده نامعتبر است.' });
+      }
+
+      const validCooling = ['AIR_COOLED', 'WATER_COOLED_RADIATOR', 'UNKNOWN'];
+      if (coolingType && !validCooling.includes(coolingType)) {
+        return res.status(400).json({ error: 'نوع خنک‌کاری نامعتبر است.' });
+      }
+
+      const validStarting = ['RECOIL_MANUAL', 'ELECTRIC_KEY', 'ATS_AUTOMATIC', 'UNKNOWN'];
+      if (startingMethod && !validStarting.includes(startingMethod)) {
+        return res.status(400).json({ error: 'روش استارت نامعتبر است.' });
+      }
+
+      const validStorage = ['ACTIVE_WEEKLY', 'STORED_UNDER_3_MO', 'STORED_OVER_3_MO', 'UNKNOWN'];
+      if (storageDuration && !validStorage.includes(storageDuration)) {
+        return res.status(400).json({ error: 'مدت انبارش نامعتبر است.' });
+      }
+
+      // Numerical validations (must not be negative or NaN)
+      if (runningHoursEstimate !== undefined && runningHoursEstimate !== null && runningHoursEstimate !== '') {
+        const rh = Number(runningHoursEstimate);
+        if (isNaN(rh) || rh < 0) {
+          return res.status(400).json({ error: 'ساعت کارکرد ژنراتور نمی‌تواند منفی یا مقدار غیرعددی باشد.' });
+        }
+      }
+
+      if (lastServiceMonthsAgo !== undefined && lastServiceMonthsAgo !== null && lastServiceMonthsAgo !== '') {
+        const sm = Number(lastServiceMonthsAgo);
+        if (isNaN(sm) || sm < 0) {
+          return res.status(400).json({ error: 'فاصله آخرین سرویس دوره‌ای نمی‌تواند منفی باشد.' });
+        }
+      }
+
+      if (ratedCapacityKw !== undefined && ratedCapacityKw !== null && ratedCapacityKw !== '') {
+        const cap = Number(ratedCapacityKw);
+        if (isNaN(cap) || cap <= 0) {
+          return res.status(400).json({ error: 'توان نامی ژنراتور باید یک عدد مثبت باشد.' });
+        }
+      }
+
+      normalizedOperatingContext = {
+        fuelType: fuelType || undefined,
+        phase: phase || undefined,
+        coolingType: coolingType || undefined,
+        startingMethod: startingMethod || undefined,
+        storageDuration: storageDuration || undefined,
+        runningHoursEstimate: runningHoursEstimate ? Number(runningHoursEstimate) : undefined,
+        lastServiceMonthsAgo: lastServiceMonthsAgo ? Number(lastServiceMonthsAgo) : undefined,
+        ratedCapacityKw: ratedCapacityKw ? Number(ratedCapacityKw) : undefined,
+        indoorOperation: Boolean(indoorOperation),
+        loadStateWhenFaultOccurred: loadStateWhenFaultOccurred || undefined
+      };
+    }
 
     // Validate and normalize photos (MIME, size, base64)
     let validatedPhotos: ValidatedImage[] | undefined = undefined;
@@ -733,7 +812,8 @@ maintenanceRouter.post(['/diagnose', '/maintenance/diagnose', '/analyze-maintena
       documents,
       billData,
       locationCity,
-      triggerAiAssisted: triggerAiAssisted ?? true
+      triggerAiAssisted: triggerAiAssisted ?? true,
+      operatingContext: normalizedOperatingContext
     });
 
     return res.json(diagnosis);

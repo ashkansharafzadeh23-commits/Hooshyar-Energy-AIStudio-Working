@@ -203,9 +203,13 @@ export const DiagnosisView: React.FC<DiagnosisViewProps> = ({
                   <AlertTriangle className="text-amber-500" size={18} />
                   علل ریشه‌ای شناسایی‌شده (Root Causes)
                 </span>
-                {diagnosis.confidenceScore !== undefined && (
+                {diagnosis.confidenceScore !== undefined && diagnosis.confidenceScore > 0 ? (
                   <span className="text-xs font-bold px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg">
                     اطمینان مدل: {Math.round(diagnosis.confidenceScore * 100)}%
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg">
+                    ارزیابی کیفی اولیه (نیازمند بازرسی)
                   </span>
                 )}
               </h3>
@@ -216,9 +220,15 @@ export const DiagnosisView: React.FC<DiagnosisViewProps> = ({
                     <div key={idx} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-bold text-slate-900">{rc.cause}</span>
-                        <span className="text-xs font-mono font-bold text-indigo-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-                          احتمال: {Math.round(rc.probability * 100)}%
-                        </span>
+                        {rc.probability !== undefined && rc.probability > 0 ? (
+                          <span className="text-xs font-mono font-bold text-indigo-600 bg-white px-2 py-0.5 rounded border border-slate-200">
+                            احتمال: {Math.round(rc.probability * 100)}%
+                          </span>
+                        ) : (
+                          <span className="text-xs font-bold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200">
+                            علت محتمل
+                          </span>
+                        )}
                       </div>
                       {rc.description && (
                         <p className="text-xs text-slate-600 leading-relaxed">{rc.description}</p>
@@ -285,6 +295,21 @@ export const DiagnosisView: React.FC<DiagnosisViewProps> = ({
                   <p className="text-xs text-slate-500">اقدام پیشنهادی خودکار ثبت نشده است.</p>
                 )}
               </div>
+
+              {/* Safety Guidance Warnings Box */}
+              {diagnosis.safetyGuidance && diagnosis.safetyGuidance.length > 0 && (
+                <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 space-y-2 text-xs">
+                  <div className="flex items-center gap-2 text-amber-900 font-bold">
+                    <ShieldAlert size={18} className="text-amber-600 shrink-0" />
+                    <span>راهنما و الزامات حیاتی ایمنی:</span>
+                  </div>
+                  <ul className="space-y-1 text-amber-800 list-disc list-inside text-[11px] leading-relaxed">
+                    {diagnosis.safetyGuidance.map((sg: string, idx: number) => (
+                      <li key={idx}>{sg}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div className="pt-2 border-t flex justify-end">
                 <button
