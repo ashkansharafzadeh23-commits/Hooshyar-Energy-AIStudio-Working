@@ -104,21 +104,69 @@ export function checkCaseAccess(
  * 
  * Never mutates the original database record. Returns a safe cloned/projected object.
  */
+/**
+ * Checks server-authoritative evidence whether the currently assigned technician
+ * has formally accepted the maintenance case.
+ * 
+ * Rules:
+ * 1. Checks server-persisted assignment histories for status === 'ACCEPTED'.
+ * 2. Matches technicianId strictly against the currently assigned technician.
+ * 3. An ACCEPTED entry for another/previous technician NEVER authorizes the current technician.
+ * 4. SCHEDULED alone does NOT constitute formal acceptance.
+ * 5. If status is IN_PROGRESS, AWAITING_VERIFICATION, PENDING_VERIFICATION, VERIFIED, COMPLETED, or CLOSED,
+ *    and verified against assignment history or current active execution state, authorizes release.
+ */
+export function hasTechnicianFormallyAccepted(mCase: MaintenanceCase): boolean {
+  if (!mCase || !mCase.id || !mCase.assignedTechnicianId) {
+    return false;
+  }
+
+  const assignedTechId = mCase.assignedTechnicianId;
+  const histories = maintenanceRepository.getAssignmentHistories(mCase.id) || [];
+
+  // Look for authoritative ACCEPTED assignment history entry belonging to the currently assigned technician
+  const hasValidAcceptedHistory = histories.some(h => {
+    if (h.status !== 'ACCEPTED') return false;
+    if (!h.technicianId) return false;
+    // Match either direct ID match or identity mapping match
+    return isCaseAssignedToTechnician(assignedTechId, h.technicianId) ||
+           isCaseAssignedToTechnician(h.technicianId, assignedTechId) ||
+           h.technicianId === assignedTechId;
+  });
+
+  if (hasValidAcceptedHistory) {
+    return true;
+  }
+
+  // If status has advanced beyond ASSIGNED/SCHEDULED to formal execution states,
+  // verify whether this case has actually been accepted or started
+  const executionStatuses = [
+    'IN_PROGRESS',
+    'AWAITING_VERIFICATION',
+    'PENDING_VERIFICATION',
+    'VERIFIED',
+    'COMPLETED',
+    'RESOLVED',
+    'CLOSED'
+  ];
+
+  if (executionStatuses.includes(mCase.status)) {
+    return true;
+  }
+
+  // In all other cases (including OPEN, DRAFT, ASSIGNED, and SCHEDULED without ACCEPTED history), false
+  return false;
+}
+
 export function sanitizeCaseForTechnician(
   mCase: MaintenanceCase,
   options?: { isAccepted?: boolean }
 ): Record<string, any> {
-  // If formally accepted, customer contact details are authorized for technical execution
-  const isAccepted = options?.isAccepted ?? (
-    mCase.status === 'IN_PROGRESS' ||
-    mCase.status === 'SCHEDULED' ||
-    mCase.status === 'AWAITING_VERIFICATION' ||
-    (mCase.status as any) === 'PENDING_VERIFICATION' ||
-    mCase.status === 'VERIFIED' ||
-    mCase.status === 'COMPLETED' ||
-    mCase.status === 'RESOLVED' ||
-    mCase.status === 'CLOSED'
-  );
+  // If formally accepted, customer contact details are authorized for technical execution.
+  // SCHEDULED alone is strictly NOT treated as accepted.
+  const isAccepted = options?.isAccepted !== undefined
+    ? options.isAccepted
+    : hasTechnicianFormallyAccepted(mCase);
 
   // Shallow clone top-level
   const safe: Record<string, any> = { ...mCase };
@@ -1058,14 +1106,7 @@ maintenanceRouter.get(['/maintenance/:maintenanceCaseId', '/cases/:maintenanceCa
   }
 
   const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
-  const isAccepted = mCase.status === 'IN_PROGRESS' ||
-    mCase.status === 'SCHEDULED' ||
-    mCase.status === 'AWAITING_VERIFICATION' ||
-    (mCase.status as any) === 'PENDING_VERIFICATION' ||
-    mCase.status === 'VERIFIED' ||
-    mCase.status === 'COMPLETED' ||
-    mCase.status === 'RESOLVED' ||
-    mCase.status === 'CLOSED';
+  const isAccepted = hasTechnicianFormallyAccepted(mCase);
 
   const baseCaseData = (isReporterOrAdmin || isAccepted)
     ? mCase
@@ -1252,7 +1293,13 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/schedule', '/cases/:mai
     description: `زمان‌بندی مراجعه تکنسین برای تاریخ ${scheduledAt}`
   });
 
-  return res.json(updated);
+  const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
+  const isAccepted = hasTechnicianFormallyAccepted(updated);
+  const responseData = (isReporterOrAdmin || isAccepted)
+    ? updated
+    : sanitizeCaseForTechnician(updated, { isAccepted: false });
+
+  return res.json(responseData);
 });
 
 /**

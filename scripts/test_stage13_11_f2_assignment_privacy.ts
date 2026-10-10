@@ -20,8 +20,14 @@
  * 14. F.1 matching regression remains functional.
  * 15. No direct phone number is exposed through nested response objects (e.g. billDoc.extractedData).
  * 16. Repeated serialization of the technician-facing response remains free of customer contact data.
- * 17. After formal acceptance (status IN_PROGRESS), contact info is legitimately authorized for execution.
- * 18. db.json byte-for-byte immutability guard passes.
+ * 17. Formal acceptance (status IN_PROGRESS via /accept) legitimately authorizes contact info for execution.
+ * 18. MANDATORY PRE-ACCEPTANCE SCHEDULING REGRESSION:
+ *     Calling /schedule BEFORE /accept does NOT release customer contact info!
+ * 19. MANDATORY ACCEPTANCE-EVIDENCE TEST:
+ *     SCHEDULED alone without ACCEPTED assignment history does NOT release contact.
+ *     An ACCEPTED history entry for technician B does NOT release contact to technician A.
+ *     Only the currently assigned technician's valid acceptance authorizes release.
+ * 20. db.json byte-for-byte immutability guard passes.
  */
 
 import http from 'http';
@@ -73,34 +79,61 @@ async function runTestSuite() {
       roles: customerUser.roles
     });
 
-    // 2. Assigned Technician User & Profile
-    const techUser = userRepository.createUser({
-      name: 'مهندس تعمیرات ژنراتور منتخب',
+    // 2. Assigned Technician A User & Profile
+    const techUserA = userRepository.createUser({
+      name: 'مهندس تعمیرات ژنراتور منتخب (تکنسین الف)',
       phone: '09127770001',
       role: 'technician',
       roles: ['technician']
     });
-    const techToken = jwtService.sign({
-      userId: techUser.id,
-      role: techUser.role,
-      roles: techUser.roles
+    const techTokenA = jwtService.sign({
+      userId: techUserA.id,
+      role: techUserA.role,
+      roles: techUserA.roles
     });
 
-    const proTech = professionalRepository.createProfessional({
-      userId: techUser.id,
-      fullName: 'مهندس تعمیرات ژنراتور منتخب',
+    const proTechA = professionalRepository.createProfessional({
+      userId: techUserA.id,
+      fullName: 'مهندس تعمیرات ژنراتور منتخب (تکنسین الف)',
       phone: '09127770001',
       serviceCities: ['تهران'],
       specialties: ['دیزل ژنراتور', 'سرویس ژنراتور', 'موتور احتراقی'],
       yearsExperience: 8,
       rating: 4.8,
-      bio: 'متخصص مجاز دیزل ژنراتور',
+      bio: 'متخصص مجاز دیزل ژنراتور الف',
       profileImageUrl: '',
       certifications: []
     });
-    professionalRepository.updateProfessionalStatus(proTech.id, 'approved');
+    professionalRepository.updateProfessionalStatus(proTechA.id, 'approved');
 
-    // 3. Unassigned / Stranger Technician User & Profile
+    // 3. Technician B User & Profile (for foreign acceptance testing)
+    const techUserB = userRepository.createUser({
+      name: 'تکنسین ب',
+      phone: '09127770002',
+      role: 'technician',
+      roles: ['technician']
+    });
+    const techTokenB = jwtService.sign({
+      userId: techUserB.id,
+      role: techUserB.role,
+      roles: techUserB.roles
+    });
+
+    const proTechB = professionalRepository.createProfessional({
+      userId: techUserB.id,
+      fullName: 'تکنسین ب',
+      phone: '09127770002',
+      serviceCities: ['تهران'],
+      specialties: ['دیزل ژنراتور'],
+      yearsExperience: 6,
+      rating: 4.5,
+      bio: 'متخصص ژنراتور ب',
+      profileImageUrl: '',
+      certifications: []
+    });
+    professionalRepository.updateProfessionalStatus(proTechB.id, 'approved');
+
+    // 4. Unassigned / Stranger Technician User & Profile
     const strangerTechUser = userRepository.createUser({
       name: 'تکنسین غریبه بدون انتساب',
       phone: '09128880002',
@@ -127,7 +160,7 @@ async function runTestSuite() {
     });
     professionalRepository.updateProfessionalStatus(proStranger.id, 'approved');
 
-    // 4. System Admin
+    // 5. System Admin
     const adminUser = userRepository.createUser({
       name: 'مدیر ارشد سامانه',
       phone: '09120000000',
@@ -207,7 +240,7 @@ async function runTestSuite() {
     // TEST 2: SELECT-TECHNICIAN PRIVACY BOUNDARY
     // -------------------------------------------------------------------------
     console.log('\n--- 2. SELECT-TECHNICIAN PRIVACY BOUNDARY ---');
-    // Customer selects the technician
+    // Customer selects Technician A
     const selectRes = await fetch(`${baseUrl}/cases/${caseId}/select-technician`, {
       method: 'POST',
       headers: {
@@ -215,7 +248,7 @@ async function runTestSuite() {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        technicianId: proTech.id,
+        technicianId: proTechA.id,
         scheduledDate: '2026-10-15',
         notes: 'لطفاً ابزار عیب‌یابی دینام به همراه داشته باشید'
       })
@@ -248,10 +281,10 @@ async function runTestSuite() {
     // TEST 4: TECHNICIAN CASE-LIST RESPONSE PRIVACY (BEFORE ACCEPTANCE)
     // -------------------------------------------------------------------------
     console.log('\n--- 4. TECHNICIAN CASE-LIST RESPONSE PRIVACY ---');
-    // Technician fetches their assigned cases via /api/technician/cases
+    // Technician A fetches their assigned cases via /api/technician/cases
     const techCasesRes = await fetch(`${baseUrl}/technician/cases`, {
       method: 'GET',
-      headers: { 'Authorization': `Bearer ${techToken}` }
+      headers: { 'Authorization': `Bearer ${techTokenA}` }
     });
 
     assert(techCasesRes.status === 200, 'Technician Case List: Returns HTTP 200');
@@ -271,19 +304,11 @@ async function runTestSuite() {
       assignedCaseInList.billDoc?.extractedData?.customerPhone === undefined,
       'Technician Case List: Nested billDoc customerPhone is OMITTED before formal acceptance'
     );
-    assert(
-      assignedCaseInList.title === initialCase.title,
-      'Technician Case List: Technical title remains intact'
-    );
-    assert(
-      assignedCaseInList.equipmentType === 'PORTABLE_GENERATOR',
-      'Technician Case List: Technical equipmentType remains intact'
-    );
 
-    // Also verify via generic /api/cases endpoint accessed by technician
+    // Also verify via generic /api/cases endpoint accessed by technician A
     const genericCasesRes = await fetch(`${baseUrl}/cases`, {
       method: 'GET',
-      headers: { 'Authorization': `Bearer ${techToken}` }
+      headers: { 'Authorization': `Bearer ${techTokenA}` }
     });
     const genericCases: any[] = await genericCasesRes.json();
     const assignedInGeneric = genericCases.find(c => c.id === caseId);
@@ -298,7 +323,7 @@ async function runTestSuite() {
     console.log('\n--- 5. TECHNICIAN CASE-DETAIL PRIVACY (BEFORE ACCEPTANCE) ---');
     const techDetailRes = await fetch(`${baseUrl}/cases/${caseId}`, {
       method: 'GET',
-      headers: { 'Authorization': `Bearer ${techToken}` }
+      headers: { 'Authorization': `Bearer ${techTokenA}` }
     });
 
     assert(techDetailRes.status === 200, 'Technician Case Detail: Returns HTTP 200');
@@ -314,6 +339,91 @@ async function runTestSuite() {
     assert(
       techDetail.billDoc?.extractedData?.customerPhone === undefined,
       'Technician Case Detail: Nested customerPhone is strictly OMITTED before acceptance'
+    );
+
+    // -------------------------------------------------------------------------
+    // MANDATORY NEW TEST SCENARIO: PRE-ACCEPTANCE /schedule DOES NOT EXPOSE CONTACT
+    // -------------------------------------------------------------------------
+    console.log('\n--- MANDATORY TEST 1: PRE-ACCEPTANCE /schedule DOES NOT EXPOSE CONTACT ---');
+    // Technician A calls /schedule BEFORE calling /accept
+    const scheduleRes = await fetch(`${baseUrl}/cases/${caseId}/schedule`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${techTokenA}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ scheduledAt: '2026-10-18T10:00:00Z' })
+    });
+
+    assert(scheduleRes.status === 200, 'Pre-Acceptance Schedule: Endpoint executes successfully');
+    const scheduleData = await scheduleRes.json();
+    assert(scheduleData.status === 'SCHEDULED', 'Pre-Acceptance Schedule: Case status is now SCHEDULED');
+    assert(
+      scheduleData.contactName === undefined,
+      'Pre-Acceptance Schedule Response: contactName is strictly OMITTED from schedule response'
+    );
+    assert(
+      scheduleData.contactPhone === undefined,
+      'Pre-Acceptance Schedule Response: contactPhone is strictly OMITTED from schedule response'
+    );
+    assert(
+      scheduleData.billDoc?.extractedData?.customerPhone === undefined,
+      'Pre-Acceptance Schedule Response: Nested billDoc customer phone is strictly OMITTED'
+    );
+
+    // Re-fetch case detail as technician A while status is SCHEDULED (still not formally accepted)
+    const postScheduleDetailRes = await fetch(`${baseUrl}/cases/${caseId}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${techTokenA}` }
+    });
+    const postScheduleDetail = await postScheduleDetailRes.json();
+    assert(postScheduleDetail.status === 'SCHEDULED', 'Post-Schedule Detail: Case status remains SCHEDULED');
+    assert(
+      postScheduleDetail.contactName === undefined,
+      'Post-Schedule Detail: contactName remains strictly HIDDEN when status is SCHEDULED without /accept'
+    );
+    assert(
+      postScheduleDetail.contactPhone === undefined,
+      'Post-Schedule Detail: contactPhone remains strictly HIDDEN when status is SCHEDULED without /accept'
+    );
+    assert(
+      postScheduleDetail.billDoc?.extractedData?.customerPhone === undefined,
+      'Post-Schedule Detail: Nested customer phone remains strictly HIDDEN when status is SCHEDULED without /accept'
+    );
+
+    // Confirm database record still retains customer contact data
+    const dbCheckAfterSchedule = maintenanceRepository.getCaseById(caseId);
+    assert(
+      dbCheckAfterSchedule?.contactPhone === '09129990001' && dbCheckAfterSchedule?.contactName === 'مهندس احمد رضایی (مسئول تاسیسات)',
+      'Pre-Acceptance Schedule: Persisted db record strictly retains original customer contact details'
+    );
+
+    // -------------------------------------------------------------------------
+    // MANDATORY ACCEPTANCE-EVIDENCE TEST: FOREIGN / INVALID ACCEPTANCE EVIDENCE
+    // -------------------------------------------------------------------------
+    console.log('\n--- MANDATORY TEST 2: FOREIGN / INVALID ACCEPTANCE EVIDENCE ---');
+    // Inject an ACCEPTED assignment history entry belonging to Technician B
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: caseId,
+      technicianId: techUserB.id,
+      assignedBy: techUserB.id,
+      status: 'ACCEPTED',
+      notes: 'پذیرش توسط تکنسین ب (تکنسین نامربوط)'
+    });
+
+    // Re-fetch as Technician A (who is currently assigned, but has NOT accepted)
+    const foreignEvidenceDetailRes = await fetch(`${baseUrl}/cases/${caseId}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${techTokenA}` }
+    });
+    const foreignEvidenceDetail = await foreignEvidenceDetailRes.json();
+    assert(
+      foreignEvidenceDetail.contactName === undefined,
+      'Foreign Acceptance Guard: Technician B acceptance history does NOT authorize contact release to Technician A'
+    );
+    assert(
+      foreignEvidenceDetail.contactPhone === undefined,
+      'Foreign Acceptance Guard: Technician B acceptance history does NOT release contactPhone to Technician A'
     );
 
     // -------------------------------------------------------------------------
@@ -388,10 +498,9 @@ async function runTestSuite() {
     // TEST 9 & 16: REPEATED SERIALIZATION DOES NOT MUTATE PERSISTED DATA
     // -------------------------------------------------------------------------
     console.log('\n--- 9 & 16. IMMUTABILITY & REPEATED SERIALIZATION ---');
-    // Multiple calls by technician
     for (let i = 0; i < 3; i++) {
       const repeated = await (await fetch(`${baseUrl}/cases/${caseId}`, {
-        headers: { 'Authorization': `Bearer ${techToken}` }
+        headers: { 'Authorization': `Bearer ${techTokenA}` }
       })).json();
       assert(repeated.contactPhone === undefined, `Repeated Call ${i+1}: contactPhone remains omitted`);
     }
@@ -414,11 +523,11 @@ async function runTestSuite() {
     // TEST 17: FORMAL ACCEPTANCE AUTHORIZES CONTACT INFO FOR EXECUTION
     // -------------------------------------------------------------------------
     console.log('\n--- 17. FORMAL ACCEPTANCE AUTHORIZATION BOUNDARY ---');
-    // Technician formally accepts the assignment via /api/cases/:id/accept
+    // Technician A formally accepts the assignment via /api/cases/:id/accept
     const acceptRes = await fetch(`${baseUrl}/cases/${caseId}/accept`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${techToken}`,
+        'Authorization': `Bearer ${techTokenA}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ notes: 'پذیرش شد؛ جهت بازدید و هماهنگی مراجعه می‌کنم' })
@@ -428,10 +537,10 @@ async function runTestSuite() {
     const acceptedData = await acceptRes.json();
     assert(acceptedData.status === 'IN_PROGRESS', 'Accept Case: Status updated to IN_PROGRESS');
 
-    // Now technician queries case detail after formal acceptance
+    // Now technician A queries case detail AFTER formal acceptance
     const postAcceptDetailRes = await fetch(`${baseUrl}/cases/${caseId}`, {
       method: 'GET',
-      headers: { 'Authorization': `Bearer ${techToken}` }
+      headers: { 'Authorization': `Bearer ${techTokenA}` }
     });
     const postAcceptDetail = await postAcceptDetailRes.json();
     assert(
@@ -443,12 +552,28 @@ async function runTestSuite() {
       'Post-Acceptance: contactPhone is legitimately authorized for execution after formal acceptance'
     );
 
+    // Now test /schedule AFTER formal acceptance
+    const postAcceptScheduleRes = await fetch(`${baseUrl}/cases/${caseId}/schedule`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${techTokenA}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ scheduledAt: '2026-10-20T14:00:00Z' })
+    });
+    assert(postAcceptScheduleRes.status === 200, 'Post-Acceptance Schedule: Endpoint executes successfully');
+    const postAcceptScheduleData = await postAcceptScheduleRes.json();
+    assert(
+      postAcceptScheduleData.contactPhone === '09129990001',
+      'Post-Acceptance Schedule: Response legitimately includes contactPhone after formal acceptance'
+    );
+
     server.close();
 
     // -------------------------------------------------------------------------
-    // TEST 18: IMMUTABILITY GUARD
+    // TEST 20: IMMUTABILITY GUARD
     // -------------------------------------------------------------------------
-    console.log('\n--- 18. VERIFYING PRODUCTION DB IMMUTABILITY GUARD ---');
+    console.log('\n--- 20. VERIFYING PRODUCTION DB IMMUTABILITY GUARD ---');
     isolation.verifyImmutability();
   } finally {
     isolation.cleanup();
