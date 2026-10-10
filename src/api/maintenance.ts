@@ -94,6 +94,59 @@ export function checkCaseAccess(
   return { allowed: true, isReporter, isAssignedTech, isAdmin: false };
 }
 
+/**
+ * Sanitizes a maintenance case representation for technician-facing responses.
+ * Enforces customer privacy boundary:
+ * Until formal technician acceptance (status 'IN_PROGRESS', 'SCHEDULED', 'AWAITING_VERIFICATION',
+ * 'PENDING_VERIFICATION', 'VERIFIED', 'COMPLETED', 'RESOLVED', 'CLOSED' or an ACCEPTED assignment history),
+ * private customer contact info (contactName, contactPhone, and any customer phone numbers)
+ * MUST NOT be exposed to the technician.
+ * 
+ * Never mutates the original database record. Returns a safe cloned/projected object.
+ */
+export function sanitizeCaseForTechnician(
+  mCase: MaintenanceCase,
+  options?: { isAccepted?: boolean }
+): Record<string, any> {
+  // If formally accepted, customer contact details are authorized for technical execution
+  const isAccepted = options?.isAccepted ?? (
+    mCase.status === 'IN_PROGRESS' ||
+    mCase.status === 'SCHEDULED' ||
+    mCase.status === 'AWAITING_VERIFICATION' ||
+    (mCase.status as any) === 'PENDING_VERIFICATION' ||
+    mCase.status === 'VERIFIED' ||
+    mCase.status === 'COMPLETED' ||
+    mCase.status === 'RESOLVED' ||
+    mCase.status === 'CLOSED'
+  );
+
+  // Shallow clone top-level
+  const safe: Record<string, any> = { ...mCase };
+
+  if (!isAccepted) {
+    // Strictly omit customer private contact information
+    delete safe.contactName;
+    delete safe.contactPhone;
+
+    // Check nested structures if any
+    if (safe.billDoc && typeof safe.billDoc === 'object') {
+      const safeBill = { ...safe.billDoc };
+      if (safeBill.extractedData && typeof safeBill.extractedData === 'object') {
+        const safeExtracted = { ...safeBill.extractedData };
+        delete safeExtracted.customerPhone;
+        delete safeExtracted.phone;
+        delete safeExtracted.customerName;
+        delete safeExtracted.nationalId;
+        safeBill.extractedData = safeExtracted;
+      }
+      safe.billDoc = safeBill;
+    }
+  }
+
+  return safe;
+}
+
+
 // ==========================================
 // 1. ALERT ENDPOINTS
 // ==========================================
@@ -562,6 +615,10 @@ maintenanceRouter.get(['/cases', '/maintenance/cases'], (req: Request, res: Resp
   }
 
   allCases.sort((a, b) => new Date(b.createdAt || b.reportedAt).getTime() - new Date(a.createdAt || a.reportedAt).getTime());
+  if (isTech && !isAdmin) {
+    const sanitized = allCases.map(c => sanitizeCaseForTechnician(c));
+    return res.json(sanitized);
+  }
   return res.json(allCases);
 });
 
@@ -918,7 +975,10 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/select-technician', '/c
       notes: notes || 'تخصیص از طریق درگاه هوشمند تعمیرات و نگهداری'
     });
 
-    return res.json(updated);
+    const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
+    const responseData = isReporterOrAdmin ? updated : sanitizeCaseForTechnician(updated, { isAccepted: false });
+
+    return res.json(responseData);
   } catch (err: any) {
     return res.status(400).json({ error: err.message || 'خطا در تخصیص متخصص' });
   }
@@ -953,7 +1013,8 @@ maintenanceRouter.get('/technician/cases', (req: Request, res: Response) => {
 
   // Technicians can ONLY access cases explicitly assigned to them (strict project/organization boundary preservation)
   const myAssignedCases = allCases.filter((c) => isCaseAssignedToTechnician(c.assignedTechnicianId, userId) || c.assignedTechnicianId === userId);
-  return res.json(myAssignedCases);
+  const sanitized = myAssignedCases.map(c => sanitizeCaseForTechnician(c));
+  return res.json(sanitized);
 });
 
 /**
@@ -996,8 +1057,22 @@ maintenanceRouter.get(['/maintenance/:maintenanceCaseId', '/cases/:maintenanceCa
     }
   }
 
+  const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
+  const isAccepted = mCase.status === 'IN_PROGRESS' ||
+    mCase.status === 'SCHEDULED' ||
+    mCase.status === 'AWAITING_VERIFICATION' ||
+    (mCase.status as any) === 'PENDING_VERIFICATION' ||
+    mCase.status === 'VERIFIED' ||
+    mCase.status === 'COMPLETED' ||
+    mCase.status === 'RESOLVED' ||
+    mCase.status === 'CLOSED';
+
+  const baseCaseData = (isReporterOrAdmin || isAccepted)
+    ? mCase
+    : sanitizeCaseForTechnician(mCase, { isAccepted: false });
+
   return res.json({
-    ...mCase,
+    ...baseCaseData,
     actions,
     assignmentHistories,
     diagnosis,
@@ -1100,7 +1175,10 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/assign', '/cases/:maint
     description: `تخصیص پرونده ${mCase.maintenanceCode || mCase.id} به تکنسین ${techName}`
   });
 
-  return res.json(updated);
+  const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
+  const responseData = isReporterOrAdmin ? updated : sanitizeCaseForTechnician(updated, { isAccepted: false });
+
+  return res.json(responseData);
 });
 
 /**
