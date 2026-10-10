@@ -15,7 +15,10 @@ import {
   isGeneratorEquipment,
   evaluateGeneratorPreliminaryFaults
 } from './generatorDiagnosisEngine.js';
-import { GeneratorOperatingContext } from '../types/generatorMaintenance.js';
+import {
+  GeneratorOperatingContext,
+  GENERATOR_IMAGE_ANALYSIS_DISCLAIMER_FA
+} from '../types/generatorMaintenance.js';
 
 let geminiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
@@ -53,9 +56,10 @@ export const diagnosisService = {
     billData?: any;
     locationCity?: string;
     triggerAiAssisted?: boolean;
+    aiImageConsent?: boolean;
     operatingContext?: GeneratorOperatingContext;
   }): Promise<MaintenanceDiagnosis> => {
-    const { alertId, componentId, triggerAiAssisted } = params;
+    const { alertId, componentId, triggerAiAssisted, aiImageConsent } = params;
 
     const isUnregistered = !params.assetId || params.assetId === 'UNREGISTERED' || params.assetId === 'STANDALONE';
     let asset: any = null;
@@ -410,19 +414,28 @@ export const diagnosisService = {
     let diagnosisMethod: DiagnosisMethod = 'EXPERT_RULESET';
     let rawAiResponse: string | undefined = undefined;
 
-    // Prepare multimodal image parts if validated photos exist
+    // Check explicit user consent for transmitting images to external AI
+    // For generators, consent must be explicitly granted (aiImageConsent === true).
+    // If not granted or undefined for generator, images are NOT transmitted to Gemini.
+    const isImageTransmissionPermitted = !isGenerator || aiImageConsent === true;
+
+    // Prepare multimodal image parts if validated photos exist and consent is satisfied
     const imageParts: any[] = [];
     const validPhotos = (params.photos || []).filter(
       (p: any) => p && typeof p.base64Data === 'string' && p.base64Data.length > 0 && p.mimeType
     );
 
-    for (const photo of validPhotos) {
-      imageParts.push({
-        inlineData: {
-          mimeType: photo.mimeType,
-          data: photo.base64Data
-        }
-      });
+    if (isImageTransmissionPermitted) {
+      for (const photo of validPhotos) {
+        imageParts.push({
+          inlineData: {
+            mimeType: photo.mimeType,
+            data: photo.base64Data
+          }
+        });
+      }
+    } else if (validPhotos.length > 0) {
+      facts.push('تصاویر تجهیز دریافت شد اما با توجه به عدم تایید ارسال تصاویر به سرویس پردازش ابری هوش مصنوعی، تصویر به ارائه‌دهنده خارجی ارسال نشد.');
     }
 
     const hasImages = imageParts.length > 0;
@@ -432,7 +445,15 @@ export const diagnosisService = {
       try {
         const prompt = isGenerator
           ? `شما یک مهندس ارشد و کارشناس عیب‌یابی انواع دیزل‌ژنراتورها و موتورهای برق پرتابل بنزینی/گازسوز هستید.
-${hasImages ? 'تصویر/تصاویر ارسالی از ژنراتور، کاربراتور، پمپ گازوئیل، سیم‌پیچ دینام، یا نشتی سوخت و دود ضمیمه شده است. لطفاً وضعیت ظاهری، علائم سوختگی، نشتی سوخت/روغن، دوده اگزوز، سایش قطعات و وضعیت مکانیکی را دقیق بررسی کنید.' : ''}
+${hasImages ? `تصویر/تصاویر ارسالی از ژنراتور، پلاک مشخصات، نمایشگر خطا، نشتی روغن/سوخت یا دود ضمیمه شده است.
+دستورالعمل‌های تحلیل تصویری ژنراتور:
+۱. فقط بر اساس شواهد واقعاً قابل مشاهده در تصویر نظر دهید. هرگز مقادیر نامی پلاک، شماره سریال، مدل یا سازنده را حدس نزنید مگر اینکه در عکس کاملاً خوانا باشد.
+۲. هرگز پارت‌نامبر یا کد قطعه غیرمستند نسازید.
+۳. هرگز درصد احتمال عددی (Confidence Percentage) تولید نکنید. ارزیابی صرفاً کیفی و با برچسب‌های احتیاطی است.
+۴. هرگز ادعا نکنید که ژنراتور عکاسی‌شده «کاملاً سالم»، «فاقد خطر» یا «آماده به کار بدون ریسک» است؛ عکس‌ها هرگز نبود خطرات برق‌گرفتگی، نشتی پنهان سوخت، خطر CO یا آتش‌سوزی را اثبات نمی‌کنند.
+۵. هرگز دستورالعمل‌های خطرناک مانند استارت در فضای بسته، پاشش مستقیم سوخت، باز کردن پنل برق‌دار، شارژ مستقیم فیلد، یا جدا کردن بست باتری در مجاورت بخارات سوخت صادر نکنید.
+۶. اگر وضوح تصویر کافی نیست یا جزئیات مبهم است، صراحتاً بنویسید: «تصویر برای تشخیص قطعی کافی نیست. بررسی حضوری الزامی است.»
+۷. در صورت رویت نشتی مایعات، آن را صرفاً به عنوان «مشاهده لکه یا مایع مشکوک نیازمند تایید حضوری» گزارش کنید و بین احتمال روغن و سوخت تفکیک قائل شوید.` : ''}
 
 اطلاعات تجهیز ژنراتور:
 - نوع تجهیز: ${params.equipmentType === 'PORTABLE_GENERATOR' ? 'موتور برق پرتابل' : 'دیزل‌ژنراتور / ژنراتور ثابت'}
@@ -443,9 +464,8 @@ ${hasImages ? 'تصویر/تصاویر ارسالی از ژنراتور، کار
 ۱. خطر مونوکسید کربن (CO): تاکید فوری بر عدم راه‌اندازی در فضای بسته و الزام به کاربری در فضای باز با تهویه کامل.
 ۲. خطر اشتعال سوخت: در صورت مشاهده نشتی بنزین/گازوئیل، تاکید بر توقف فوری بهره‌برداری، دور شدن از دستگاه، پرهیز از ایجاد هرگونه جرقه یا استارت، و استمداد فوری از تکنسین مجرب یا آتش‌نشانی. هرگز نباید اقدام به دستکاری باتری یا اتصالات در مجاورت بخارات سوخت شود.
 ۳. خطر ولتاژ برگشتی (Backfeed): تاکید بر لزوم استفاده از کلید چنج‌اور استاندارد جهت حفظ جان تکنسین‌های شبکه برق.
-${hasImages ? 'اگر تصویر برای تشخیص دقیق کافی نیست، صراحتاً اعلام کنید: «تصویر برای تشخیص قطعی کافی نیست. لطفاً تصویر واضح‌تری از محل مورد نظر بارگذاری کنید.»' : ''}
 
-بر اساس این شواهد، لطفاً تحلیل فنی محافظه‌کارانه از علت ریشه‌ای و ۳ اقدام اولویت‌دار بعدی را ارائه دهید. پاسخ خلاصه، تخصصی و به زبان فارسی باشد.`
+بر اساس این شواهد، لطفاً تحلیل فنی محافظه‌کارانه از علت ریشه‌ای احتمالی و ۳ اقدام ایمن بعدی را ارائه دهید. پاسخ خلاصه، تخصصی، محافظه‌کارانه و به زبان فارسی باشد.`
           : `شما یک مهندس ارشد و کارشناس عیب‌یابی نیروگاه‌های خورشیدی و سیستم‌های انرژی تجدیدپذیر هستید.
 ${hasImages ? 'تصویر/تصاویر ارسالی از تجهیز یا قطعه آسیب‌دیده ضمیمه شده است. لطفاً به دقت وضعیت ظاهری، علائم سوختگی، تغییر رنگ، شکستگی، داغ‌شدگی، دوده، آثار شل‌شدگی اتصالات یا آسیب مکانیکی/الکتریکی را در تصویر بررسی کنید.' : ''}
 
@@ -493,6 +513,9 @@ ${hasImages ? 'تصویر/تصاویر ارسالی از تجهیز یا قطع�
           if (hasImages) {
             inferences.push('تحلیل چندوجهی تصویر و متن با هوش مصنوعی (Visual Multimodal AI) انجام شد.');
             facts.push(`ارزیابی هوشمند ${imageParts.length} تصویر پیوست با پردازش مستقیم بینایی ماشین.`);
+            if (isGenerator) {
+              safetyGuidance.push(GENERATOR_IMAGE_ANALYSIS_DISCLAIMER_FA);
+            }
           }
         }
       } catch (aiErr: any) {

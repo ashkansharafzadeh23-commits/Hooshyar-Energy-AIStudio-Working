@@ -17,6 +17,7 @@ import {
   Check
 } from 'lucide-react';
 import { AssetAlert, MaintenanceDiagnosis } from '../../types/maintenance';
+import { GENERATOR_IMAGE_ANALYSIS_DISCLAIMER_FA } from '../../types/generatorMaintenance';
 import Markdown from 'react-markdown';
 
 interface DiagnosisViewProps {
@@ -493,6 +494,16 @@ export const DiagnosisView: React.FC<DiagnosisViewProps> = ({
               {visualDiagnosisResult.rawAiResponse && (
                 <div className="p-3 bg-indigo-50/60 dark:bg-indigo-950/30 rounded-xl border border-indigo-100 dark:border-indigo-900/50 text-indigo-950 dark:text-indigo-200 prose prose-xs max-w-none">
                   <Markdown>{visualDiagnosisResult.rawAiResponse}</Markdown>
+                </div>
+              )}
+
+              {/* Mandatory Generator Visual Analysis Disclaimer */}
+              {(selectedAlert?.metricType?.includes('GENERATOR') || selectedAlert?.metricType?.includes('GENSET')) && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl flex items-start gap-2 text-amber-900 dark:text-amber-200 text-[11px]">
+                  <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={14} />
+                  <p className="leading-relaxed font-medium">
+                    {GENERATOR_IMAGE_ANALYSIS_DISCLAIMER_FA}
+                  </p>
                 </div>
               )}
 

@@ -708,6 +708,7 @@ maintenanceRouter.post(['/diagnose', '/maintenance/diagnose', '/analyze-maintena
       symptoms,
       locationCity,
       triggerAiAssisted,
+      aiImageConsent,
       operatingContext
     } = req.body || {};
 
@@ -813,6 +814,7 @@ maintenanceRouter.post(['/diagnose', '/maintenance/diagnose', '/analyze-maintena
       billData,
       locationCity,
       triggerAiAssisted: triggerAiAssisted ?? true,
+      aiImageConsent: aiImageConsent !== undefined ? Boolean(aiImageConsent) : undefined,
       operatingContext: normalizedOperatingContext
     });
 

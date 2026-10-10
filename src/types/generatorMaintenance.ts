@@ -173,3 +173,21 @@ export interface GeneratorPreliminaryRuleResult {
   requiredParts: string[];
   safetyGuidance: string[];
 }
+
+export interface GeneratorImageConsent {
+  aiAnalysisConsentGiven: boolean;
+  consentTimestamp?: string;
+}
+
+export interface GeneratorVisualFinding {
+  category: 'NAMEPLATE' | 'CONTROLLER_DISPLAY' | 'PHYSICAL_DAMAGE' | 'LEAKAGE' | 'EXHAUST_SMOKE' | 'CORROSION_LOOSE' | 'GENERAL_CONDITION' | 'UNCERTAIN';
+  observation: string;
+  isUncertain: boolean;
+  preliminaryIndication?: string;
+}
+
+export const GENERATOR_IMAGE_ANALYSIS_DISCLAIMER_FA = 
+  'ارزیابی تصویری هوش مصنوعی صرفاً یک تحلیل کمکی و مقدماتی بر اساس شواهد ظاهری عکس است. عکس‌ها هرگز نمی‌توانند نبود خطرات الکتریکی، نشتی پنهان سوخت، خطر گاز سمی مونوکسید کربن (CO) یا آتش‌سوزی را اثبات کنند. پیش از هرگونه اقدام، رعایت پروتکل‌های ایمنی و بازرسی حضوری توسط تکنسین دارای صلاحیت الزامی است.';
+
+export const GENERATOR_PHOTO_SAFETY_WARNING_FA =
+  'برای گرفتن عکس به دستگاه دارای نشتی سوخت، سیم برق آسیب‌دیده، دود یا آتش نزدیک نشوید. ایمنی شما از ثبت تصویر مهم‌تر است.';

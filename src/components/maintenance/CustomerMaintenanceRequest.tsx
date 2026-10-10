@@ -35,7 +35,8 @@ import {
   GeneratorStorageDuration,
   GeneratorStartingMethod,
   GeneratorPhaseContext,
-  GENERATOR_SAFETY_RULES
+  GENERATOR_SAFETY_RULES,
+  GENERATOR_PHOTO_SAFETY_WARNING_FA
 } from '../../types/generatorMaintenance';
 
 interface CustomerMaintenanceRequestProps {
@@ -85,6 +86,7 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
 
   // Step 3: Photos & Documents
   const [photos, setPhotos] = useState<{ id: string; name: string; preview: string; base64: string; file?: File; mimeType?: string; sizeBytes?: number }[]>([]);
+  const [aiImageConsent, setAiImageConsent] = useState<boolean>(false);
   const [billDoc, setBillDoc] = useState<{
     name: string;
     preview?: string;
@@ -232,7 +234,8 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
           status: billDoc.status || 'UNVERIFIED',
           data: billDoc.data
         } : undefined,
-        triggerAiAssisted: true
+        triggerAiAssisted: true,
+        aiImageConsent: isGenerator ? aiImageConsent : undefined
       };
 
       const res = await fetch('/api/diagnose', {
@@ -1086,6 +1089,37 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
             </p>
           </div>
 
+          {/* Generator Contextual Photo Guidance and Persian Safety Warning */}
+          {isGenerator && (
+            <div className="space-y-3">
+              {/* Mandatory Persian Safety Warning */}
+              <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl flex items-start gap-3 text-amber-950">
+                <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+                <div className="space-y-1">
+                  <span className="font-bold text-xs text-amber-900 block">هشدار حیاتی ایمنی عکس‌برداری از ژنراتور:</span>
+                  <p className="text-xs leading-relaxed font-semibold">
+                    «{GENERATOR_PHOTO_SAFETY_WARNING_FA}»
+                  </p>
+                  <p className="text-[11px] text-amber-800 leading-relaxed mt-1">
+                    توجه: بارگذاری عکس کاملاً اختیاری است. هرگز برای گرفتن عکس دستگاه را روشن نکنید، پنل‌های برق‌دار را باز نکنید، گارد یا محافظ‌های دوار را بر ندارید، و به لوله‌های سوخت دست نزنید.
+                  </p>
+                </div>
+              </div>
+
+              {/* Contextual photo recommendations */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2 text-xs">
+                <span className="font-bold text-slate-800 block">راهنمای تصاویر مفید برای عیب‌یابی اولیه ژنراتور:</span>
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-600 list-disc list-inside">
+                  <li>عکس واضح از پلاک مشخصات فنی و مدل ژنراتور</li>
+                  <li>عکس از صفحه کنترلر یا نمایشگر کدهای خطا (در صورت وجود)</li>
+                  <li>عکس از آسیب‌دیدگی‌های فیزیکی مشهود خارجی</li>
+                  <li>عکس از محل نشتی احتمالی مایعات (صرفاً از فاصله ایمن)</li>
+                  <li>عکس کلی از موقعیت استقرار و شرایط محیطی دستگاه</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
           {/* Photos Upload Area */}
           <div className="space-y-3">
             <label className="block text-xs font-bold text-slate-700">
@@ -1123,6 +1157,28 @@ export const CustomerMaintenanceRequest: React.FC<CustomerMaintenanceRequestProp
               )}
             </div>
           </div>
+
+          {/* Explicit AI Photo Transmission Consent for Generators */}
+          {isGenerator && photos.length > 0 && (
+            <div className="p-4 bg-indigo-50/60 border border-indigo-200 rounded-2xl space-y-2">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={aiImageConsent}
+                  onChange={e => setAiImageConsent(e.target.checked)}
+                  className="mt-1 w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                />
+                <div className="space-y-1 text-xs">
+                  <span className="font-bold text-indigo-950 block">
+                    موافقت اختیاری با تحلیل تصویر توسط ارائه‌دهنده خارجی هوش مصنوعی (Google Gemini)
+                  </span>
+                  <p className="text-[11px] text-indigo-800 leading-relaxed">
+                    با علامت زدن این گزینه، موافقت می‌کنید که تصاویر بارگذاری‌شده صرفاً جهت استخراج شواهد فنی و کمک به عیب‌یابی مقدماتی به سرویس ابری هوش مصنوعی ارسال شوند. در صورت عدم انتخاب، تصاویر تنها برای کارشناس و تکنسین داخلی محفوظ مانده و عیب‌یابی از طریق سیستم قواعد مهندسی هوشیار انجام می‌پذیرد.
+                  </p>
+                </div>
+              </label>
+            </div>
+          )}
 
           {/* Bill / Document Upload (Optional) */}
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
