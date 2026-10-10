@@ -17,6 +17,7 @@ export const technicianMatchingService = {
     location?: string;
     province?: string;
     equipmentType?: string;
+    requiredExpertise?: string[];
   }): TechnicianMatch[] => {
     const project = projectRepository.findById(params.projectId);
     const projectCity = (project?.location?.city || (params as any).location || '').toLowerCase();
@@ -31,6 +32,26 @@ export const technicianMatchingService = {
     const symptomsJoined = (params.symptoms || (params as any).skillsRequired || []).join(' ').toLowerCase();
     const category = (params.category || '').toLowerCase();
     const compType = (params.componentType || (params as any).equipmentType || '').toLowerCase();
+    const equipType = (params.equipmentType || '').toUpperCase();
+
+    // Reliable generator identification
+    const isGenerator = 
+      equipType === 'PORTABLE_GENERATOR' ||
+      equipType === 'STATIONARY_GENSET' ||
+      compType.includes('generator') ||
+      compType.includes('genset') ||
+      compType.includes('ژنراتور') ||
+      category.includes('generator') ||
+      category.includes('genset') ||
+      category.includes('ژنراتور') ||
+      symptomsJoined.includes('موتور برق') ||
+      symptomsJoined.includes('دیزل ژنراتور') ||
+      symptomsJoined.includes('ژنراتور اضطراری') ||
+      symptomsJoined.includes('portable_generator') ||
+      symptomsJoined.includes('stationary_genset');
+
+    // Server-authoritative or passed requiredExpertise
+    const requiredExpertiseList = (params.requiredExpertise || []).map(e => e.toLowerCase());
 
     const matches: TechnicianMatch[] = candidates.map(pro => {
       let score = 0;
@@ -39,10 +60,9 @@ export const technicianMatchingService = {
       // 1. City / Location Match (Up to 40 pts)
       const proCities = (pro.serviceCities || []).map(c => c.toLowerCase());
       const hasCityMatch = projectCity && proCities.some(c => c.includes(projectCity) || projectCity.includes(c));
-
       if (hasCityMatch) {
         score += 40;
-        reasons.push(`پوشش خدمات در شهر پروژه (${project?.location?.city})`);
+        reasons.push(`پوشش خدمات در شهر پروژه (${project?.location?.city || (params as any).location})`);
       } else if (proCities.length > 0) {
         score += 15;
         reasons.push(`ارائه خدمات در سایر شهرهای مجاور`);
@@ -52,23 +72,59 @@ export const technicianMatchingService = {
       const proSpecialties = (pro.specialties || []).map(s => s.toLowerCase());
       const matchingSpecs: string[] = [];
 
-      const checkKeywords = (keywords: string[], tag: string) => {
+      const checkKeywords = (keywords: string[], tag: string, requireSymptomMatch = true) => {
         const matchesSymptom = keywords.some(k => 
-          symptomsJoined.includes(k) || category.includes(k) || compType.includes(k)
+          symptomsJoined.includes(k) || category.includes(k) || compType.includes(k) || requiredExpertiseList.some(re => re.includes(k))
         );
         const matchesPro = keywords.some(k => proSpecialties.some(ps => ps.includes(k)));
-        if (matchesPro && matchesSymptom) {
-          matchingSpecs.push(tag);
-        } else if (matchesPro) {
-          // General relevant skill
+        
+        if (matchesPro && (matchesSymptom || !requireSymptomMatch)) {
           matchingSpecs.push(tag);
         }
       };
 
-      checkKeywords(['خورشیدی', 'solar', 'پنل', 'فتوولتائیک'], 'سیستم‌های خورشیدی');
-      checkKeywords(['اینورتر', 'inverter', 'مبدل'], 'اینورتر و ادوات قدرت');
-      checkKeywords(['باتری', 'battery', 'bms', 'ذخیره‌ساز'], 'باتری و سیستم‌های ذخیره‌ساز');
-      checkKeywords(['برق', 'electrical', 'پست', 'فشار متوسط'], 'تاسیسات برق و اتوماسیون خورشیدی');
+      if (!isGenerator) {
+        // PRESERVED SOLAR MATCHING BEHAVIOR
+        checkKeywords(['خورشیدی', 'solar', 'پنل', 'فتوولتائیک'], 'سیستم‌های خورشیدی');
+        checkKeywords(['اینورتر', 'inverter', 'مبدل'], 'اینورتر و ادوات قدرت');
+        checkKeywords(['باتری', 'battery', 'bms', 'ذخیره‌ساز'], 'باتری و سیستم‌های ذخیره‌ساز');
+        checkKeywords(['برق', 'electrical', 'پست', 'فشار متوسط'], 'تاسیسات برق و اتوماسیون خورشیدی');
+      } else {
+        // GENERATOR MATCHING BEHAVIOR
+        // A. Mechanical / Engine specialties
+        checkKeywords(
+          ['موتور احتراقی', 'تعمیر موتور', 'مکانیک', 'موتور دیزل', 'موتور بنزینی', 'engine', 'engine repair'],
+          'مکانیک و موتور احتراقی ژنراتور'
+        );
+
+        // B. Core Generator / Genset specialties
+        checkKeywords(
+          ['ژنراتور', 'دیزل ژنراتور', 'موتور برق', 'سرویس ژنراتور', 'تعمیر ژنراتور', 'genset', 'generator', 'diesel generator'],
+          'تخصصی دیزل‌ژنراتور و موتور برق'
+        );
+
+        // C. Electrical Generator, Alternator & ATS / AVR specialties
+        checkKeywords(
+          ['ats', 'چنج اور', 'چنج‌اور', 'چنجاور', 'avr', 'رگولاتور ولتاژ', 'آلترناتور', 'alternator', 'برق ژنراتور'],
+          'برق و سیستم چنج‌اور (ATS) و رگولاتور ولتاژ ژنراتور'
+        );
+
+        // D. Diagnosis-derived requiredExpertise matching (bonus for exact expertise coverage)
+        if (requiredExpertiseList.length > 0) {
+          for (const reqExp of requiredExpertiseList) {
+            const hasMatch = proSpecialties.some(ps => ps.includes(reqExp) || reqExp.includes(ps));
+            if (hasMatch) {
+              matchingSpecs.push(`تطابق مهارت مورد نیاز تشخیص: ${reqExp}`);
+            }
+          }
+        }
+
+        // E. General electrical (relevant as secondary skill, but distinguished from mechanical engine)
+        const hasGenSpecialty = matchingSpecs.length > 0;
+        if (hasGenSpecialty) {
+          checkKeywords(['برق', 'electrical', 'تابلو توزیع'], 'تاسیسات الکتریکی مرتبط');
+        }
+      }
 
       if (matchingSpecs.length > 0) {
         const uniqueSpecs = Array.from(new Set(matchingSpecs));
@@ -97,13 +153,13 @@ export const technicianMatchingService = {
         reasons.push('احراز هویت و تایید مدارک رسمی');
       }
 
-      // Data-truth: score is deterministic. Zero relevance remains 0, never boosted to 20%
+      // Data-truth: score is deterministic and bounded in [0, 100]
       const finalScore = Math.min(100, Math.max(0, score));
 
       return {
         technicianId: pro.id,
         fullName: pro.fullName || pro.name || null,
-        phone: pro.phone,
+        phone: undefined, // Privacy: Direct phone number omitted from matching preview
         specialties: pro.specialties || [],
         serviceCities: pro.serviceCities || [],
         yearsExperience: pro.yearsExperience ?? null,
@@ -118,21 +174,34 @@ export const technicianMatchingService = {
 
     // Sort descending by score
     matches.sort((a, b) => b.matchScore - a.matchScore);
+
     return matches;
   },
 
   /**
    * Matches verified technicians for a specific maintenance case ID
+   * Retrieves server-stored diagnosis and requiredExpertise authoritatively
    */
   matchTechniciansForCase: (caseId: string): TechnicianMatch[] => {
     const mCase = maintenanceRepository.getCaseById(caseId);
     if (!mCase) return [];
+
+    let requiredExpertise: string[] | undefined = undefined;
+    if (mCase.diagnosisId) {
+      const diag = maintenanceRepository.getDiagnosisById(mCase.diagnosisId);
+      if (diag && Array.isArray(diag.requiredExpertise)) {
+        requiredExpertise = diag.requiredExpertise;
+      }
+    }
+
     return technicianMatchingService.matchTechnicians({
       projectId: mCase.projectId,
       assetId: mCase.assetId,
+      equipmentType: mCase.equipmentType,
       symptoms: [mCase.title, mCase.description],
       category: mCase.category,
-      componentType: mCase.componentId
+      componentType: mCase.componentId,
+      requiredExpertise
     });
   }
 };

@@ -1477,13 +1477,7 @@ maintenanceRouter.get('/maintenance/:maintenanceCaseId/technician-matches', (req
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
-  const matches = technicianMatchingService.matchTechnicians({
-    projectId: mCase.projectId,
-    assetId: mCase.assetId,
-    symptoms: [mCase.title, mCase.description],
-    category: mCase.category,
-    componentType: mCase.componentId
-  });
+  const matches = technicianMatchingService.matchTechniciansForCase(caseId);
 
   return res.json(matches);
 });
@@ -1500,13 +1494,7 @@ maintenanceRouter.get(['/cases/:maintenanceCaseId/technician-matches', '/mainten
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
-  const matches = technicianMatchingService.matchTechnicians({
-    projectId: mCase.projectId,
-    assetId: mCase.assetId,
-    symptoms: [mCase.title, mCase.description],
-    category: mCase.category,
-    componentType: mCase.componentId
-  });
+  const matches = technicianMatchingService.matchTechniciansForCase(caseId);
 
   return res.json(matches);
 });
