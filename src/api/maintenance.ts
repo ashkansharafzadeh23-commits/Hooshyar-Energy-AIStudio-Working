@@ -124,38 +124,16 @@ export function hasTechnicianFormallyAccepted(mCase: MaintenanceCase): boolean {
   const assignedTechId = mCase.assignedTechnicianId;
   const histories = maintenanceRepository.getAssignmentHistories(mCase.id) || [];
 
-  // Look for authoritative ACCEPTED assignment history entry belonging to the currently assigned technician
-  const hasValidAcceptedHistory = histories.some(h => {
+  // Exact, server-authoritative acceptance source:
+  // Must have a persisted assignment history record with status === 'ACCEPTED'
+  // strictly belonging to the currently assigned technician for this exact case.
+  // There is NO status-based fallback (e.g. IN_PROGRESS, SCHEDULED, CLOSED alone never prove acceptance).
+  return histories.some(h => {
     if (h.status !== 'ACCEPTED') return false;
     if (!h.technicianId) return false;
-    // Match either direct ID match or identity mapping match
-    return isCaseAssignedToTechnician(assignedTechId, h.technicianId) ||
-           isCaseAssignedToTechnician(h.technicianId, assignedTechId) ||
-           h.technicianId === assignedTechId;
+    // Direct match or verified identity match ensuring h.technicianId belongs to assignedTechId
+    return h.technicianId === assignedTechId || isCaseAssignedToTechnician(assignedTechId, h.technicianId);
   });
-
-  if (hasValidAcceptedHistory) {
-    return true;
-  }
-
-  // If status has advanced beyond ASSIGNED/SCHEDULED to formal execution states,
-  // verify whether this case has actually been accepted or started
-  const executionStatuses = [
-    'IN_PROGRESS',
-    'AWAITING_VERIFICATION',
-    'PENDING_VERIFICATION',
-    'VERIFIED',
-    'COMPLETED',
-    'RESOLVED',
-    'CLOSED'
-  ];
-
-  if (executionStatuses.includes(mCase.status)) {
-    return true;
-  }
-
-  // In all other cases (including OPEN, DRAFT, ASSIGNED, and SCHEDULED without ACCEPTED history), false
-  return false;
 }
 
 export function sanitizeCaseForTechnician(
@@ -1318,6 +1296,15 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/start', '/cases/:mainte
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
+  // Security Barrier: /start MUST NOT bypass formal /accept.
+  // Before starting execution, the assigned technician must have formally accepted the assignment.
+  // Admins can manage operations, but for technician execution formal acceptance is mandatory.
+  if (!hasTechnicianFormallyAccepted(mCase)) {
+    return res.status(409).json({
+      error: 'آغاز عملیات پیش از پذیرش رسمی پرونده امکان‌پذیر نیست. ابتدا پرونده را رسماً بپذیرید (/accept).'
+    });
+  }
+
   const updated = maintenanceRepository.updateCase(caseId, {
     status: 'IN_PROGRESS',
     startedAt: new Date().toISOString()
@@ -1330,7 +1317,13 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/start', '/cases/:mainte
     description: `آغاز عملیات تعمیرات و سرویس پرونده ${mCase.maintenanceCode || mCase.id}`
   });
 
-  return res.json(updated);
+  const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
+  const isAccepted = hasTechnicianFormallyAccepted(updated);
+  const responseData = (isReporterOrAdmin || isAccepted)
+    ? updated
+    : sanitizeCaseForTechnician(updated, { isAccepted: false });
+
+  return res.json(responseData);
 });
 
 /**

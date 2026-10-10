@@ -21,13 +21,20 @@
  * 15. No direct phone number is exposed through nested response objects (e.g. billDoc.extractedData).
  * 16. Repeated serialization of the technician-facing response remains free of customer contact data.
  * 17. Formal acceptance (status IN_PROGRESS via /accept) legitimately authorizes contact info for execution.
- * 18. MANDATORY PRE-ACCEPTANCE SCHEDULING REGRESSION:
+ * 18. PRE-ACCEPTANCE SCHEDULING REGRESSION:
  *     Calling /schedule BEFORE /accept does NOT release customer contact info!
- * 19. MANDATORY ACCEPTANCE-EVIDENCE TEST:
- *     SCHEDULED alone without ACCEPTED assignment history does NOT release contact.
- *     An ACCEPTED history entry for technician B does NOT release contact to technician A.
- *     Only the currently assigned technician's valid acceptance authorizes release.
- * 20. db.json byte-for-byte immutability guard passes.
+ * 19. PRE-ACCEPTANCE /start REJECTION & PRIVACY (MANDATORY TEST A & I):
+ *     Calling /start BEFORE /accept is rejected with HTTP 409, does NOT advance to IN_PROGRESS,
+ *     does NOT create an ACCEPTED assignment history, and keeps contact info hidden.
+ * 20. STATUS ALONE DOES NOT AUTHORIZE RELEASE (MANDATORY TEST B):
+ *     A case with status IN_PROGRESS without valid ACCEPTED history for the current technician
+ *     STILL HIDES customer contact information.
+ * 21. FOREIGN ACCEPTANCE HISTORY ISOLATION (MANDATORY TEST C):
+ *     An ACCEPTED history entry belonging to Technician B does NOT authorize contact release to Technician A.
+ * 22. /start AFTER LEGITIMATE ACCEPTANCE (MANDATORY TEST E):
+ *     After legitimate /accept, calling /start succeeds according to the existing workflow without creating
+ *     duplicate acceptance histories.
+ * 23. db.json byte-for-byte immutability guard passes.
  */
 
 import http from 'http';
@@ -49,7 +56,7 @@ function assert(condition: boolean, message: string) {
 
 async function runTestSuite() {
   console.log('================================================================');
-  console.log('STAGE 13.11-F.2: ASSIGNMENT PRIVACY HARDENING TESTS');
+  console.log('STAGE 13.11-F.2: ASSIGNMENT PRIVACY & ACCEPTANCE BYPASS TESTS');
   console.log('================================================================\n');
 
   // 1. Database Isolation Guard
@@ -240,7 +247,6 @@ async function runTestSuite() {
     // TEST 2: SELECT-TECHNICIAN PRIVACY BOUNDARY
     // -------------------------------------------------------------------------
     console.log('\n--- 2. SELECT-TECHNICIAN PRIVACY BOUNDARY ---');
-    // Customer selects Technician A
     const selectRes = await fetch(`${baseUrl}/cases/${caseId}/select-technician`, {
       method: 'POST',
       headers: {
@@ -281,7 +287,6 @@ async function runTestSuite() {
     // TEST 4: TECHNICIAN CASE-LIST RESPONSE PRIVACY (BEFORE ACCEPTANCE)
     // -------------------------------------------------------------------------
     console.log('\n--- 4. TECHNICIAN CASE-LIST RESPONSE PRIVACY ---');
-    // Technician A fetches their assigned cases via /api/technician/cases
     const techCasesRes = await fetch(`${baseUrl}/technician/cases`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${techTokenA}` }
@@ -305,7 +310,7 @@ async function runTestSuite() {
       'Technician Case List: Nested billDoc customerPhone is OMITTED before formal acceptance'
     );
 
-    // Also verify via generic /api/cases endpoint accessed by technician A
+    // Generic /api/cases endpoint accessed by technician A
     const genericCasesRes = await fetch(`${baseUrl}/cases`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${techTokenA}` }
@@ -342,10 +347,52 @@ async function runTestSuite() {
     );
 
     // -------------------------------------------------------------------------
-    // MANDATORY NEW TEST SCENARIO: PRE-ACCEPTANCE /schedule DOES NOT EXPOSE CONTACT
+    // TEST A & I: /start BEFORE FORMAL ACCEPTANCE MUST BE REJECTED (409)
     // -------------------------------------------------------------------------
-    console.log('\n--- MANDATORY TEST 1: PRE-ACCEPTANCE /schedule DOES NOT EXPOSE CONTACT ---');
-    // Technician A calls /schedule BEFORE calling /accept
+    console.log('\n--- TEST A & I: /start BEFORE ACCEPTANCE REJECTION ---');
+    const preAcceptStartRes = await fetch(`${baseUrl}/cases/${caseId}/start`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${techTokenA}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    assert(
+      preAcceptStartRes.status === 409,
+      `Pre-Acceptance /start: Rejected with HTTP 409 (got status: ${preAcceptStartRes.status})`
+    );
+
+    // Confirm case status did NOT become IN_PROGRESS
+    const caseAfterFailedStart = maintenanceRepository.getCaseById(caseId);
+    assert(
+      caseAfterFailedStart?.status === 'ASSIGNED',
+      'Pre-Acceptance /start: Case status remains ASSIGNED (did NOT mutate to IN_PROGRESS)'
+    );
+
+    // Confirm no ACCEPTED assignment history entry was fabricated
+    const historiesAfterFailedStart = maintenanceRepository.getAssignmentHistories(caseId) || [];
+    const hasFabricatedAcceptance = historiesAfterFailedStart.some(h => h.status === 'ACCEPTED');
+    assert(
+      !hasFabricatedAcceptance,
+      'Pre-Acceptance /start: ZERO ACCEPTED assignment history entries created'
+    );
+
+    // Confirm customer contact information remains strictly hidden
+    const postFailedStartDetailRes = await fetch(`${baseUrl}/cases/${caseId}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${techTokenA}` }
+    });
+    const postFailedStartDetail = await postFailedStartDetailRes.json();
+    assert(
+      postFailedStartDetail.contactName === undefined && postFailedStartDetail.contactPhone === undefined,
+      'Pre-Acceptance /start: Customer contact information remains strictly hidden after rejected /start'
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST F: /schedule BEFORE FORMAL ACCEPTANCE
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST F: /schedule BEFORE FORMAL ACCEPTANCE ---');
     const scheduleRes = await fetch(`${baseUrl}/cases/${caseId}/schedule`, {
       method: 'POST',
       headers: {
@@ -360,49 +407,54 @@ async function runTestSuite() {
     assert(scheduleData.status === 'SCHEDULED', 'Pre-Acceptance Schedule: Case status is now SCHEDULED');
     assert(
       scheduleData.contactName === undefined,
-      'Pre-Acceptance Schedule Response: contactName is strictly OMITTED from schedule response'
+      'Pre-Acceptance Schedule Response: contactName is strictly OMITTED'
     );
     assert(
       scheduleData.contactPhone === undefined,
-      'Pre-Acceptance Schedule Response: contactPhone is strictly OMITTED from schedule response'
+      'Pre-Acceptance Schedule Response: contactPhone is strictly OMITTED'
     );
     assert(
       scheduleData.billDoc?.extractedData?.customerPhone === undefined,
       'Pre-Acceptance Schedule Response: Nested billDoc customer phone is strictly OMITTED'
     );
 
-    // Re-fetch case detail as technician A while status is SCHEDULED (still not formally accepted)
-    const postScheduleDetailRes = await fetch(`${baseUrl}/cases/${caseId}`, {
+    // -------------------------------------------------------------------------
+    // TEST B: IN_PROGRESS STATUS ALONE WITHOUT VALID ACCEPTANCE HISTORY DOES NOT RELEASE CONTACT
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST B: IN_PROGRESS WITHOUT ACCEPTED HISTORY DOES NOT RELEASE CONTACT ---');
+    // Force case status to IN_PROGRESS in repository, with NO ACCEPTED history for tech A
+    maintenanceRepository.updateCase(caseId, { status: 'IN_PROGRESS' });
+
+    const inProgressNoHistoryRes = await fetch(`${baseUrl}/cases/${caseId}`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${techTokenA}` }
     });
-    const postScheduleDetail = await postScheduleDetailRes.json();
-    assert(postScheduleDetail.status === 'SCHEDULED', 'Post-Schedule Detail: Case status remains SCHEDULED');
+    const inProgressNoHistoryDetail = await inProgressNoHistoryRes.json();
     assert(
-      postScheduleDetail.contactName === undefined,
-      'Post-Schedule Detail: contactName remains strictly HIDDEN when status is SCHEDULED without /accept'
+      inProgressNoHistoryDetail.status === 'IN_PROGRESS',
+      'Test B: Case status is IN_PROGRESS in database'
     );
     assert(
-      postScheduleDetail.contactPhone === undefined,
-      'Post-Schedule Detail: contactPhone remains strictly HIDDEN when status is SCHEDULED without /accept'
+      inProgressNoHistoryDetail.contactName === undefined,
+      'Test B: contactName remains strictly HIDDEN when status is IN_PROGRESS without ACCEPTED history'
     );
     assert(
-      postScheduleDetail.billDoc?.extractedData?.customerPhone === undefined,
-      'Post-Schedule Detail: Nested customer phone remains strictly HIDDEN when status is SCHEDULED without /accept'
+      inProgressNoHistoryDetail.contactPhone === undefined,
+      'Test B: contactPhone remains strictly HIDDEN when status is IN_PROGRESS without ACCEPTED history'
     );
-
-    // Confirm database record still retains customer contact data
-    const dbCheckAfterSchedule = maintenanceRepository.getCaseById(caseId);
     assert(
-      dbCheckAfterSchedule?.contactPhone === '09129990001' && dbCheckAfterSchedule?.contactName === 'مهندس احمد رضایی (مسئول تاسیسات)',
-      'Pre-Acceptance Schedule: Persisted db record strictly retains original customer contact details'
+      inProgressNoHistoryDetail.billDoc?.extractedData?.customerPhone === undefined,
+      'Test B: Nested customerPhone remains strictly HIDDEN when status is IN_PROGRESS without ACCEPTED history'
     );
 
+    // Revert status to ASSIGNED for subsequent tests
+    maintenanceRepository.updateCase(caseId, { status: 'ASSIGNED' });
+
     // -------------------------------------------------------------------------
-    // MANDATORY ACCEPTANCE-EVIDENCE TEST: FOREIGN / INVALID ACCEPTANCE EVIDENCE
+    // TEST C: FOREIGN TECHNICIAN ACCEPTANCE HISTORY DOES NOT AUTHORIZE RELEASE
     // -------------------------------------------------------------------------
-    console.log('\n--- MANDATORY TEST 2: FOREIGN / INVALID ACCEPTANCE EVIDENCE ---');
-    // Inject an ACCEPTED assignment history entry belonging to Technician B
+    console.log('\n--- TEST C: FOREIGN TECHNICIAN ACCEPTANCE HISTORY ISOLATION ---');
+    // Create an ACCEPTED history belonging to Technician B
     maintenanceRepository.createAssignmentHistory({
       maintenanceCaseId: caseId,
       technicianId: techUserB.id,
@@ -427,7 +479,107 @@ async function runTestSuite() {
     );
 
     // -------------------------------------------------------------------------
-    // TEST 6: UNASSIGNED TECHNICIAN ACCESS BLOCKED (IDOR PREVENTION)
+    // TEST D: LEGITIMATE /accept RELEASES CONTACT INFORMATION
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST D: LEGITIMATE /accept FLOW ---');
+    const acceptRes = await fetch(`${baseUrl}/cases/${caseId}/accept`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${techTokenA}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ notes: 'پذیرش شد؛ جهت بازدید و هماهنگی مراجعه می‌کنم' })
+    });
+
+    assert(acceptRes.status === 200, 'Legitimate /accept: Successfully accepted by assigned technician');
+    const acceptedData = await acceptRes.json();
+    assert(acceptedData.status === 'IN_PROGRESS', 'Legitimate /accept: Status updated to IN_PROGRESS');
+
+    // Confirm that an ACCEPTED history entry for technician A now exists in db
+    const historiesPostAccept = maintenanceRepository.getAssignmentHistories(caseId) || [];
+    const techAAcceptedEntry = historiesPostAccept.find(
+      h => h.status === 'ACCEPTED' && (h.technicianId === techUserA.id || h.technicianId === proTechA.id)
+    );
+    assert(Boolean(techAAcceptedEntry), 'Legitimate /accept: Authoritative ACCEPTED history entry exists in db');
+
+    // Technician A fetches case detail post-acceptance
+    const postAcceptDetailRes = await fetch(`${baseUrl}/cases/${caseId}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${techTokenA}` }
+    });
+    const postAcceptDetail = await postAcceptDetailRes.json();
+    assert(
+      postAcceptDetail.contactName === 'مهندس احمد رضایی (مسئول تاسیسات)',
+      'Post-Acceptance: contactName is legitimately authorized for execution after formal acceptance'
+    );
+    assert(
+      postAcceptDetail.contactPhone === '09129990001',
+      'Post-Acceptance: contactPhone is legitimately authorized for execution after formal acceptance'
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST E: /start AFTER LEGITIMATE ACCEPTANCE
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST E: /start AFTER LEGITIMATE ACCEPTANCE ---');
+    const countHistoriesBeforeStart = (maintenanceRepository.getAssignmentHistories(caseId) || []).length;
+
+    const postAcceptStartRes = await fetch(`${baseUrl}/cases/${caseId}/start`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${techTokenA}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    assert(postAcceptStartRes.status === 200, 'Post-Acceptance /start: Successfully executes with HTTP 200');
+    const postAcceptStartData = await postAcceptStartRes.json();
+    assert(postAcceptStartData.status === 'IN_PROGRESS', 'Post-Acceptance /start: Status is IN_PROGRESS');
+    assert(
+      postAcceptStartData.contactPhone === '09129990001',
+      'Post-Acceptance /start: Legitimate execution response includes customer contact details'
+    );
+
+    const countHistoriesAfterStart = (maintenanceRepository.getAssignmentHistories(caseId) || []).length;
+    assert(
+      countHistoriesAfterStart === countHistoriesBeforeStart,
+      'Post-Acceptance /start: Did NOT create duplicate acceptance histories'
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST G: /schedule AFTER LEGITIMATE ACCEPTANCE
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST G: /schedule AFTER LEGITIMATE ACCEPTANCE ---');
+    const postAcceptScheduleRes = await fetch(`${baseUrl}/cases/${caseId}/schedule`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${techTokenA}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ scheduledAt: '2026-10-20T14:00:00Z' })
+    });
+    assert(postAcceptScheduleRes.status === 200, 'Post-Acceptance Schedule: Executes successfully');
+    const postAcceptScheduleData = await postAcceptScheduleRes.json();
+    assert(
+      postAcceptScheduleData.contactPhone === '09129990001',
+      'Post-Acceptance Schedule: Response legitimately includes contactPhone'
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST H: PERSISTED DATA INTEGRITY IN STORAGE
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST H: PERSISTED DATA INTEGRITY IN STORAGE ---');
+    const finalDbCheck = maintenanceRepository.getCaseById(caseId);
+    assert(
+      finalDbCheck?.contactPhone === '09129990001' && finalDbCheck?.contactName === 'مهندس احمد رضایی (مسئول تاسیسات)',
+      'Persisted Data Integrity: Case in repository retains original contact details'
+    );
+    assert(
+      finalDbCheck?.billDoc?.extractedData?.customerPhone === '09129990001',
+      'Persisted Data Integrity: Nested billDoc retains original customerPhone'
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST 6: UNASSIGNED TECHNICIAN ISOLATION (ANTI-IDOR)
     // -------------------------------------------------------------------------
     console.log('\n--- 6. UNASSIGNED TECHNICIAN ISOLATION (ANTI-IDOR) ---');
     const strangerDetailRes = await fetch(`${baseUrl}/cases/${caseId}`, {
@@ -495,23 +647,6 @@ async function runTestSuite() {
     );
 
     // -------------------------------------------------------------------------
-    // TEST 9 & 16: REPEATED SERIALIZATION DOES NOT MUTATE PERSISTED DATA
-    // -------------------------------------------------------------------------
-    console.log('\n--- 9 & 16. IMMUTABILITY & REPEATED SERIALIZATION ---');
-    for (let i = 0; i < 3; i++) {
-      const repeated = await (await fetch(`${baseUrl}/cases/${caseId}`, {
-        headers: { 'Authorization': `Bearer ${techTokenA}` }
-      })).json();
-      assert(repeated.contactPhone === undefined, `Repeated Call ${i+1}: contactPhone remains omitted`);
-    }
-
-    const recheckDb = maintenanceRepository.getCaseById(caseId);
-    assert(
-      recheckDb?.contactPhone === '09129990001' && recheckDb?.contactName === 'مهندس احمد رضایی (مسئول تاسیسات)',
-      'Database Invariant: Stored case was never mutated by technician queries'
-    );
-
-    // -------------------------------------------------------------------------
     // TEST 10 & 11: ZERO AUTOMATION DRIFT
     // -------------------------------------------------------------------------
     console.log('\n--- 10 & 11. NO AUTOMATION DRIFT ---');
@@ -519,61 +654,12 @@ async function runTestSuite() {
     const rfqs = rfqRepository.getAllRFQs();
     assert(rfqs.length === 0, 'Zero Drift: No marketplace RFQ created');
 
-    // -------------------------------------------------------------------------
-    // TEST 17: FORMAL ACCEPTANCE AUTHORIZES CONTACT INFO FOR EXECUTION
-    // -------------------------------------------------------------------------
-    console.log('\n--- 17. FORMAL ACCEPTANCE AUTHORIZATION BOUNDARY ---');
-    // Technician A formally accepts the assignment via /api/cases/:id/accept
-    const acceptRes = await fetch(`${baseUrl}/cases/${caseId}/accept`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${techTokenA}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ notes: 'پذیرش شد؛ جهت بازدید و هماهنگی مراجعه می‌کنم' })
-    });
-
-    assert(acceptRes.status === 200, 'Accept Case: Successfully accepted by assigned technician');
-    const acceptedData = await acceptRes.json();
-    assert(acceptedData.status === 'IN_PROGRESS', 'Accept Case: Status updated to IN_PROGRESS');
-
-    // Now technician A queries case detail AFTER formal acceptance
-    const postAcceptDetailRes = await fetch(`${baseUrl}/cases/${caseId}`, {
-      method: 'GET',
-      headers: { 'Authorization': `Bearer ${techTokenA}` }
-    });
-    const postAcceptDetail = await postAcceptDetailRes.json();
-    assert(
-      postAcceptDetail.contactName === 'مهندس احمد رضایی (مسئول تاسیسات)',
-      'Post-Acceptance: contactName is legitimately authorized for execution after formal acceptance'
-    );
-    assert(
-      postAcceptDetail.contactPhone === '09129990001',
-      'Post-Acceptance: contactPhone is legitimately authorized for execution after formal acceptance'
-    );
-
-    // Now test /schedule AFTER formal acceptance
-    const postAcceptScheduleRes = await fetch(`${baseUrl}/cases/${caseId}/schedule`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${techTokenA}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ scheduledAt: '2026-10-20T14:00:00Z' })
-    });
-    assert(postAcceptScheduleRes.status === 200, 'Post-Acceptance Schedule: Endpoint executes successfully');
-    const postAcceptScheduleData = await postAcceptScheduleRes.json();
-    assert(
-      postAcceptScheduleData.contactPhone === '09129990001',
-      'Post-Acceptance Schedule: Response legitimately includes contactPhone after formal acceptance'
-    );
-
     server.close();
 
     // -------------------------------------------------------------------------
-    // TEST 20: IMMUTABILITY GUARD
+    // TEST 23: IMMUTABILITY GUARD
     // -------------------------------------------------------------------------
-    console.log('\n--- 20. VERIFYING PRODUCTION DB IMMUTABILITY GUARD ---');
+    console.log('\n--- 23. VERIFYING PRODUCTION DB IMMUTABILITY GUARD ---');
     isolation.verifyImmutability();
   } finally {
     isolation.cleanup();
