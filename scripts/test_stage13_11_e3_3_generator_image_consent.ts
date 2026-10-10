@@ -25,6 +25,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import http from 'http';
+import express from 'express';
 import { GoogleGenAI } from '@google/genai';
 import { setupTestDatabaseIsolation } from './test_isolation_guard.js';
 import {
@@ -89,6 +91,9 @@ async function runTestSuite() {
 
   // Dynamically import database-dependent modules
   const { diagnosisService } = await import('../src/services/diagnosisService.js');
+  const { maintenanceRouter } = await import('../src/api/maintenance.js');
+  const { userRepository } = await import('../src/repositories/userRepository.js');
+  const { jwtService } = await import('../src/security/jwtService.js');
 
   const samplePhoto = {
     base64Data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
@@ -189,7 +194,141 @@ async function runTestSuite() {
     assert(resTextOnly.rootCauses.length > 0, 'Text-only diagnosis: Produced valid engineering root causes');
     assert(resTextOnly.recommendedActions.length > 0, 'Text-only diagnosis: Produced recommended actions');
 
-    // -------------------------------------------------------------------------
+    // 1.5 Strict Boolean Consent Boundary: HTTP API Request Boundary Tests
+    // Set up isolated HTTP express app with maintenanceRouter
+    const testUser = userRepository.createUser({
+      name: 'Consent Security Tester',
+      phone: '09120000002',
+      role: 'CUSTOMER',
+      roles: ['CUSTOMER']
+    });
+    const authToken = jwtService.sign({ userId: testUser.id, role: testUser.role, roles: testUser.roles });
+
+    const testApp = express();
+    testApp.use(express.json());
+    testApp.use('/api', maintenanceRouter);
+    const testServer = http.createServer(testApp);
+    await new Promise<void>((resolve) => testServer.listen(0, resolve));
+    const testPort = (testServer.address() as any).port;
+    const testBaseUrl = 'http://127.0.0.1:' + testPort + '/api';
+
+    try {
+      // Test all 9 non-boolean invalid inputs at HTTP API boundary:
+      // "false", "true", 1, 0, "1", "0", [], {}, null
+      const invalidConsentTestCases = [
+        { label: 'String "false"', value: 'false' },
+        { label: 'String "true"', value: 'true' },
+        { label: 'Number 1', value: 1 },
+        { label: 'Number 0', value: 0 },
+        { label: 'String "1"', value: '1' },
+        { label: 'String "0"', value: '0' },
+        { label: 'Array []', value: [] },
+        { label: 'Object {}', value: {} },
+        { label: 'Null', value: null }
+      ];
+
+      for (const tc of invalidConsentTestCases) {
+        capturedAiCalls = [];
+        const res = await fetch(testBaseUrl + '/diagnose', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + authToken
+          },
+          body: JSON.stringify({
+            equipmentType: 'PORTABLE_GENERATOR',
+            symptoms: ['روشن نشدن ژنراتور'],
+            photos: [{ data: samplePhoto.base64Data, type: samplePhoto.mimeType }],
+            aiImageConsent: tc.value
+          })
+        });
+
+        assert(
+          res.status === 400,
+          'HTTP API Boundary: ' + tc.label + ' rejected with HTTP 400 (Status: ' + res.status + ')'
+        );
+        const data = await res.json();
+        assert(
+          data?.error === 'INVALID_AI_IMAGE_CONSENT' || data?.error?.includes?.('aiImageConsent') || data?.message?.includes?.('boolean'),
+          'HTTP API Boundary: ' + tc.label + ' returns clear invalid consent error structure'
+        );
+        assert(
+          capturedAiCalls.length === 0,
+          'HTTP API Boundary: ' + tc.label + ' resulted in ZERO external AI calls and ZERO image transmission'
+        );
+      }
+
+      // Verify legitimate boolean true via HTTP API
+      capturedAiCalls = [];
+      const resTrueApi = await fetch(testBaseUrl + '/diagnose', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + authToken
+        },
+        body: JSON.stringify({
+          equipmentType: 'PORTABLE_GENERATOR',
+          symptoms: ['روشن نشدن ژنراتور'],
+          photos: [{ data: samplePhoto.base64Data, type: samplePhoto.mimeType }],
+          aiImageConsent: true
+        })
+      });
+      assert(resTrueApi.status === 200, 'HTTP API Boundary: Boolean true accepted with HTTP 200');
+      assert(capturedAiCalls.length === 1, 'HTTP API Boundary: Boolean true triggers external AI call');
+      if (capturedAiCalls.length > 0) {
+        const parts = capturedAiCalls[0]?.contents?.parts || [];
+        const imgParts = parts.filter((p: any) => p.inlineData);
+        assert(imgParts.length === 1, 'HTTP API Boundary: Boolean true successfully authorizes image transmission');
+      }
+
+      // Verify legitimate boolean false via HTTP API
+      capturedAiCalls = [];
+      const resFalseApi = await fetch(testBaseUrl + '/diagnose', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + authToken
+        },
+        body: JSON.stringify({
+          equipmentType: 'PORTABLE_GENERATOR',
+          symptoms: ['روشن نشدن ژنراتور'],
+          photos: [{ data: samplePhoto.base64Data, type: samplePhoto.mimeType }],
+          aiImageConsent: false
+        })
+      });
+      assert(resFalseApi.status === 200, 'HTTP API Boundary: Boolean false accepted with HTTP 200');
+      assert(capturedAiCalls.length === 1, 'HTTP API Boundary: Boolean false proceeds with text-only AI analysis');
+      if (capturedAiCalls.length > 0) {
+        const parts = capturedAiCalls[0]?.contents?.parts || [];
+        const imgParts = parts.filter((p: any) => p.inlineData);
+        assert(imgParts.length === 0, 'HTTP API Boundary: Boolean false blocks image transmission (ZERO image parts)');
+      }
+
+      // Verify omitted consent (undefined) via HTTP API
+      capturedAiCalls = [];
+      const resOmittedApi = await fetch(testBaseUrl + '/diagnose', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + authToken
+        },
+        body: JSON.stringify({
+          equipmentType: 'PORTABLE_GENERATOR',
+          symptoms: ['روشن نشدن ژنراتور'],
+          photos: [{ data: samplePhoto.base64Data, type: samplePhoto.mimeType }]
+        })
+      });
+      assert(resOmittedApi.status === 200, 'HTTP API Boundary: Omitted consent accepted with HTTP 200 (fallback)');
+      assert(capturedAiCalls.length === 1, 'HTTP API Boundary: Omitted consent proceeds with text-only AI analysis');
+      if (capturedAiCalls.length > 0) {
+        const parts = capturedAiCalls[0]?.contents?.parts || [];
+        const imgParts = parts.filter((p: any) => p.inlineData);
+        assert(imgParts.length === 0, 'HTTP API Boundary: Omitted consent blocks image transmission (ZERO image parts)');
+      }
+    } finally {
+      testServer.close();
+    }
+
     // TEST SECTION 2: GENERATOR SAFETY ESCALATION & HAZARD PRESERVATION
     // -------------------------------------------------------------------------
     console.log('\n--- 2. GENERATOR SAFETY & ZERO NUMERICAL CONFIDENCE ---');

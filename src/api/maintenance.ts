@@ -712,6 +712,13 @@ maintenanceRouter.post(['/diagnose', '/maintenance/diagnose', '/analyze-maintena
       operatingContext
     } = req.body || {};
 
+    if (aiImageConsent !== undefined && typeof aiImageConsent !== 'boolean') {
+      return res.status(400).json({
+        error: 'INVALID_AI_IMAGE_CONSENT',
+        message: 'aiImageConsent must be a boolean.'
+      });
+    }
+
     const description = req.body?.description || req.body?.textContext;
     const rawPhotos = req.body?.photos || req.body?.images;
     const documents = req.body?.documents;
@@ -814,7 +821,7 @@ maintenanceRouter.post(['/diagnose', '/maintenance/diagnose', '/analyze-maintena
       billData,
       locationCity,
       triggerAiAssisted: triggerAiAssisted ?? true,
-      aiImageConsent: aiImageConsent !== undefined ? Boolean(aiImageConsent) : undefined,
+      aiImageConsent: aiImageConsent === true ? true : (aiImageConsent === false ? false : undefined),
       operatingContext: normalizedOperatingContext
     });
 
