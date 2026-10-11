@@ -162,7 +162,7 @@ export const maintenanceCaseService = {
       return updated!;
     }
 
-    // State Machine Validation
+    // State Machine Validation (Canonical F.3 Transition Map)
     switch (currentStatus) {
       case 'DRAFT':
         if (newStatus !== 'OPEN') {
@@ -177,16 +177,22 @@ export const maintenanceCaseService = {
         break;
 
       case 'ASSIGNED':
-        if (newStatus !== 'IN_PROGRESS' && newStatus !== 'OPEN') {
-          throw new Error(`پرونده تخصیص یافته فقط می‌تواند شروع شود (IN_PROGRESS) یا تخصیص آن لغو گردد.`);
+        if (newStatus !== 'SCHEDULED' && newStatus !== 'IN_PROGRESS' && newStatus !== 'OPEN') {
+          throw new Error(`پرونده تخصیص یافته تنها می‌تواند زمان‌بندی شود (SCHEDULED)، شروع شود (IN_PROGRESS) یا بازگردانده شود (OPEN).`);
+        }
+        break;
+
+      case 'SCHEDULED':
+        if (newStatus !== 'IN_PROGRESS' && newStatus !== 'ASSIGNED') {
+          throw new Error(`پرونده زمان‌بندی شده تنها می‌تواند شروع شود (IN_PROGRESS) یا به تخصیص اولیه بازگردد (ASSIGNED).`);
         }
         break;
 
       case 'IN_PROGRESS':
-        if (newStatus !== 'PENDING_VERIFICATION' && newStatus !== 'ASSIGNED') {
-          throw new Error(`پس از اتمام کار، پرونده باید جهت بازبینی ارسال شود (PENDING_VERIFICATION).`);
+        if (newStatus !== 'AWAITING_VERIFICATION' && newStatus !== 'PENDING_VERIFICATION' && newStatus !== 'ASSIGNED' && newStatus !== 'SCHEDULED') {
+          throw new Error(`پس از اتمام کار، پرونده باید جهت بازبینی ارسال شود (AWAITING_VERIFICATION).`);
         }
-        if (newStatus === 'PENDING_VERIFICATION') {
+        if (newStatus === 'AWAITING_VERIFICATION' || newStatus === 'PENDING_VERIFICATION') {
           const actions = maintenanceRepository.getActions(caseId);
           if (actions.length === 0 && (!mCase.actionsTaken || mCase.actionsTaken.length === 0)) {
             throw new Error('جهت ارسال به مرحله تایید، باید حداقل یک اقدام سرویس و تعمیراتی (Action) ثبت شده باشد.');
@@ -194,13 +200,15 @@ export const maintenanceCaseService = {
         }
         break;
 
+      case 'AWAITING_VERIFICATION':
       case 'PENDING_VERIFICATION':
-        if (newStatus !== 'VERIFIED' && newStatus !== 'IN_PROGRESS') {
-          throw new Error(`پرونده در انتظار تایید فقط می‌تواند تایید شود (VERIFIED) یا جهت اصلاح بازگردانده شود (IN_PROGRESS).`);
+        if (newStatus !== 'VERIFIED' && newStatus !== 'COMPLETED' && newStatus !== 'IN_PROGRESS') {
+          throw new Error(`پرونده در انتظار تایید فقط می‌تواند تایید شود (VERIFIED/COMPLETED) یا جهت اصلاح بازگردانده شود (IN_PROGRESS).`);
         }
         break;
 
       case 'VERIFIED':
+      case 'COMPLETED':
         if (newStatus !== 'CLOSED') {
           throw new Error(`پرونده تایید شده تنها می‌تواند بسته و بایگانی شود (CLOSED).`);
         }
@@ -208,6 +216,9 @@ export const maintenanceCaseService = {
 
       case 'CLOSED':
         throw new Error('پرونده بسته شده است و امکان تغییر وضعیت مجدد آن وجود ندارد.');
+
+      case 'CANCELLED':
+        throw new Error('پرونده لغو شده است و امکان تغییر وضعیت مجدد آن وجود ندارد.');
 
       default:
         throw new Error(`وضعیت فعلی ${currentStatus} اجازه تغییر وضعیت نمی‌دهد.`);
@@ -228,10 +239,28 @@ export const maintenanceCaseService = {
       if (payload?.scheduledDate) updates.scheduledDate = payload.scheduledDate;
     }
 
-    // Handle verification
-    if (newStatus === 'VERIFIED') {
+    // Handle scheduling
+    if (newStatus === 'SCHEDULED') {
+      if (payload?.scheduledDate) updates.scheduledDate = payload.scheduledDate;
+      if (payload?.notes) updates.closureNotes = payload.notes;
+    }
+
+    // Handle in_progress start
+    if (newStatus === 'IN_PROGRESS' && !mCase.startedAt) {
+      updates.startedAt = new Date().toISOString();
+    }
+
+    // Handle verification submission
+    if (newStatus === 'AWAITING_VERIFICATION' || newStatus === 'PENDING_VERIFICATION') {
+      if (payload?.notes) updates.resolutionSummary = payload.notes;
+    }
+
+    // Handle verification approval
+    if (newStatus === 'VERIFIED' || newStatus === 'COMPLETED') {
       updates.verifiedBy = actorUserId;
       updates.verifiedAt = new Date().toISOString();
+      updates.verificationPassed = true;
+      if (payload?.verificationNotes) updates.verificationNotes = payload.verificationNotes;
     }
 
     // Handle closure

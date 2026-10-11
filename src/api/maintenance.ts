@@ -1115,6 +1115,14 @@ maintenanceRouter.patch(['/maintenance/:maintenanceCaseId', '/cases/:maintenance
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
+  // Direct status manipulation defense:
+  // Status transitions MUST go through authoritative transitionCaseStatus or dedicated lifecycle endpoints.
+  if (req.body.status !== undefined) {
+    return res.status(400).json({
+      error: 'تغییر مستقیم وضعیت پرونده از طریق ویرایش مجاز نیست. لطفاً از فرآیند رسمی و نقاط پایانی مجاز چرخه عمر پرونده استفاده فرمایید.'
+    });
+  }
+
   const allowedUpdates = [
     'title',
     'description',
@@ -1168,14 +1176,21 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/assign', '/cases/:maint
   const techName = pro?.fullName || req.body.technicianName || 'تکنسین تخصصی';
   const techPhone = pro?.phone || req.body.technicianPhone || '';
 
-  // Update case
-  const updated = maintenanceRepository.updateCase(caseId, {
-    status: 'ASSIGNED',
-    assignedTechnicianId: technicianId,
-    assignedTechnicianName: techName,
-    assignedTechnicianPhone: techPhone,
-    scheduledAt: scheduledAt || mCase.scheduledAt
-  });
+  // Transition via canonical state machine
+  let updated: MaintenanceCase;
+  try {
+    updated = maintenanceCaseService.transitionCaseStatus(caseId, 'ASSIGNED', req.user.id, {
+      technicianId,
+      technicianName: techName,
+      technicianPhone: techPhone,
+      scheduledDate: scheduledAt || mCase.scheduledAt
+    });
+    if (scheduledAt) {
+      maintenanceRepository.updateCase(caseId, { scheduledAt });
+    }
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'خطا در تخصیص پرونده' });
+  }
 
   // Record assignment history
   maintenanceRepository.createAssignmentHistory({
@@ -1216,9 +1231,14 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/accept', '/cases/:maint
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
-  const updated = maintenanceRepository.updateCase(caseId, {
-    status: 'IN_PROGRESS'
-  });
+  let updated: MaintenanceCase;
+  try {
+    updated = maintenanceCaseService.transitionCaseStatus(caseId, 'IN_PROGRESS', req.user.id, {
+      notes: req.body?.notes
+    });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'خطا در پذیرش پرونده' });
+  }
 
   maintenanceRepository.createAssignmentHistory({
     maintenanceCaseId: caseId,
@@ -1259,10 +1279,16 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/schedule', '/cases/:mai
     return res.status(400).json({ error: 'تاریخ زمان‌بندی (scheduledAt) الزامی است.' });
   }
 
-  const updated = maintenanceRepository.updateCase(caseId, {
-    status: 'SCHEDULED',
-    scheduledAt
-  });
+  let updated: MaintenanceCase;
+  try {
+    updated = maintenanceCaseService.transitionCaseStatus(caseId, 'SCHEDULED', req.user.id, {
+      scheduledDate: scheduledAt,
+      notes: `زمان‌بندی برای ${scheduledAt}`
+    });
+    maintenanceRepository.updateCase(caseId, { scheduledAt });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'خطا در زمان‌بندی پرونده' });
+  }
 
   projectRepository.addActivity({
     projectId: mCase.projectId,
@@ -1305,10 +1331,12 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/start', '/cases/:mainte
     });
   }
 
-  const updated = maintenanceRepository.updateCase(caseId, {
-    status: 'IN_PROGRESS',
-    startedAt: new Date().toISOString()
-  });
+  let updated: MaintenanceCase;
+  try {
+    updated = maintenanceCaseService.transitionCaseStatus(caseId, 'IN_PROGRESS', req.user.id);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'خطا در آغاز اجرای پرونده' });
+  }
 
   projectRepository.addActivity({
     projectId: mCase.projectId,
@@ -1430,12 +1458,22 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/submit-verification', '
 
   const { resolutionSummary, rootCause, actionsTaken } = req.body;
 
-  const updated = maintenanceRepository.updateCase(caseId, {
-    status: 'AWAITING_VERIFICATION',
-    resolutionSummary: resolutionSummary || mCase.resolutionSummary,
-    rootCause: rootCause || mCase.rootCause,
-    actionsTaken: actionsTaken || mCase.actionsTaken
-  });
+  let updated: MaintenanceCase;
+  try {
+    updated = maintenanceCaseService.transitionCaseStatus(caseId, 'AWAITING_VERIFICATION', req.user.id, {
+      notes: resolutionSummary
+    });
+    if (resolutionSummary || rootCause || actionsTaken) {
+      maintenanceRepository.updateCase(caseId, {
+        resolutionSummary: resolutionSummary || mCase.resolutionSummary,
+        rootCause: rootCause || mCase.rootCause,
+        actionsTaken: actionsTaken || mCase.actionsTaken
+      });
+      updated = maintenanceRepository.getCaseById(caseId)!;
+    }
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'خطا در ارسال پرونده به مرحله تایید' });
+  }
 
   projectRepository.addActivity({
     projectId: mCase.projectId,
@@ -1470,14 +1508,21 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/verify', '/cases/:maint
 
   const { verificationPassed, verificationNotes } = req.body;
   const isPassed = verificationPassed !== false;
+  const targetStatus = isPassed ? 'COMPLETED' : 'IN_PROGRESS';
 
-  const updated = maintenanceRepository.updateCase(caseId, {
-    status: isPassed ? 'COMPLETED' : 'IN_PROGRESS',
-    verifiedAt: new Date().toISOString(),
-    verifiedBy: req.user.id,
-    verificationPassed: isPassed,
-    verificationNotes: verificationNotes || (isPassed ? 'تایید صحت عملکرد' : 'عدم تایید؛ بازگشت جهت رفع نقص')
-  });
+  let updated: MaintenanceCase;
+  try {
+    updated = maintenanceCaseService.transitionCaseStatus(caseId, targetStatus, req.user.id, {
+      verificationNotes: verificationNotes || (isPassed ? 'تایید صحت عملکرد' : 'عدم تایید؛ بازگشت جهت رفع نقص')
+    });
+    maintenanceRepository.updateCase(caseId, {
+      verificationPassed: isPassed,
+      verificationNotes: verificationNotes || (isPassed ? 'تایید صحت عملکرد' : 'عدم تایید؛ بازگشت جهت رفع نقص')
+    });
+    updated = maintenanceRepository.getCaseById(caseId)!;
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'خطا در ثبت نتیجه ارزیابی پرونده' });
+  }
 
   projectRepository.addActivity({
     projectId: mCase.projectId,
@@ -1562,12 +1607,18 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/close', '/cases/:mainte
     }
   }
 
-  const updated = maintenanceRepository.updateCase(caseId, {
-    status: 'CLOSED',
-    completedAt: mCase.completedAt || new Date().toISOString(),
-    closureNotes: req.body?.closureNotes || 'پرونده با موفقیت نهایی و بایگانی شد.',
-    postMaintenanceCheck: postCheck
-  });
+  let updated: MaintenanceCase;
+  try {
+    updated = maintenanceCaseService.transitionCaseStatus(caseId, 'CLOSED', req.user.id, {
+      closureNotes: req.body?.closureNotes || 'پرونده با موفقیت نهایی و بایگانی شد.'
+    });
+    maintenanceRepository.updateCase(caseId, {
+      postMaintenanceCheck: postCheck
+    });
+    updated = maintenanceRepository.getCaseById(caseId)!;
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'خطا در بستن و بایگانی پرونده' });
+  }
 
   projectRepository.addActivity({
     projectId: mCase.projectId,
@@ -1615,6 +1666,38 @@ maintenanceRouter.get(['/cases/:maintenanceCaseId/technician-matches', '/mainten
   const matches = technicianMatchingService.matchTechniciansForCase(caseId);
 
   return res.json(matches);
+});
+
+
+/**
+ * POST /api/maintenance/:maintenanceCaseId/cancel, /api/cases/:maintenanceCaseId/cancel
+ * Cancel a maintenance case through the authoritative state machine
+ */
+maintenanceRouter.post(['/maintenance/:maintenanceCaseId/cancel', '/cases/:maintenanceCaseId/cancel'], (req: Request, res: Response) => {
+  const caseId = getParam(req.params.maintenanceCaseId);
+  const mCase = maintenanceRepository.getCaseById(caseId);
+  if (!mCase) {
+    return res.status(404).json({ error: 'پرونده تعمیراتی یافت نشد.' });
+  }
+
+  const caseAccess = checkCaseAccess(mCase, req.user);
+  if (!caseAccess.allowed) {
+    return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
+  }
+
+  if (!caseAccess.isReporter && !caseAccess.isAdmin) {
+    return res.status(403).json({ error: 'تنها ثبت‌کننده پرونده یا مدیر سامانه مجاز به لغو پرونده هستند.' });
+  }
+
+  const { reason, notes } = req.body || {};
+  try {
+    const updated = maintenanceCaseService.transitionCaseStatus(caseId, 'CANCELLED', req.user.id, {
+      closureNotes: reason || notes || 'پرونده توسط کاربر یا مدیر لغو شد.'
+    });
+    return res.json(updated);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'خطا در لغو پرونده' });
+  }
 });
 
 /**
