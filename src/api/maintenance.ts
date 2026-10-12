@@ -1280,14 +1280,24 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/schedule', '/cases/:mai
   }
 
   let updated: MaintenanceCase;
-  try {
-    updated = maintenanceCaseService.transitionCaseStatus(caseId, 'SCHEDULED', req.user.id, {
-      scheduledDate: scheduledAt,
-      notes: `زمان‌بندی برای ${scheduledAt}`
-    });
-    maintenanceRepository.updateCase(caseId, { scheduledAt });
-  } catch (err: any) {
-    return res.status(400).json({ error: err.message || 'خطا در زمان‌بندی پرونده' });
+  // If already IN_PROGRESS (executing), updating the schedule is an appointment update,
+  // not a backward state transition.
+  if (mCase.status === 'IN_PROGRESS') {
+    const updatedCase = maintenanceRepository.updateCase(caseId, { scheduledAt });
+    if (!updatedCase) {
+      return res.status(500).json({ error: 'خطا در بروزرسانی تاریخ زمان‌بندی' });
+    }
+    updated = updatedCase;
+  } else {
+    try {
+      updated = maintenanceCaseService.transitionCaseStatus(caseId, 'SCHEDULED', req.user.id, {
+        scheduledDate: scheduledAt,
+        notes: `زمان‌بندی برای ${scheduledAt}`
+      });
+      maintenanceRepository.updateCase(caseId, { scheduledAt });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message || 'خطا در زمان‌بندی پرونده' });
+    }
   }
 
   projectRepository.addActivity({

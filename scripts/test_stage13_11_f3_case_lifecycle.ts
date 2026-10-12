@@ -4,17 +4,19 @@
  * Verifies:
  * - Test A: Valid normal lifecycle progression (OPEN -> ASSIGNED -> SCHEDULED -> IN_PROGRESS -> AWAITING_VERIFICATION -> COMPLETED -> CLOSED)
  * - Test B: Invalid transition rejection (OPEN -> VERIFIED, ASSIGNED -> VERIFIED, DRAFT -> IN_PROGRESS, CLOSED -> IN_PROGRESS, etc.)
- * - Test C: /start before acceptance must remain rejected (HTTP 409) and not bypass /accept (Preserving F.2)
- * - Test D: /accept followed by /start succeeds legitimately
+ * - Test C / Test 3: /start before acceptance must remain rejected (HTTP 409) and not bypass /accept (Preserving F.2)
+ * - Test D / Test 2 & 4: Legitimate /accept followed by /start succeeds without duplicate acceptance histories
  * - Test E: Scheduling (ASSIGNED -> SCHEDULED) and invalid scheduling transitions rejected
  * - Test F: Scheduled execution (SCHEDULED -> IN_PROGRESS) requires formal acceptance
  * - Test G: Verification flow (IN_PROGRESS -> AWAITING_VERIFICATION -> COMPLETED/VERIFIED)
  * - Test H: Invalid verification flow (cannot verify directly from OPEN, ASSIGNED, or without actions)
- * - Test I: Generic PATCH protection (direct status injection via PATCH /cases/:id is strictly rejected)
+ * - Test I: Generic PATCH protection (direct status injection via PATCH /cases/:id is strictly rejected with HTTP 400)
  * - Test J: Cancellation flow (OPEN/ASSIGNED/IN_PROGRESS -> CANCELLED allowed; CLOSED/CANCELLED cannot be re-cancelled)
  * - Test K: F.2 privacy preservation across lifecycle transitions (contact hidden until /accept, released after)
  * - Test L: No acceptance fabrication (transitions like /schedule, /start, verify do not fabricate ACCEPTED history)
  * - Test M: Persisted data integrity (customer contact details remain untouched in database)
+ * - Test 1 (New Mandatory): Impossible backward scheduling (IN_PROGRESS -> SCHEDULED is strictly rejected)
+ * - Test 5 (New Mandatory): Direct transition audit (no unintended route can move case to IN_PROGRESS without acceptance)
  * - Database Immutability: SHA-256 baseline verification
  */
 
@@ -241,6 +243,53 @@ async function runTestSuite() {
     assert(closeDataA.status === 'CLOSED', 'Case A: Transitioned to CLOSED');
 
     // -------------------------------------------------------------------------
+    // TEST 1: IMPOSSIBLE BACKWARD SCHEDULING (IN_PROGRESS -> SCHEDULED) REJECTED
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 1: IMPOSSIBLE BACKWARD SCHEDULING (IN_PROGRESS -> SCHEDULED) REJECTED ---');
+    const caseExecuting = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'پرونده در حال اجرا',
+      description: 'شرح',
+      priority: 'HIGH',
+      status: 'IN_PROGRESS',
+      assignedTechnicianId: techUser.id,
+      assignedTechnicianName: 'تکنسین',
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: [],
+      photos: [],
+      documents: [],
+      attachments: [],
+      actionsTaken: [],
+      sparePartsUsed: [],
+      totalCostIrr: 0,
+      totalLaborHours: 0
+    });
+
+    let backwardSchedulingRejected = false;
+    try {
+      maintenanceCaseService.transitionCaseStatus(caseExecuting.id, 'SCHEDULED', techUser.id, {
+        scheduledDate: '2026-11-01T10:00:00Z'
+      });
+    } catch (e: any) {
+      backwardSchedulingRejected = true;
+    }
+    assert(
+      backwardSchedulingRejected,
+      'Test 1: Transition IN_PROGRESS -> SCHEDULED is strictly rejected by central state machine'
+    );
+
+    // Verify that attempting backward state transition via state machine fails:
+    const caseExecutingDb = maintenanceRepository.getCaseById(caseExecuting.id);
+    assert(
+      caseExecutingDb?.status === 'IN_PROGRESS',
+      'Test 1: Case status remains strictly IN_PROGRESS and cannot be demoted to SCHEDULED'
+    );
+
+    // -------------------------------------------------------------------------
     // TEST B: INVALID TRANSITION REJECTIONS
     // -------------------------------------------------------------------------
     console.log('\n--- TEST B: INVALID TRANSITION REJECTIONS ---');
@@ -343,9 +392,9 @@ async function runTestSuite() {
     assert(errClosedToInProgress, 'Invalid Transition: CLOSED -> IN_PROGRESS is rejected');
 
     // -------------------------------------------------------------------------
-    // TEST C & D: /start BEFORE ACCEPTANCE REJECTED; /accept THEN /start SUCCEEDS
+    // TEST C & D (TEST 2, 3, 4): /start BEFORE ACCEPTANCE REJECTED; /accept THEN /start SUCCEEDS
     // -------------------------------------------------------------------------
-    console.log('\n--- TEST C & D: /start BEFORE ACCEPTANCE VS AFTER ACCEPTANCE ---');
+    console.log('\n--- TEST C & D (TEST 2, 3, 4): /start BEFORE ACCEPTANCE VS AFTER ACCEPTANCE ---');
     const caseCD = maintenanceRepository.createCase({
       projectId: 'CUSTOMER_DIRECT',
       assetId: 'UNREGISTERED',
@@ -371,17 +420,28 @@ async function runTestSuite() {
       totalLaborHours: 0
     });
 
-    // Attempt /start before /accept
+    // Test 3: Attempt /start before /accept
     const preAcceptStartRes = await fetch(`${baseUrl}/cases/${caseCD.id}/start`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${techToken}` }
     });
     assert(
       preAcceptStartRes.status === 409,
-      `Test C: /start before /accept rejected with HTTP 409 (status: ${preAcceptStartRes.status})`
+      `Test 3: /start before /accept rejected with HTTP 409 (status: ${preAcceptStartRes.status})`
     );
 
-    // Call /accept
+    // Verify status unchanged, no ACCEPTED history, contact hidden
+    const caseCDUnchanged = maintenanceRepository.getCaseById(caseCD.id);
+    assert(caseCDUnchanged?.status === 'ASSIGNED', 'Test 3: Case status remains ASSIGNED');
+    const historiesCD = maintenanceRepository.getAssignmentHistories(caseCD.id) || [];
+    assert(!historiesCD.some(h => h.status === 'ACCEPTED'), 'Test 3: Zero ACCEPTED history entries created');
+    const detailCDHidden = await (await fetch(`${baseUrl}/cases/${caseCD.id}`, {
+      headers: { 'Authorization': `Bearer ${techToken}` }
+    })).json();
+    assert(detailCDHidden.contactName === undefined && detailCDHidden.contactPhone === undefined, 'Test 3: Customer contact remains hidden');
+
+    // Test 2: Call /accept
+    const countHistoriesBeforeAccept = (maintenanceRepository.getAssignmentHistories(caseCD.id) || []).length;
     const acceptCDRes = await fetch(`${baseUrl}/cases/${caseCD.id}/accept`, {
       method: 'POST',
       headers: {
@@ -390,14 +450,58 @@ async function runTestSuite() {
       },
       body: JSON.stringify({ notes: 'پذیرش رسمی پرونده' })
     });
-    assert(acceptCDRes.status === 200, 'Test D: /accept succeeds');
+    assert(acceptCDRes.status === 200, 'Test 2: /accept succeeds');
+    const caseCDAccepted = maintenanceRepository.getCaseById(caseCD.id);
+    assert(caseCDAccepted?.status === 'IN_PROGRESS', 'Test 2: Case transitioned to IN_PROGRESS upon /accept');
+    const historiesPostAccept = maintenanceRepository.getAssignmentHistories(caseCD.id) || [];
+    assert(
+      historiesPostAccept.some(h => h.status === 'ACCEPTED' && h.technicianId === techUser.id),
+      'Test 2: Authoritative ACCEPTED assignment history entry was created'
+    );
 
-    // Now call /start after /accept
+    // Test 4: Now call /start after /accept
+    const countHistoriesBeforeStart = historiesPostAccept.length;
     const postAcceptStartRes = await fetch(`${baseUrl}/cases/${caseCD.id}/start`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${techToken}` }
     });
-    assert(postAcceptStartRes.status === 200, 'Test D: /start after /accept succeeds');
+    assert(postAcceptStartRes.status === 200, 'Test 4: /start after /accept succeeds');
+    const countHistoriesAfterStart = (maintenanceRepository.getAssignmentHistories(caseCD.id) || []).length;
+    assert(countHistoriesAfterStart === countHistoriesBeforeStart, 'Test 4: /start does NOT create duplicate ACCEPTED history');
+
+    // -------------------------------------------------------------------------
+    // TEST 5: DIRECT TRANSITION AUDIT (NO UNINTENDED ROUTE CAN ENTER IN_PROGRESS)
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 5: DIRECT TRANSITION AUDIT ---');
+    // Attempting to move OPEN -> IN_PROGRESS via state machine throws error
+    const testCaseOpen = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'تست بازبینی مسیرهای ورود به در حال اجرا',
+      description: 'شرح',
+      priority: 'LOW',
+      status: 'OPEN',
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: [],
+      photos: [],
+      documents: [],
+      attachments: [],
+      actionsTaken: [],
+      sparePartsUsed: [],
+      totalCostIrr: 0,
+      totalLaborHours: 0
+    });
+
+    let openToInProgressRejected = false;
+    try {
+      maintenanceCaseService.transitionCaseStatus(testCaseOpen.id, 'IN_PROGRESS', customerUser.id);
+    } catch (e: any) {
+      openToInProgressRejected = true;
+    }
+    assert(openToInProgressRejected, 'Test 5: Directly calling transitionCaseStatus from OPEN to IN_PROGRESS is rejected');
 
     // -------------------------------------------------------------------------
     // TEST E: SCHEDULING TRANSITIONS (ASSIGNED -> SCHEDULED) & REJECTIONS
@@ -676,7 +780,7 @@ async function runTestSuite() {
     assert(cancelClosedRes.status === 400, 'Test J: Cannot cancel an already CLOSED case');
 
     // -------------------------------------------------------------------------
-    // TEST K, L, M: F.2 PRIVACY, NO ACCEPTANCE FABRICATION, DATA INTEGRITY
+    // TEST K, L, M: PRIVACY PRESERVATION & STORAGE INTEGRITY
     // -------------------------------------------------------------------------
     console.log('\n--- TEST K, L, M: PRIVACY PRESERVATION & STORAGE INTEGRITY ---');
     const caseKLM = maintenanceRepository.createCase({

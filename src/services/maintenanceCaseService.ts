@@ -189,7 +189,7 @@ export const maintenanceCaseService = {
         break;
 
       case 'IN_PROGRESS':
-        if (newStatus !== 'AWAITING_VERIFICATION' && newStatus !== 'PENDING_VERIFICATION' && newStatus !== 'ASSIGNED' && newStatus !== 'SCHEDULED') {
+        if (newStatus !== 'AWAITING_VERIFICATION' && newStatus !== 'PENDING_VERIFICATION' && newStatus !== 'ASSIGNED') {
           throw new Error(`پس از اتمام کار، پرونده باید جهت بازبینی ارسال شود (AWAITING_VERIFICATION).`);
         }
         if (newStatus === 'AWAITING_VERIFICATION' || newStatus === 'PENDING_VERIFICATION') {
