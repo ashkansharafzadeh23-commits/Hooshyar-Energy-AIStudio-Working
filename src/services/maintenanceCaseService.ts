@@ -2,6 +2,7 @@ import { maintenanceRepository } from '../repositories/maintenanceRepository.js'
 import { assetRepository } from '../repositories/assetRepository.js';
 import { alertService } from './alertService.js';
 import { projectRepository } from '../repositories/projectRepository.js';
+import { isCaseAssignedToTechnician } from './technicianIdentityService.js';
 import {
   MaintenanceCase,
   MaintenanceCaseStatus,
@@ -180,11 +181,46 @@ export const maintenanceCaseService = {
         if (newStatus !== 'SCHEDULED' && newStatus !== 'IN_PROGRESS' && newStatus !== 'OPEN') {
           throw new Error(`پرونده تخصیص یافته تنها می‌تواند زمان‌بندی شود (SCHEDULED)، شروع شود (IN_PROGRESS) یا بازگردانده شود (OPEN).`);
         }
+        if (newStatus === 'IN_PROGRESS') {
+          // Central Service Security Barrier:
+          // Moving from ASSIGNED to IN_PROGRESS requires formal technician acceptance
+          // evidenced by an authoritative persisted assignment history (status === 'ACCEPTED')
+          // belonging strictly to the currently assigned technician.
+          if (!mCase.assignedTechnicianId) {
+            throw new Error('پرونده فاقد تکنسین تخصیص یافته است.');
+          }
+          const assignedTechId = mCase.assignedTechnicianId;
+          const histories = maintenanceRepository.getAssignmentHistories(caseId) || [];
+          const hasValidAcceptance = histories.some(h => {
+            if (h.status !== 'ACCEPTED' || !h.technicianId) return false;
+            return h.technicianId === assignedTechId || isCaseAssignedToTechnician(assignedTechId, h.technicianId);
+          });
+          if (!hasValidAcceptance) {
+            throw new Error('شروع و اجرای پرونده از وضعیت تخصیص‌یافته مستلزم پذیرش رسمی تکنسین است. سابقه پذیرش معتبر یافت نشد.');
+          }
+        }
         break;
 
       case 'SCHEDULED':
         if (newStatus !== 'IN_PROGRESS' && newStatus !== 'ASSIGNED') {
           throw new Error(`پرونده زمان‌بندی شده تنها می‌تواند شروع شود (IN_PROGRESS) یا به تخصیص اولیه بازگردد (ASSIGNED).`);
+        }
+        if (newStatus === 'IN_PROGRESS') {
+          // Central Service Security Barrier:
+          // SCHEDULED alone does NOT imply acceptance. Moving from SCHEDULED to IN_PROGRESS
+          // requires formal technician acceptance evidenced by an authoritative persisted assignment history.
+          if (!mCase.assignedTechnicianId) {
+            throw new Error('پرونده فاقد تکنسین تخصیص یافته است.');
+          }
+          const assignedTechId = mCase.assignedTechnicianId;
+          const histories = maintenanceRepository.getAssignmentHistories(caseId) || [];
+          const hasValidAcceptance = histories.some(h => {
+            if (h.status !== 'ACCEPTED' || !h.technicianId) return false;
+            return h.technicianId === assignedTechId || isCaseAssignedToTechnician(assignedTechId, h.technicianId);
+          });
+          if (!hasValidAcceptance) {
+            throw new Error('شروع و اجرای پرونده از وضعیت زمان‌بندی‌شده مستلزم پذیرش رسمی تکنسین است. سابقه پذیرش معتبر یافت نشد.');
+          }
         }
         break;
 

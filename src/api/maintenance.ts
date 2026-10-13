@@ -1231,6 +1231,26 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/accept', '/cases/:maint
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
+  // Check if case is already accepted by this technician
+  const existingHistories = maintenanceRepository.getAssignmentHistories(caseId) || [];
+  const assignedTechId = mCase.assignedTechnicianId;
+  const alreadyAccepted = existingHistories.some(h => {
+    if (h.status !== 'ACCEPTED' || !h.technicianId) return false;
+    return h.technicianId === assignedTechId || isCaseAssignedToTechnician(assignedTechId, h.technicianId);
+  });
+
+  // Authoritative action: persist the ACCEPTED assignment history first
+  if (!alreadyAccepted) {
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: caseId,
+      technicianId: req.user.id,
+      assignedBy: req.user.id,
+      status: 'ACCEPTED',
+      notes: req.body?.notes || 'پذیرش مسئولیت انجام تعمیرات توسط تکنسین'
+    });
+  }
+
+  // Now transition the case status through the central state machine
   let updated: MaintenanceCase;
   try {
     updated = maintenanceCaseService.transitionCaseStatus(caseId, 'IN_PROGRESS', req.user.id, {
@@ -1239,14 +1259,6 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/accept', '/cases/:maint
   } catch (err: any) {
     return res.status(400).json({ error: err.message || 'خطا در پذیرش پرونده' });
   }
-
-  maintenanceRepository.createAssignmentHistory({
-    maintenanceCaseId: caseId,
-    technicianId: req.user.id,
-    assignedBy: req.user.id,
-    status: 'ACCEPTED',
-    notes: req.body?.notes || 'پذیرش مسئولیت انجام تعمیرات توسط تکنسین'
-  });
 
   projectRepository.addActivity({
     projectId: mCase.projectId,

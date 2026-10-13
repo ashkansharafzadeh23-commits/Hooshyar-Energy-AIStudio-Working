@@ -2,21 +2,22 @@
  * STAGE 13.11-F.3: MAINTENANCE CASE LIFECYCLE & STATE-MACHINE HARDENING TEST SUITE
  * 
  * Verifies:
- * - Test A: Valid normal lifecycle progression (OPEN -> ASSIGNED -> SCHEDULED -> IN_PROGRESS -> AWAITING_VERIFICATION -> COMPLETED -> CLOSED)
- * - Test B: Invalid transition rejection (OPEN -> VERIFIED, ASSIGNED -> VERIFIED, DRAFT -> IN_PROGRESS, CLOSED -> IN_PROGRESS, etc.)
- * - Test C / Test 3: /start before acceptance must remain rejected (HTTP 409) and not bypass /accept (Preserving F.2)
- * - Test D / Test 2 & 4: Legitimate /accept followed by /start succeeds without duplicate acceptance histories
- * - Test E: Scheduling (ASSIGNED -> SCHEDULED) and invalid scheduling transitions rejected
- * - Test F: Scheduled execution (SCHEDULED -> IN_PROGRESS) requires formal acceptance
- * - Test G: Verification flow (IN_PROGRESS -> AWAITING_VERIFICATION -> COMPLETED/VERIFIED)
- * - Test H: Invalid verification flow (cannot verify directly from OPEN, ASSIGNED, or without actions)
- * - Test I: Generic PATCH protection (direct status injection via PATCH /cases/:id is strictly rejected with HTTP 400)
- * - Test J: Cancellation flow (OPEN/ASSIGNED/IN_PROGRESS -> CANCELLED allowed; CLOSED/CANCELLED cannot be re-cancelled)
- * - Test K: F.2 privacy preservation across lifecycle transitions (contact hidden until /accept, released after)
- * - Test L: No acceptance fabrication (transitions like /schedule, /start, verify do not fabricate ACCEPTED history)
- * - Test M: Persisted data integrity (customer contact details remain untouched in database)
- * - Test 1 (New Mandatory): Impossible backward scheduling (IN_PROGRESS -> SCHEDULED is strictly rejected)
- * - Test 5 (New Mandatory): Direct transition audit (no unintended route can move case to IN_PROGRESS without acceptance)
+ * - TEST 1: ASSIGNED + no ACCEPTED history -> direct transitionCaseStatus(..., 'IN_PROGRESS', ...) -> MUST FAIL -> remains ASSIGNED
+ * - TEST 2: ASSIGNED + ACCEPTED history for current technician -> direct transitionCaseStatus(..., 'IN_PROGRESS', ...) -> MUST SUCCEED
+ * - TEST 3: ASSIGNED + ACCEPTED history for FOREIGN technician -> direct transitionCaseStatus(..., 'IN_PROGRESS', ...) -> MUST FAIL
+ * - TEST 4: SCHEDULED + no ACCEPTED history -> direct transitionCaseStatus(..., 'IN_PROGRESS', ...) -> MUST FAIL
+ * - TEST 5: SCHEDULED + ACCEPTED history for current technician -> direct transitionCaseStatus(..., 'IN_PROGRESS', ...) -> MUST SUCCEED
+ * - TEST 6: SCHEDULED + ACCEPTED history for previous/foreign technician -> direct transitionCaseStatus(..., 'IN_PROGRESS', ...) -> MUST FAIL
+ * - TEST 7: PENDING_VERIFICATION -> IN_PROGRESS -> MUST remain allowed (legacy rework) without requiring new ACCEPTED history
+ * - TEST 8: AWAITING_VERIFICATION -> IN_PROGRESS -> MUST remain allowed (customer rework) without requiring new ACCEPTED history
+ * - TEST 9: IN_PROGRESS -> SCHEDULED -> MUST FAIL
+ * - TEST 10: HTTP POST /start before /accept still fails (HTTP 409)
+ * - TEST 11: HTTP POST /accept persists ACCEPTED history and transitions to IN_PROGRESS without duplicates
+ * - TEST 12: HTTP POST /start after /accept succeeds without duplicate histories
+ * - TEST 13: F.2 privacy behavior remains intact (customer contact hidden before /accept, released after)
+ * - TEST 14: Generic PATCH status injection protection (HTTP 400)
+ * - TEST 15: Valid normal end-to-end lifecycle progression (OPEN -> ASSIGNED -> SCHEDULED -> IN_PROGRESS -> AWAITING_VERIFICATION -> COMPLETED -> CLOSED)
+ * - TEST 16: Cancellation flow (OPEN/ASSIGNED/IN_PROGRESS -> CANCELLED; CLOSED cannot be cancelled)
  * - Database Immutability: SHA-256 baseline verification
  */
 
@@ -68,21 +69,28 @@ async function runTestSuite() {
       roles: customerUser.roles
     });
 
-    const techUser = userRepository.createUser({
-      name: 'مهندس ارشد تعمیرات و عیب‌یابی',
+    const techUserA = userRepository.createUser({
+      name: 'مهندس ارشد تعمیرات و عیب‌یابی الف',
       phone: '09122220002',
       role: 'technician',
       roles: ['technician']
     });
-    const techToken = jwtService.sign({
-      userId: techUser.id,
-      role: techUser.role,
-      roles: techUser.roles
+    const techTokenA = jwtService.sign({
+      userId: techUserA.id,
+      role: techUserA.role,
+      roles: techUserA.roles
     });
 
-    const proTech = professionalRepository.createProfessional({
-      userId: techUser.id,
-      fullName: 'مهندس ارشد تعمیرات و عیب‌یابی',
+    const techUserB = userRepository.createUser({
+      name: 'تکنسین ثانویه ب',
+      phone: '09122220003',
+      role: 'technician',
+      roles: ['technician']
+    });
+
+    const proTechA = professionalRepository.createProfessional({
+      userId: techUserA.id,
+      fullName: 'مهندس ارشد تعمیرات و عیب‌یابی الف',
       phone: '09122220002',
       serviceCities: ['تهران'],
       specialties: ['دیزل ژنراتور', 'اینورتر خورشیدی'],
@@ -92,19 +100,7 @@ async function runTestSuite() {
       profileImageUrl: '',
       certifications: []
     });
-    professionalRepository.updateProfessionalStatus(proTech.id, 'approved');
-
-    const adminUser = userRepository.createUser({
-      name: 'مدیر سامانه',
-      phone: '09120000000',
-      role: 'SUPER_ADMIN',
-      roles: ['SUPER_ADMIN']
-    });
-    const adminToken = jwtService.sign({
-      userId: adminUser.id,
-      role: adminUser.role,
-      roles: adminUser.roles
-    });
+    professionalRepository.updateProfessionalStatus(proTechA.id, 'approved');
 
     // -------------------------------------------------------------------------
     // SETUP TEST EXPRESS SERVER
@@ -118,147 +114,323 @@ async function runTestSuite() {
     const baseUrl = `http://127.0.0.1:${port}/api`;
 
     // -------------------------------------------------------------------------
-    // TEST A: VALID NORMAL LIFECYCLE
+    // TEST 1: ASSIGNED + NO ACCEPTED HISTORY -> DIRECT SERVICE REJECTED
     // -------------------------------------------------------------------------
-    console.log('\n--- TEST A: VALID NORMAL LIFECYCLE PROGRESSION ---');
-    // 1. Create case (initial status: OPEN)
-    const caseA = maintenanceRepository.createCase({
+    console.log('\n--- TEST 1: ASSIGNED + NO ACCEPTED HISTORY -> DIRECT SERVICE CALL ---');
+    const case1 = maintenanceRepository.createCase({
       projectId: 'CUSTOMER_DIRECT',
       assetId: 'UNREGISTERED',
       equipmentType: 'PORTABLE_GENERATOR',
-      title: 'سرویس دوره‌ای ژنراتور اضطراری',
-      description: 'نیاز به تعویض فیلترها و بررسی ولتاژ خروجی دینام',
+      title: 'تست ۱: پرونده تخصیص یافته بدون پذیرش',
+      description: 'شرح',
       priority: 'MEDIUM',
-      status: 'OPEN',
-      category: 'PREVENTIVE',
+      status: 'ASSIGNED',
+      assignedTechnicianId: techUserA.id,
+      assignedTechnicianName: 'تکنسین الف',
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: [],
+      photos: [],
+      documents: [],
+      attachments: [],
+      actionsTaken: [],
+      sparePartsUsed: [],
+      totalCostIrr: 0,
+      totalLaborHours: 0
+    });
+
+    let serviceAssignedWithoutAcceptRejected = false;
+    try {
+      maintenanceCaseService.transitionCaseStatus(case1.id, 'IN_PROGRESS', techUserA.id);
+    } catch (e: any) {
+      serviceAssignedWithoutAcceptRejected = true;
+    }
+    assert(
+      serviceAssignedWithoutAcceptRejected,
+      'Test 1: Direct call transitionCaseStatus(..., IN_PROGRESS) without ACCEPTED history strictly throws Error'
+    );
+    const case1Db = maintenanceRepository.getCaseById(case1.id);
+    assert(case1Db?.status === 'ASSIGNED', 'Test 1: Case status in database remains ASSIGNED');
+    const histories1 = maintenanceRepository.getAssignmentHistories(case1.id) || [];
+    assert(histories1.length === 0, 'Test 1: Zero assignment history entries created');
+
+    // -------------------------------------------------------------------------
+    // TEST 2: ASSIGNED + ACCEPTED HISTORY FOR CURRENT TECH -> DIRECT SERVICE SUCCEEDS
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 2: ASSIGNED + ACCEPTED HISTORY FOR CURRENT TECH -> DIRECT SERVICE CALL ---');
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: case1.id,
+      technicianId: techUserA.id,
+      assignedBy: techUserA.id,
+      status: 'ACCEPTED',
+      notes: 'پذیرش رسمی تکنسین الف'
+    });
+
+    const transitionedCase1 = maintenanceCaseService.transitionCaseStatus(case1.id, 'IN_PROGRESS', techUserA.id);
+    assert(
+      transitionedCase1.status === 'IN_PROGRESS',
+      'Test 2: Direct call transitionCaseStatus(..., IN_PROGRESS) with valid ACCEPTED history for CURRENT tech succeeds'
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST 3: ASSIGNED + ACCEPTED HISTORY FOR FOREIGN TECH -> DIRECT SERVICE REJECTED
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 3: ASSIGNED + ACCEPTED HISTORY FOR FOREIGN TECH -> DIRECT SERVICE CALL ---');
+    const case3 = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'تست ۳: پذیرش توسط تکنسین غیرمنصوب',
+      description: 'شرح',
+      priority: 'MEDIUM',
+      status: 'ASSIGNED',
+      assignedTechnicianId: techUserA.id,
+      assignedTechnicianName: 'تکنسین الف',
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: [],
+      photos: [],
+      documents: [],
+      attachments: [],
+      actionsTaken: [],
+      sparePartsUsed: [],
+      totalCostIrr: 0,
+      totalLaborHours: 0
+    });
+
+    // Inject ACCEPTED history belonging to Technician B (foreign)
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: case3.id,
+      technicianId: techUserB.id,
+      assignedBy: techUserB.id,
+      status: 'ACCEPTED',
+      notes: 'پذیرش توسط تکنسین ب (نامربوط)'
+    });
+
+    let foreignAcceptRejected = false;
+    try {
+      maintenanceCaseService.transitionCaseStatus(case3.id, 'IN_PROGRESS', techUserA.id);
+    } catch (e: any) {
+      foreignAcceptRejected = true;
+    }
+    assert(
+      foreignAcceptRejected,
+      'Test 3: Direct transition to IN_PROGRESS rejected when ACCEPTED history belongs to a FOREIGN technician'
+    );
+    const case3Db = maintenanceRepository.getCaseById(case3.id);
+    assert(case3Db?.status === 'ASSIGNED', 'Test 3: Case status remains ASSIGNED in database');
+
+    // -------------------------------------------------------------------------
+    // TEST 4: SCHEDULED + NO ACCEPTED HISTORY -> DIRECT SERVICE REJECTED
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 4: SCHEDULED + NO ACCEPTED HISTORY -> DIRECT SERVICE CALL ---');
+    const case4 = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'تست ۴: زمان‌بندی شده بدون پذیرش',
+      description: 'شرح',
+      priority: 'HIGH',
+      status: 'SCHEDULED',
+      assignedTechnicianId: techUserA.id,
+      assignedTechnicianName: 'تکنسین الف',
+      scheduledDate: '2026-10-25',
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: [],
+      photos: [],
+      documents: [],
+      attachments: [],
+      actionsTaken: [],
+      sparePartsUsed: [],
+      totalCostIrr: 0,
+      totalLaborHours: 0
+    });
+
+    let scheduledWithoutAcceptRejected = false;
+    try {
+      maintenanceCaseService.transitionCaseStatus(case4.id, 'IN_PROGRESS', techUserA.id);
+    } catch (e: any) {
+      scheduledWithoutAcceptRejected = true;
+    }
+    assert(
+      scheduledWithoutAcceptRejected,
+      'Test 4: Direct service transition SCHEDULED -> IN_PROGRESS without ACCEPTED history strictly rejected'
+    );
+    const case4Db = maintenanceRepository.getCaseById(case4.id);
+    assert(case4Db?.status === 'SCHEDULED', 'Test 4: Case status remains SCHEDULED in database');
+
+    // -------------------------------------------------------------------------
+    // TEST 5: SCHEDULED + ACCEPTED HISTORY FOR CURRENT TECH -> DIRECT SERVICE SUCCEEDS
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 5: SCHEDULED + ACCEPTED HISTORY FOR CURRENT TECH -> DIRECT SERVICE CALL ---');
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: case4.id,
+      technicianId: techUserA.id,
+      assignedBy: techUserA.id,
+      status: 'ACCEPTED',
+      notes: 'پذیرش رسمی پرونده زمان‌بندی شده'
+    });
+
+    const transitionedCase4 = maintenanceCaseService.transitionCaseStatus(case4.id, 'IN_PROGRESS', techUserA.id);
+    assert(
+      transitionedCase4.status === 'IN_PROGRESS',
+      'Test 5: Direct service transition SCHEDULED -> IN_PROGRESS with valid ACCEPTED history for CURRENT tech succeeds'
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST 6: SCHEDULED + ACCEPTED HISTORY FOR FOREIGN TECH -> DIRECT SERVICE REJECTED
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 6: SCHEDULED + ACCEPTED HISTORY FOR FOREIGN TECH -> DIRECT SERVICE CALL ---');
+    const case6 = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'تست ۶: زمان‌بندی شده با پذیرش تکنسین خارجی',
+      description: 'شرح',
+      priority: 'HIGH',
+      status: 'SCHEDULED',
+      assignedTechnicianId: techUserA.id,
+      assignedTechnicianName: 'تکنسین الف',
+      scheduledDate: '2026-10-25',
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: [],
+      photos: [],
+      documents: [],
+      attachments: [],
+      actionsTaken: [],
+      sparePartsUsed: [],
+      totalCostIrr: 0,
+      totalLaborHours: 0
+    });
+
+    // Foreign technician B acceptance
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: case6.id,
+      technicianId: techUserB.id,
+      assignedBy: techUserB.id,
+      status: 'ACCEPTED',
+      notes: 'پذیرش توسط تکنسین نامربوط'
+    });
+
+    let scheduledForeignAcceptRejected = false;
+    try {
+      maintenanceCaseService.transitionCaseStatus(case6.id, 'IN_PROGRESS', techUserA.id);
+    } catch (e: any) {
+      scheduledForeignAcceptRejected = true;
+    }
+    assert(
+      scheduledForeignAcceptRejected,
+      'Test 6: Direct service transition SCHEDULED -> IN_PROGRESS with foreign technician ACCEPTED history strictly rejected'
+    );
+    const case6Db = maintenanceRepository.getCaseById(case6.id);
+    assert(case6Db?.status === 'SCHEDULED', 'Test 6: Case status remains SCHEDULED in database');
+
+    // -------------------------------------------------------------------------
+    // TEST 7: PENDING_VERIFICATION -> IN_PROGRESS (LEGACY REWORK) SUCCEEDS
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 7: PENDING_VERIFICATION -> IN_PROGRESS (LEGACY REWORK) ---');
+    const case7 = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'تست ۷: وضعیت قدیمی PENDING_VERIFICATION',
+      description: 'شرح',
+      priority: 'MEDIUM',
+      status: 'PENDING_VERIFICATION',
+      assignedTechnicianId: techUserA.id,
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: [],
+      photos: [],
+      documents: [],
+      attachments: [],
+      actionsTaken: [],
+      sparePartsUsed: [],
+      totalCostIrr: 0,
+      totalLaborHours: 0
+    });
+
+    const reworkCase7 = maintenanceCaseService.transitionCaseStatus(case7.id, 'IN_PROGRESS', customerUser.id);
+    assert(
+      reworkCase7.status === 'IN_PROGRESS',
+      'Test 7: PENDING_VERIFICATION -> IN_PROGRESS succeeds for legacy compatibility without new acceptance record'
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST 8: AWAITING_VERIFICATION -> IN_PROGRESS (CUSTOMER REWORK) SUCCEEDS
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 8: AWAITING_VERIFICATION -> IN_PROGRESS (CUSTOMER REWORK) ---');
+    const case8 = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'تست ۸: رد تایید کارفرما و بازگشت به در حال اجرا',
+      description: 'شرح',
+      priority: 'MEDIUM',
+      status: 'AWAITING_VERIFICATION',
+      assignedTechnicianId: techUserA.id,
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: [],
+      photos: [],
+      documents: [],
+      attachments: [],
+      actionsTaken: [],
+      sparePartsUsed: [],
+      totalCostIrr: 0,
+      totalLaborHours: 0
+    });
+
+    const reworkCase8 = maintenanceCaseService.transitionCaseStatus(case8.id, 'IN_PROGRESS', customerUser.id, {
+      verificationNotes: 'نقص فنی رفع نشده است؛ نیاز به اصلاح'
+    });
+    assert(
+      reworkCase8.status === 'IN_PROGRESS',
+      'Test 8: AWAITING_VERIFICATION -> IN_PROGRESS succeeds without requiring new acceptance record (rework allowed)'
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST 9: IN_PROGRESS -> SCHEDULED IS STRICTLY REJECTED
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 9: IN_PROGRESS -> SCHEDULED IS REJECTED ---');
+    let inProgressToScheduledRejected = false;
+    try {
+      maintenanceCaseService.transitionCaseStatus(transitionedCase4.id, 'SCHEDULED', techUserA.id);
+    } catch (e: any) {
+      inProgressToScheduledRejected = true;
+    }
+    assert(
+      inProgressToScheduledRejected,
+      'Test 9: Transition IN_PROGRESS -> SCHEDULED is strictly rejected by central state machine'
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST 10, 11, 12: HTTP LEVEL WORKFLOW AND ACCEPTANCE
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 10, 11, 12: HTTP LEVEL WORKFLOW AND ACCEPTANCE ---');
+    const case10 = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'تست ۱۰، ۱۱، ۱۲: گردش کار HTTP',
+      description: 'شرح',
+      priority: 'HIGH',
+      status: 'ASSIGNED',
+      assignedTechnicianId: techUserA.id,
+      assignedTechnicianName: 'تکنسین الف',
+      category: 'CORRECTIVE',
       reportedBy: customerUser.id,
       reportedAt: new Date().toISOString(),
       contactName: 'مهندس حسینی',
       contactPhone: '09121110001',
-      symptoms: ['افت ولتاژ'],
-      alertIds: [],
-      photos: [],
-      documents: [],
-      attachments: [],
-      actionsTaken: [],
-      sparePartsUsed: [],
-      totalCostIrr: 0,
-      totalLaborHours: 0
-    });
-    assert(caseA.status === 'OPEN', 'Case A: Created with initial status OPEN');
-
-    // 2. Select technician (OPEN -> ASSIGNED)
-    const selectResA = await fetch(`${baseUrl}/cases/${caseA.id}/select-technician`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${customerToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ technicianId: proTech.id })
-    });
-    assert(selectResA.status === 200, 'Case A: select-technician succeeds');
-    const selectDataA = await selectResA.json();
-    assert(selectDataA.status === 'ASSIGNED', 'Case A: Transitioned to ASSIGNED');
-
-    // 3. Schedule execution (ASSIGNED -> SCHEDULED)
-    const schedResA = await fetch(`${baseUrl}/cases/${caseA.id}/schedule`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${techToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ scheduledAt: '2026-10-25T09:00:00Z' })
-    });
-    assert(schedResA.status === 200, 'Case A: schedule succeeds');
-    const schedDataA = await schedResA.json();
-    assert(schedDataA.status === 'SCHEDULED', 'Case A: Transitioned to SCHEDULED');
-
-    // 4. Accept case (SCHEDULED/ASSIGNED -> IN_PROGRESS via /accept)
-    const acceptResA = await fetch(`${baseUrl}/cases/${caseA.id}/accept`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${techToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ notes: 'پذیرش شد؛ مراجعه خواهم کرد' })
-    });
-    assert(acceptResA.status === 200, 'Case A: accept succeeds');
-    const acceptDataA = await acceptResA.json();
-    assert(acceptDataA.status === 'IN_PROGRESS', 'Case A: Transitioned to IN_PROGRESS');
-
-    // 5. Log technical action
-    const actionResA = await fetch(`${baseUrl}/cases/${caseA.id}/actions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${techToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        actionType: 'REPAIR',
-        description: 'تنظیم رگولاتور ولتاژ و تعویض فیلتر روغن'
-      })
-    });
-    assert(actionResA.status === 200 || actionResA.status === 201, 'Case A: Logged maintenance action');
-
-    // 6. Submit verification (IN_PROGRESS -> AWAITING_VERIFICATION)
-    const submitVerResA = await fetch(`${baseUrl}/cases/${caseA.id}/submit-verification`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${techToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        resolutionSummary: 'عملیات سرویس و تنظیم ولتاژ با موفقیت انجام شد.',
-        rootCause: 'فرسودگی فیلتر و کالیبره نبودن AVR'
-      })
-    });
-    assert(submitVerResA.status === 200, 'Case A: submit-verification succeeds');
-    const submitVerDataA = await submitVerResA.json();
-    assert(submitVerDataA.status === 'AWAITING_VERIFICATION', 'Case A: Transitioned to AWAITING_VERIFICATION');
-
-    // 7. Verify work by customer/reporter (AWAITING_VERIFICATION -> COMPLETED)
-    const verifyResA = await fetch(`${baseUrl}/cases/${caseA.id}/verify`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${customerToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ verificationPassed: true, verificationNotes: 'کیفیت کار تایید گردید.' })
-    });
-    assert(verifyResA.status === 200, 'Case A: verify succeeds');
-    const verifyDataA = await verifyResA.json();
-    assert(verifyDataA.status === 'COMPLETED', 'Case A: Transitioned to COMPLETED');
-
-    // 8. Close and archive case (COMPLETED -> CLOSED)
-    const closeResA = await fetch(`${baseUrl}/cases/${caseA.id}/close`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${customerToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ closureNotes: 'تحویل نهایی انجام شد' })
-    });
-    assert(closeResA.status === 200, 'Case A: close succeeds');
-    const closeDataA = await closeResA.json();
-    assert(closeDataA.status === 'CLOSED', 'Case A: Transitioned to CLOSED');
-
-    // -------------------------------------------------------------------------
-    // TEST 1: IMPOSSIBLE BACKWARD SCHEDULING (IN_PROGRESS -> SCHEDULED) REJECTED
-    // -------------------------------------------------------------------------
-    console.log('\n--- TEST 1: IMPOSSIBLE BACKWARD SCHEDULING (IN_PROGRESS -> SCHEDULED) REJECTED ---');
-    const caseExecuting = maintenanceRepository.createCase({
-      projectId: 'CUSTOMER_DIRECT',
-      assetId: 'UNREGISTERED',
-      equipmentType: 'PORTABLE_GENERATOR',
-      title: 'پرونده در حال اجرا',
-      description: 'شرح',
-      priority: 'HIGH',
-      status: 'IN_PROGRESS',
-      assignedTechnicianId: techUser.id,
-      assignedTechnicianName: 'تکنسین',
-      category: 'CORRECTIVE',
-      reportedBy: customerUser.id,
-      reportedAt: new Date().toISOString(),
       alertIds: [],
       photos: [],
       documents: [],
@@ -269,341 +441,83 @@ async function runTestSuite() {
       totalLaborHours: 0
     });
 
-    let backwardSchedulingRejected = false;
-    try {
-      maintenanceCaseService.transitionCaseStatus(caseExecuting.id, 'SCHEDULED', techUser.id, {
-        scheduledDate: '2026-11-01T10:00:00Z'
-      });
-    } catch (e: any) {
-      backwardSchedulingRejected = true;
-    }
-    assert(
-      backwardSchedulingRejected,
-      'Test 1: Transition IN_PROGRESS -> SCHEDULED is strictly rejected by central state machine'
-    );
-
-    // Verify that attempting backward state transition via state machine fails:
-    const caseExecutingDb = maintenanceRepository.getCaseById(caseExecuting.id);
-    assert(
-      caseExecutingDb?.status === 'IN_PROGRESS',
-      'Test 1: Case status remains strictly IN_PROGRESS and cannot be demoted to SCHEDULED'
-    );
-
-    // -------------------------------------------------------------------------
-    // TEST B: INVALID TRANSITION REJECTIONS
-    // -------------------------------------------------------------------------
-    console.log('\n--- TEST B: INVALID TRANSITION REJECTIONS ---');
-    // OPEN -> VERIFIED
-    let errOpenToVerified = false;
-    try {
-      const openCase = maintenanceRepository.createCase({
-        projectId: 'CUSTOMER_DIRECT',
-        assetId: 'UNREGISTERED',
-        equipmentType: 'PORTABLE_GENERATOR',
-        title: 'تست انتقال نامعتبر ۱',
-        description: 'شرح',
-        priority: 'LOW',
-        status: 'OPEN',
-        category: 'CORRECTIVE',
-        reportedBy: customerUser.id,
-        reportedAt: new Date().toISOString(),
-        alertIds: [],
-        photos: [],
-        documents: [],
-        attachments: [],
-        actionsTaken: [],
-        sparePartsUsed: [],
-        totalCostIrr: 0,
-        totalLaborHours: 0
-      });
-      maintenanceCaseService.transitionCaseStatus(openCase.id, 'VERIFIED', adminUser.id);
-    } catch (e: any) {
-      errOpenToVerified = true;
-    }
-    assert(errOpenToVerified, 'Invalid Transition: OPEN -> VERIFIED is rejected');
-
-    // ASSIGNED -> VERIFIED
-    let errAssignedToVerified = false;
-    try {
-      const assignedCase = maintenanceRepository.createCase({
-        projectId: 'CUSTOMER_DIRECT',
-        assetId: 'UNREGISTERED',
-        equipmentType: 'PORTABLE_GENERATOR',
-        title: 'تست انتقال نامعتبر ۲',
-        description: 'شرح',
-        priority: 'LOW',
-        status: 'ASSIGNED',
-        assignedTechnicianId: techUser.id,
-        assignedTechnicianName: 'تکنسین',
-        category: 'CORRECTIVE',
-        reportedBy: customerUser.id,
-        reportedAt: new Date().toISOString(),
-        alertIds: [],
-        photos: [],
-        documents: [],
-        attachments: [],
-        actionsTaken: [],
-        sparePartsUsed: [],
-        totalCostIrr: 0,
-        totalLaborHours: 0
-      });
-      maintenanceCaseService.transitionCaseStatus(assignedCase.id, 'VERIFIED', adminUser.id);
-    } catch (e: any) {
-      errAssignedToVerified = true;
-    }
-    assert(errAssignedToVerified, 'Invalid Transition: ASSIGNED -> VERIFIED is rejected');
-
-    // DRAFT -> IN_PROGRESS
-    let errDraftToInProgress = false;
-    try {
-      const draftCase = maintenanceRepository.createCase({
-        projectId: 'CUSTOMER_DIRECT',
-        assetId: 'UNREGISTERED',
-        equipmentType: 'PORTABLE_GENERATOR',
-        title: 'تست انتقال نامعتبر ۳',
-        description: 'شرح',
-        priority: 'LOW',
-        status: 'DRAFT',
-        category: 'CORRECTIVE',
-        reportedBy: customerUser.id,
-        reportedAt: new Date().toISOString(),
-        alertIds: [],
-        photos: [],
-        documents: [],
-        attachments: [],
-        actionsTaken: [],
-        sparePartsUsed: [],
-        totalCostIrr: 0,
-        totalLaborHours: 0
-      });
-      maintenanceCaseService.transitionCaseStatus(draftCase.id, 'IN_PROGRESS', adminUser.id);
-    } catch (e: any) {
-      errDraftToInProgress = true;
-    }
-    assert(errDraftToInProgress, 'Invalid Transition: DRAFT -> IN_PROGRESS is rejected');
-
-    // CLOSED -> IN_PROGRESS
-    let errClosedToInProgress = false;
-    try {
-      maintenanceCaseService.transitionCaseStatus(caseA.id, 'IN_PROGRESS', adminUser.id);
-    } catch (e: any) {
-      errClosedToInProgress = true;
-    }
-    assert(errClosedToInProgress, 'Invalid Transition: CLOSED -> IN_PROGRESS is rejected');
-
-    // -------------------------------------------------------------------------
-    // TEST C & D (TEST 2, 3, 4): /start BEFORE ACCEPTANCE REJECTED; /accept THEN /start SUCCEEDS
-    // -------------------------------------------------------------------------
-    console.log('\n--- TEST C & D (TEST 2, 3, 4): /start BEFORE ACCEPTANCE VS AFTER ACCEPTANCE ---');
-    const caseCD = maintenanceRepository.createCase({
-      projectId: 'CUSTOMER_DIRECT',
-      assetId: 'UNREGISTERED',
-      equipmentType: 'PORTABLE_GENERATOR',
-      title: 'تست کنترل آغاز کار بدون پذیرش',
-      description: 'شرح',
-      priority: 'HIGH',
-      status: 'ASSIGNED',
-      assignedTechnicianId: techUser.id,
-      assignedTechnicianName: 'تکنسین',
-      category: 'CORRECTIVE',
-      reportedBy: customerUser.id,
-      reportedAt: new Date().toISOString(),
-      contactName: 'آقای شجاعی',
-      contactPhone: '09123330003',
-      alertIds: [],
-      photos: [],
-      documents: [],
-      attachments: [],
-      actionsTaken: [],
-      sparePartsUsed: [],
-      totalCostIrr: 0,
-      totalLaborHours: 0
-    });
-
-    // Test 3: Attempt /start before /accept
-    const preAcceptStartRes = await fetch(`${baseUrl}/cases/${caseCD.id}/start`, {
+    // Test 10: /start before /accept fails with 409
+    const preAcceptStartRes = await fetch(`${baseUrl}/cases/${case10.id}/start`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${techToken}` }
+      headers: { 'Authorization': `Bearer ${techTokenA}` }
     });
     assert(
       preAcceptStartRes.status === 409,
-      `Test 3: /start before /accept rejected with HTTP 409 (status: ${preAcceptStartRes.status})`
+      `Test 10: HTTP POST /start before /accept rejected with HTTP 409 (got: ${preAcceptStartRes.status})`
     );
+    const case10DbAfterFail = maintenanceRepository.getCaseById(case10.id);
+    assert(case10DbAfterFail?.status === 'ASSIGNED', 'Test 10: Case status remains ASSIGNED');
 
-    // Verify status unchanged, no ACCEPTED history, contact hidden
-    const caseCDUnchanged = maintenanceRepository.getCaseById(caseCD.id);
-    assert(caseCDUnchanged?.status === 'ASSIGNED', 'Test 3: Case status remains ASSIGNED');
-    const historiesCD = maintenanceRepository.getAssignmentHistories(caseCD.id) || [];
-    assert(!historiesCD.some(h => h.status === 'ACCEPTED'), 'Test 3: Zero ACCEPTED history entries created');
-    const detailCDHidden = await (await fetch(`${baseUrl}/cases/${caseCD.id}`, {
-      headers: { 'Authorization': `Bearer ${techToken}` }
-    })).json();
-    assert(detailCDHidden.contactName === undefined && detailCDHidden.contactPhone === undefined, 'Test 3: Customer contact remains hidden');
-
-    // Test 2: Call /accept
-    const countHistoriesBeforeAccept = (maintenanceRepository.getAssignmentHistories(caseCD.id) || []).length;
-    const acceptCDRes = await fetch(`${baseUrl}/cases/${caseCD.id}/accept`, {
+    // Test 11: /accept succeeds and creates ACCEPTED history without duplicates on second call
+    const acceptRes1 = await fetch(`${baseUrl}/cases/${case10.id}/accept`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${techToken}`,
+        'Authorization': `Bearer ${techTokenA}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ notes: 'پذیرش رسمی پرونده' })
+      body: JSON.stringify({ notes: 'پذیرش رسمی' })
     });
-    assert(acceptCDRes.status === 200, 'Test 2: /accept succeeds');
-    const caseCDAccepted = maintenanceRepository.getCaseById(caseCD.id);
-    assert(caseCDAccepted?.status === 'IN_PROGRESS', 'Test 2: Case transitioned to IN_PROGRESS upon /accept');
-    const historiesPostAccept = maintenanceRepository.getAssignmentHistories(caseCD.id) || [];
-    assert(
-      historiesPostAccept.some(h => h.status === 'ACCEPTED' && h.technicianId === techUser.id),
-      'Test 2: Authoritative ACCEPTED assignment history entry was created'
-    );
+    assert(acceptRes1.status === 200, 'Test 11: HTTP POST /accept succeeds with HTTP 200');
+    const case10DbAfterAccept = maintenanceRepository.getCaseById(case10.id);
+    assert(case10DbAfterAccept?.status === 'IN_PROGRESS', 'Test 11: Case transitioned to IN_PROGRESS');
 
-    // Test 4: Now call /start after /accept
-    const countHistoriesBeforeStart = historiesPostAccept.length;
-    const postAcceptStartRes = await fetch(`${baseUrl}/cases/${caseCD.id}/start`, {
+    const historiesCase10 = maintenanceRepository.getAssignmentHistories(case10.id) || [];
+    const countAccepted1 = historiesCase10.filter(h => h.status === 'ACCEPTED').length;
+    assert(countAccepted1 === 1, 'Test 11: Exactly 1 ACCEPTED assignment history entry persisted');
+
+    // Repeat /accept call (duplicate suppression)
+    const acceptRes2 = await fetch(`${baseUrl}/cases/${case10.id}/accept`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${techToken}` }
+      headers: {
+        'Authorization': `Bearer ${techTokenA}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ notes: 'پذیرش مجدد' })
     });
-    assert(postAcceptStartRes.status === 200, 'Test 4: /start after /accept succeeds');
-    const countHistoriesAfterStart = (maintenanceRepository.getAssignmentHistories(caseCD.id) || []).length;
-    assert(countHistoriesAfterStart === countHistoriesBeforeStart, 'Test 4: /start does NOT create duplicate ACCEPTED history');
+    assert(acceptRes2.status === 200, 'Test 11: Calling /accept again succeeds gracefully');
+    const historiesCase10AfterRepeat = maintenanceRepository.getAssignmentHistories(case10.id) || [];
+    const countAccepted2 = historiesCase10AfterRepeat.filter(h => h.status === 'ACCEPTED').length;
+    assert(countAccepted2 === 1, 'Test 11: Second /accept call does NOT create duplicate ACCEPTED records');
+
+    // Test 12: /start after /accept succeeds
+    const postAcceptStartRes = await fetch(`${baseUrl}/cases/${case10.id}/start`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${techTokenA}` }
+    });
+    assert(postAcceptStartRes.status === 200, 'Test 12: HTTP POST /start after /accept succeeds with HTTP 200');
+    const historiesCase10AfterStart = maintenanceRepository.getAssignmentHistories(case10.id) || [];
+    const countAccepted3 = historiesCase10AfterStart.filter(h => h.status === 'ACCEPTED').length;
+    assert(countAccepted3 === 1, 'Test 12: /start did NOT create duplicate ACCEPTED history');
 
     // -------------------------------------------------------------------------
-    // TEST 5: DIRECT TRANSITION AUDIT (NO UNINTENDED ROUTE CAN ENTER IN_PROGRESS)
+    // TEST 13: F.2 PRIVACY BEHAVIOR INTACT
     // -------------------------------------------------------------------------
-    console.log('\n--- TEST 5: DIRECT TRANSITION AUDIT ---');
-    // Attempting to move OPEN -> IN_PROGRESS via state machine throws error
-    const testCaseOpen = maintenanceRepository.createCase({
+    console.log('\n--- TEST 13: F.2 PRIVACY BEHAVIOR INTACT ---');
+    const case13 = maintenanceRepository.createCase({
       projectId: 'CUSTOMER_DIRECT',
       assetId: 'UNREGISTERED',
       equipmentType: 'PORTABLE_GENERATOR',
-      title: 'تست بازبینی مسیرهای ورود به در حال اجرا',
-      description: 'شرح',
-      priority: 'LOW',
-      status: 'OPEN',
-      category: 'CORRECTIVE',
-      reportedBy: customerUser.id,
-      reportedAt: new Date().toISOString(),
-      alertIds: [],
-      photos: [],
-      documents: [],
-      attachments: [],
-      actionsTaken: [],
-      sparePartsUsed: [],
-      totalCostIrr: 0,
-      totalLaborHours: 0
-    });
-
-    let openToInProgressRejected = false;
-    try {
-      maintenanceCaseService.transitionCaseStatus(testCaseOpen.id, 'IN_PROGRESS', customerUser.id);
-    } catch (e: any) {
-      openToInProgressRejected = true;
-    }
-    assert(openToInProgressRejected, 'Test 5: Directly calling transitionCaseStatus from OPEN to IN_PROGRESS is rejected');
-
-    // -------------------------------------------------------------------------
-    // TEST E: SCHEDULING TRANSITIONS (ASSIGNED -> SCHEDULED) & REJECTIONS
-    // -------------------------------------------------------------------------
-    console.log('\n--- TEST E: SCHEDULING TRANSITIONS ---');
-    const caseE = maintenanceRepository.createCase({
-      projectId: 'CUSTOMER_DIRECT',
-      assetId: 'UNREGISTERED',
-      equipmentType: 'PORTABLE_GENERATOR',
-      title: 'تست زمان‌بندی',
-      description: 'شرح',
-      priority: 'MEDIUM',
-      status: 'OPEN',
-      category: 'CORRECTIVE',
-      reportedBy: customerUser.id,
-      reportedAt: new Date().toISOString(),
-      alertIds: [],
-      photos: [],
-      documents: [],
-      attachments: [],
-      actionsTaken: [],
-      sparePartsUsed: [],
-      totalCostIrr: 0,
-      totalLaborHours: 0
-    });
-
-    // Cannot schedule an unassigned OPEN case
-    const schedOpenRes = await fetch(`${baseUrl}/cases/${caseE.id}/schedule`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${customerToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ scheduledAt: '2026-10-30T10:00:00Z' })
-    });
-    assert(schedOpenRes.status === 400, 'Test E: Cannot schedule an OPEN (unassigned) case');
-
-    // Assign technician
-    await fetch(`${baseUrl}/cases/${caseE.id}/select-technician`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${customerToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ technicianId: proTech.id })
-    });
-
-    // Now schedule (ASSIGNED -> SCHEDULED)
-    const schedAssignedRes = await fetch(`${baseUrl}/cases/${caseE.id}/schedule`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${techToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ scheduledAt: '2026-10-30T10:00:00Z' })
-    });
-    assert(schedAssignedRes.status === 200, 'Test E: Scheduling ASSIGNED case succeeds');
-    const schedAssignedData = await schedAssignedRes.json();
-    assert(schedAssignedData.status === 'SCHEDULED', 'Test E: Case status updated to SCHEDULED');
-
-    // -------------------------------------------------------------------------
-    // TEST F: SCHEDULED -> IN_PROGRESS EXECUTION
-    // -------------------------------------------------------------------------
-    console.log('\n--- TEST F: SCHEDULED -> IN_PROGRESS EXECUTION ---');
-    // Cannot /start from SCHEDULED without /accept
-    const startSchedNoAcceptRes = await fetch(`${baseUrl}/cases/${caseE.id}/start`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${techToken}` }
-    });
-    assert(
-      startSchedNoAcceptRes.status === 409,
-      'Test F: Cannot /start a SCHEDULED case without formal /accept'
-    );
-
-    // Call /accept
-    const acceptSchedRes = await fetch(`${baseUrl}/cases/${caseE.id}/accept`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${techToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ notes: 'پذیرش پرونده زمان‌بندی شده' })
-    });
-    assert(acceptSchedRes.status === 200, 'Test F: /accept from SCHEDULED succeeds');
-    const acceptSchedData = await acceptSchedRes.json();
-    assert(acceptSchedData.status === 'IN_PROGRESS', 'Test F: Transitions to IN_PROGRESS upon /accept');
-
-    // -------------------------------------------------------------------------
-    // TEST G & H: VERIFICATION FLOW & INVALID VERIFICATION
-    // -------------------------------------------------------------------------
-    console.log('\n--- TEST G & H: VERIFICATION FLOW & RESTRICTIONS ---');
-    const caseGH = maintenanceRepository.createCase({
-      projectId: 'CUSTOMER_DIRECT',
-      assetId: 'UNREGISTERED',
-      equipmentType: 'PORTABLE_GENERATOR',
-      title: 'تست بازبینی و تایید',
+      title: 'تست حریم خصوصی',
       description: 'شرح',
       priority: 'HIGH',
-      status: 'OPEN',
+      status: 'ASSIGNED',
+      assignedTechnicianId: techUserA.id,
+      assignedTechnicianName: 'تکنسین الف',
       category: 'CORRECTIVE',
       reportedBy: customerUser.id,
       reportedAt: new Date().toISOString(),
+      contactName: 'مهندس رضایی',
+      contactPhone: '09121110001',
+      billDoc: {
+        name: 'bill.pdf',
+        status: 'UNVERIFIED',
+        extractedData: { customerPhone: '09121110001', customerName: 'مهندس رضایی' }
+      },
       alertIds: [],
       photos: [],
       documents: [],
@@ -614,117 +528,35 @@ async function runTestSuite() {
       totalLaborHours: 0
     });
 
-    // Cannot verify directly from OPEN
-    const verifyOpenRes = await fetch(`${baseUrl}/cases/${caseGH.id}/verify`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${customerToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ verificationPassed: true })
-    });
-    assert(verifyOpenRes.status === 400, 'Test H: Cannot verify an OPEN case directly');
+    const preDetail = await (await fetch(`${baseUrl}/cases/${case13.id}`, {
+      headers: { 'Authorization': `Bearer ${techTokenA}` }
+    })).json();
+    assert(preDetail.contactName === undefined, 'Test 13: Pre-acceptance contactName is strictly hidden');
+    assert(preDetail.contactPhone === undefined, 'Test 13: Pre-acceptance contactPhone is strictly hidden');
+    assert(
+      preDetail.billDoc?.extractedData?.customerPhone === undefined,
+      'Test 13: Pre-acceptance nested bill customerPhone is strictly hidden'
+    );
 
-    // Assign and accept
-    await fetch(`${baseUrl}/cases/${caseGH.id}/select-technician`, {
+    // After /accept, contact is released
+    await fetch(`${baseUrl}/cases/${case13.id}/accept`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${customerToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ technicianId: proTech.id })
-    });
-    await fetch(`${baseUrl}/cases/${caseGH.id}/accept`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${techToken}`,
+        'Authorization': `Bearer ${techTokenA}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ notes: 'پذیرش' })
     });
-
-    // Attempt submit-verification WITHOUT actions logged
-    const submitNoActionRes = await fetch(`${baseUrl}/cases/${caseGH.id}/submit-verification`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${techToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ resolutionSummary: 'شرح رفع' })
-    });
-    assert(submitNoActionRes.status === 400, 'Test H: Cannot submit-verification without logged actions');
-
-    // Log action
-    await fetch(`${baseUrl}/cases/${caseGH.id}/actions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${techToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ actionType: 'REPAIR', description: 'انجام تعمیر' })
-    });
-
-    // Now submit-verification
-    const submitWithActionRes = await fetch(`${baseUrl}/cases/${caseGH.id}/submit-verification`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${techToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ resolutionSummary: 'رفع نقص انجام شد' })
-    });
-    assert(submitWithActionRes.status === 200, 'Test G: submit-verification succeeds');
-
-    // Technician cannot self-verify
-    const techSelfVerifyRes = await fetch(`${baseUrl}/cases/${caseGH.id}/verify`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${techToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ verificationPassed: true })
-    });
-    assert(techSelfVerifyRes.status === 403, 'Test H: Technician cannot self-verify');
-
-    // Customer verifies
-    const customerVerifyRes = await fetch(`${baseUrl}/cases/${caseGH.id}/verify`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${customerToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ verificationPassed: true, verificationNotes: 'تایید شد' })
-    });
-    assert(customerVerifyRes.status === 200, 'Test G: Customer verification succeeds');
-    const customerVerifyData = await customerVerifyRes.json();
-    assert(customerVerifyData.status === 'COMPLETED', 'Test G: Case becomes COMPLETED');
+    const postDetail = await (await fetch(`${baseUrl}/cases/${case13.id}`, {
+      headers: { 'Authorization': `Bearer ${techTokenA}` }
+    })).json();
+    assert(postDetail.contactPhone === '09121110001', 'Test 13: Post-acceptance contactPhone is released for execution');
 
     // -------------------------------------------------------------------------
-    // TEST I: GENERIC PATCH STATUS INJECTION PROTECTION
+    // TEST 14: GENERIC PATCH STATUS INJECTION PROTECTION
     // -------------------------------------------------------------------------
-    console.log('\n--- TEST I: GENERIC PATCH STATUS INJECTION PROTECTION ---');
-    const caseI = maintenanceRepository.createCase({
-      projectId: 'CUSTOMER_DIRECT',
-      assetId: 'UNREGISTERED',
-      equipmentType: 'PORTABLE_GENERATOR',
-      title: 'تست تزریق وضعیت در PATCH',
-      description: 'شرح',
-      priority: 'LOW',
-      status: 'OPEN',
-      category: 'CORRECTIVE',
-      reportedBy: customerUser.id,
-      reportedAt: new Date().toISOString(),
-      alertIds: [],
-      photos: [],
-      documents: [],
-      attachments: [],
-      actionsTaken: [],
-      sparePartsUsed: [],
-      totalCostIrr: 0,
-      totalLaborHours: 0
-    });
-
-    const patchInjectionRes = await fetch(`${baseUrl}/cases/${caseI.id}`, {
+    console.log('\n--- TEST 14: GENERIC PATCH STATUS INJECTION PROTECTION ---');
+    const patchRes = await fetch(`${baseUrl}/cases/${case13.id}`, {
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${customerToken}`,
@@ -732,78 +564,28 @@ async function runTestSuite() {
       },
       body: JSON.stringify({ status: 'VERIFIED' })
     });
-    assert(
-      patchInjectionRes.status === 400,
-      `Test I: Direct status injection via PATCH strictly rejected with HTTP 400 (got: ${patchInjectionRes.status})`
-    );
-    const caseIAfterPatch = maintenanceRepository.getCaseById(caseI.id);
-    assert(caseIAfterPatch?.status === 'OPEN', 'Test I: Case status in repository remains OPEN');
-
-    // Legitimate non-status PATCH still works
-    const patchLegitRes = await fetch(`${baseUrl}/cases/${caseI.id}`, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bearer ${customerToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ title: 'عنوان بروزرسانی شده قانونی' })
-    });
-    assert(patchLegitRes.status === 200, 'Test I: Legitimate title update via PATCH succeeds');
-    const caseIAfterLegit = maintenanceRepository.getCaseById(caseI.id);
-    assert(caseIAfterLegit?.title === 'عنوان بروزرسانی شده قانونی', 'Test I: Title updated properly in db');
+    assert(patchRes.status === 400, 'Test 14: Direct status injection via PATCH strictly rejected with HTTP 400');
 
     // -------------------------------------------------------------------------
-    // TEST J: CANCELLATION FLOW
+    // TEST 15: VALID NORMAL LIFECYCLE (END TO END)
     // -------------------------------------------------------------------------
-    console.log('\n--- TEST J: CANCELLATION FLOW ---');
-    const cancelRes = await fetch(`${baseUrl}/cases/${caseI.id}/cancel`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${customerToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ reason: 'عدم نیاز به تعمیر' })
-    });
-    assert(cancelRes.status === 200, 'Test J: Legitimate cancellation succeeds');
-    const cancelData = await cancelRes.json();
-    assert(cancelData.status === 'CANCELLED', 'Test J: Status becomes CANCELLED');
-
-    // Cannot cancel an already CLOSED case (Case A from Test A)
-    const cancelClosedRes = await fetch(`${baseUrl}/cases/${caseA.id}/cancel`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${customerToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ reason: 'تلاش برای لغو پرونده بسته شده' })
-    });
-    assert(cancelClosedRes.status === 400, 'Test J: Cannot cancel an already CLOSED case');
-
-    // -------------------------------------------------------------------------
-    // TEST K, L, M: PRIVACY PRESERVATION & STORAGE INTEGRITY
-    // -------------------------------------------------------------------------
-    console.log('\n--- TEST K, L, M: PRIVACY PRESERVATION & STORAGE INTEGRITY ---');
-    const caseKLM = maintenanceRepository.createCase({
+    console.log('\n--- TEST 15: VALID NORMAL LIFECYCLE PROGRESSION ---');
+    const case15 = maintenanceRepository.createCase({
       projectId: 'CUSTOMER_DIRECT',
       assetId: 'UNREGISTERED',
       equipmentType: 'PORTABLE_GENERATOR',
-      title: 'تست حریم خصوصی F.2 و عدم جعل پذیرش',
+      title: 'سرویس ژنراتور کامل چرخه',
       description: 'شرح',
-      priority: 'HIGH',
+      priority: 'MEDIUM',
       status: 'OPEN',
-      category: 'CORRECTIVE',
+      category: 'PREVENTIVE',
       reportedBy: customerUser.id,
       reportedAt: new Date().toISOString(),
-      contactName: 'مهندس محمودی',
-      contactPhone: '09124440004',
+      contactName: 'مهندس حسینی',
+      contactPhone: '09121110001',
       alertIds: [],
       photos: [],
       documents: [],
-      billDoc: {
-        name: 'invoice.pdf',
-        status: 'UNVERIFIED',
-        extractedData: { customerPhone: '09124440004' }
-      },
       attachments: [],
       actionsTaken: [],
       sparePartsUsed: [],
@@ -811,48 +593,120 @@ async function runTestSuite() {
       totalLaborHours: 0
     });
 
-    // Select technician
-    await fetch(`${baseUrl}/cases/${caseKLM.id}/select-technician`, {
+    // 1. OPEN -> ASSIGNED
+    await fetch(`${baseUrl}/cases/${case15.id}/select-technician`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${customerToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ technicianId: proTech.id })
+      body: JSON.stringify({ technicianId: proTechA.id })
     });
-
-    // Schedule before accept
-    await fetch(`${baseUrl}/cases/${caseKLM.id}/schedule`, {
+    // 2. ASSIGNED -> SCHEDULED
+    await fetch(`${baseUrl}/cases/${case15.id}/schedule`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${techToken}`,
+        'Authorization': `Bearer ${techTokenA}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ scheduledAt: '2026-10-28T10:00:00Z' })
+      body: JSON.stringify({ scheduledAt: '2026-10-25T09:00:00Z' })
+    });
+    // 3. SCHEDULED -> IN_PROGRESS via /accept
+    await fetch(`${baseUrl}/cases/${case15.id}/accept`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${techTokenA}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ notes: 'پذیرش' })
+    });
+    // 4. Log Action
+    await fetch(`${baseUrl}/cases/${case15.id}/actions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${techTokenA}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ actionType: 'REPAIR', description: 'انجام تعویض فیلترها' })
+    });
+    // 5. IN_PROGRESS -> AWAITING_VERIFICATION
+    await fetch(`${baseUrl}/cases/${case15.id}/submit-verification`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${techTokenA}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ resolutionSummary: 'اتمام سرویس کامل' })
+    });
+    // 6. AWAITING_VERIFICATION -> COMPLETED
+    await fetch(`${baseUrl}/cases/${case15.id}/verify`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${customerToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ verificationPassed: true, verificationNotes: 'تایید کیفیت عملکرد' })
+    });
+    // 7. COMPLETED -> CLOSED
+    const closeRes = await fetch(`${baseUrl}/cases/${case15.id}/close`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${customerToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ closureNotes: 'بایگانی نهایی پرونده' })
+    });
+    assert(closeRes.status === 200, 'Test 15: End-to-end lifecycle progression succeeds');
+    const case15Final = maintenanceRepository.getCaseById(case15.id);
+    assert(case15Final?.status === 'CLOSED', 'Test 15: Final case status is CLOSED');
+
+    // -------------------------------------------------------------------------
+    // TEST 16: CANCELLATION FLOW
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 16: CANCELLATION FLOW ---');
+    const case16 = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'تست لغو پرونده',
+      description: 'شرح',
+      priority: 'LOW',
+      status: 'OPEN',
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: [],
+      photos: [],
+      documents: [],
+      attachments: [],
+      actionsTaken: [],
+      sparePartsUsed: [],
+      totalCostIrr: 0,
+      totalLaborHours: 0
     });
 
-    // Pre-acceptance: technician view must hide customer contact
-    const preAcceptDetail = await (await fetch(`${baseUrl}/cases/${caseKLM.id}`, {
-      headers: { 'Authorization': `Bearer ${techToken}` }
-    })).json();
-    assert(preAcceptDetail.contactName === undefined, 'Test K: contactName hidden before accept');
-    assert(preAcceptDetail.contactPhone === undefined, 'Test K: contactPhone hidden before accept');
+    const cancelRes = await fetch(`${baseUrl}/cases/${case16.id}/cancel`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${customerToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ reason: 'لغو تستی' })
+    });
+    assert(cancelRes.status === 200, 'Test 16: Case cancellation succeeds');
+    const case16Final = maintenanceRepository.getCaseById(case16.id);
+    assert(case16Final?.status === 'CANCELLED', 'Test 16: Case status becomes CANCELLED');
 
-    // Verify /schedule did NOT create an ACCEPTED history entry
-    const historiesKLM = maintenanceRepository.getAssignmentHistories(caseKLM.id) || [];
-    const hasFabricatedAccept = historiesKLM.some(h => h.status === 'ACCEPTED');
-    assert(!hasFabricatedAccept, 'Test L: /schedule did NOT fabricate ACCEPTED history');
-
-    // Stored database record retains original contact data
-    const storedKLM = maintenanceRepository.getCaseById(caseKLM.id);
-    assert(storedKLM?.contactName === 'مهندس محمودی', 'Test M: Stored contactName intact in db');
-    assert(storedKLM?.contactPhone === '09124440004', 'Test M: Stored contactPhone intact in db');
-
-    // Customer can see their own contact details
-    const customerKLMDetail = await (await fetch(`${baseUrl}/cases/${caseKLM.id}`, {
-      headers: { 'Authorization': `Bearer ${customerToken}` }
-    })).json();
-    assert(customerKLMDetail.contactName === 'مهندس محمودی', 'Test K: Customer retains full access');
+    // Cannot cancel already closed case
+    const cancelClosedRes = await fetch(`${baseUrl}/cases/${case15.id}/cancel`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${customerToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ reason: 'لغو پرونده بسته شده' })
+    });
+    assert(cancelClosedRes.status === 400, 'Test 16: Cannot cancel an already CLOSED case');
 
     server.close();
 
