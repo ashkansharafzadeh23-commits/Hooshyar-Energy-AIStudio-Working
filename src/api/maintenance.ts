@@ -991,6 +991,17 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/select-technician', '/c
     return res.json(responseData);
   }
 
+  const previousCaseSnapshot: Partial<MaintenanceCase> = {
+    ...mCase,
+    status: mCase.status,
+    assignedTechnicianId: mCase.assignedTechnicianId ?? (undefined as any),
+    assignedTechnicianName: mCase.assignedTechnicianName ?? (undefined as any),
+    assignedTechnicianPhone: mCase.assignedTechnicianPhone ?? (undefined as any),
+    scheduledDate: mCase.scheduledDate ?? (undefined as any),
+    scheduledAt: mCase.scheduledAt ?? (undefined as any),
+    startedAt: mCase.startedAt ?? (undefined as any)
+  };
+
   try {
     const updated = maintenanceCaseService.transitionCaseStatus(caseId, 'ASSIGNED', req.user?.id || 'CUSTOMER', {
       technicianId: pro.id,
@@ -999,14 +1010,24 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/select-technician', '/c
       scheduledDate
     });
 
-    maintenanceRepository.createAssignmentHistory({
-      maintenanceCaseId: caseId,
-      technicianId: pro.id,
-      assignedBy: req.user?.id || 'CUSTOMER',
-      assignedAt: new Date().toISOString(),
-      status: 'ASSIGNED',
-      notes: notes || 'تخصیص از طریق درگاه هوشمند تعمیرات و نگهداری'
-    });
+    try {
+      maintenanceRepository.createAssignmentHistory({
+        maintenanceCaseId: caseId,
+        technicianId: pro.id,
+        assignedBy: req.user?.id || 'CUSTOMER',
+        assignedAt: new Date().toISOString(),
+        status: 'ASSIGNED',
+        notes: notes || 'تخصیص از طریق درگاه هوشمند تعمیرات و نگهداری'
+      });
+    } catch (histErr: any) {
+      // Compensating rollback to preserve assignment persistence consistency
+      try {
+        maintenanceRepository.updateCase(caseId, previousCaseSnapshot);
+      } catch (rbErr) {
+        // best effort rollback
+      }
+      return res.status(500).json({ error: 'خطا در ثبت تاریخچه تخصیص - تغییرات پرونده بازگردانده شد.' });
+    }
 
     const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
     const responseData = isReporterOrAdmin ? updated : sanitizeCaseForTechnician(updated, { isAccepted: false });
@@ -1212,6 +1233,17 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/assign', '/cases/:maint
     return res.json(responseData);
   }
 
+  const previousCaseSnapshot: Partial<MaintenanceCase> = {
+    ...mCase,
+    status: mCase.status,
+    assignedTechnicianId: mCase.assignedTechnicianId ?? (undefined as any),
+    assignedTechnicianName: mCase.assignedTechnicianName ?? (undefined as any),
+    assignedTechnicianPhone: mCase.assignedTechnicianPhone ?? (undefined as any),
+    scheduledDate: mCase.scheduledDate ?? (undefined as any),
+    scheduledAt: mCase.scheduledAt ?? (undefined as any),
+    startedAt: mCase.startedAt ?? (undefined as any)
+  };
+
   // Transition via canonical state machine
   let updated: MaintenanceCase;
   try {
@@ -1228,22 +1260,36 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/assign', '/cases/:maint
     return res.status(400).json({ error: err.message || 'خطا در تخصیص پرونده' });
   }
 
-  // Record assignment history
-  maintenanceRepository.createAssignmentHistory({
-    maintenanceCaseId: caseId,
-    technicianId,
-    organizationId: pro?.companyName,
-    assignedBy: req.user.id,
-    status: 'ASSIGNED',
-    notes: notes || 'تخصیص اولیه به تکنسین'
-  });
+  // Record assignment history with compensating rollback on failure
+  try {
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: caseId,
+      technicianId,
+      organizationId: pro?.companyName,
+      assignedBy: req.user.id,
+      status: 'ASSIGNED',
+      notes: notes || 'تخصیص اولیه به تکنسین'
+    });
+  } catch (histErr: any) {
+    // Compensating rollback to preserve assignment persistence consistency
+    try {
+      maintenanceRepository.updateCase(caseId, previousCaseSnapshot);
+    } catch (rbErr) {
+      // best effort rollback
+    }
+    return res.status(500).json({ error: 'خطا در ثبت تاریخچه تخصیص - تغییرات پرونده بازگردانده شد.' });
+  }
 
-  projectRepository.addActivity({
-    projectId: mCase.projectId,
-    userId: req.user.id,
-    type: 'MAINTENANCE_CASE_ASSIGNED',
-    description: `تخصیص پرونده ${mCase.maintenanceCode || mCase.id} به تکنسین ${techName}`
-  });
+  try {
+    projectRepository.addActivity({
+      projectId: mCase.projectId,
+      userId: req.user.id,
+      type: 'MAINTENANCE_CASE_ASSIGNED',
+      description: `تخصیص پرونده ${mCase.maintenanceCode || mCase.id} به تکنسین ${techName}`
+    });
+  } catch (actErr) {
+    // Non-critical activity log failure must not fail the completed assignment
+  }
 
   const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
   const responseData = isReporterOrAdmin ? updated : sanitizeCaseForTechnician(updated, { isAccepted: false });

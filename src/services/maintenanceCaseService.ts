@@ -74,13 +74,40 @@ export function hasCurrentCycleAcceptance(
   }
 
   // If there are NO 'ASSIGNED' records in history (legacy data),
-  // check if the latest record is an ACCEPTED record for the current technician
-  const latestRecord = list[list.length - 1];
-  if (latestRecord && latestRecord.status === 'ACCEPTED' && areTechnicianIdentitiesEquivalent(latestRecord.technicianId, assignedTechId)) {
-    return true;
+  // apply strict fail-closed validation:
+  // 1. If case status is known and unassigned or terminal, fail closed.
+  // Cases in OPEN, DRAFT, DIAGNOSING, AWAITING_ASSIGNMENT, CANCELLED, or CLOSED status
+  // cannot have active or trusted technician acceptance.
+  const caseStatus = (mCase as any).status;
+  const unassignedOrTerminalStatuses: string[] = [
+    'OPEN',
+    'DRAFT',
+    'DIAGNOSING',
+    'AWAITING_ASSIGNMENT',
+    'CANCELLED',
+    'CLOSED'
+  ];
+  if (caseStatus && unassignedOrTerminalStatuses.includes(caseStatus)) {
+    return false;
   }
 
-  return false;
+  // 2. Unambiguous technician identity check & status purity:
+  // EVERY record in history must belong strictly to the currently assigned technician.
+  // Any record belonging to a different/foreign technician makes the history ambiguous -> fail closed!
+  //
+  // In a trusted legacy history without ASSIGNED boundaries, EVERY record must strictly be 'ACCEPTED'.
+  // Any record with status REJECTED, CANCELLED, or any status other than ACCEPTED
+  // renders the legacy history ambiguous or invalid -> fail closed!
+  const hasAmbiguityOrInvalidation = list.some(h => 
+    !areTechnicianIdentitiesEquivalent(h.technicianId, assignedTechId) ||
+    h.status !== 'ACCEPTED'
+  );
+  if (hasAmbiguityOrInvalidation) {
+    return false;
+  }
+
+  // 3. Must contain at least one valid ACCEPTED record
+  return list.length > 0;
 }
 
 export const maintenanceCaseService = {

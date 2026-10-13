@@ -653,6 +653,339 @@ async function runTestSuite() {
     }
     assert(closedReassignFailed, 'Test 15: Reassigning a CLOSED case is strictly rejected');
 
+    // -------------------------------------------------------------------------
+    // TEST 18: FAIL-CLOSED LEGACY ACCEPTANCE FALLBACK
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 18: FAIL-CLOSED LEGACY ACCEPTANCE FALLBACK ---');
+    // 18a: Ambiguous cross-technician legacy history (no ASSIGNED markers, but contains foreign technician records)
+    const legacyAmbiguousCase = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'پرونده موروثی مبهم با سوابق چند تکنسین',
+      description: 'شرح',
+      priority: 'MEDIUM',
+      status: 'ASSIGNED',
+      assignedTechnicianId: techUserA.id,
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: []
+    });
+    // Inject foreign tech B accept, then tech A accept without ASSIGNED markers
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: legacyAmbiguousCase.id,
+      technicianId: techUserB.id,
+      assignedBy: techUserB.id,
+      status: 'ACCEPTED',
+      notes: 'پذیرش موروثی تکنسین ب'
+    });
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: legacyAmbiguousCase.id,
+      technicianId: techUserA.id,
+      assignedBy: techUserA.id,
+      status: 'ACCEPTED',
+      notes: 'پذیرش موروثی تکنسین الف'
+    });
+    assert(
+      !hasCurrentCycleAcceptance(legacyAmbiguousCase),
+      'Test 18a: Ambiguous cross-technician legacy history strictly fails closed (returns false)'
+    );
+
+    // 18b: Legacy case with status OPEN and legacy ACCEPTED record strictly fails closed
+    const legacyOpenCase = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'پرونده باز با سابقه پذیرش متناقض',
+      description: 'شرح',
+      priority: 'MEDIUM',
+      status: 'OPEN',
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: []
+    });
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: legacyOpenCase.id,
+      technicianId: techUserA.id,
+      assignedBy: techUserA.id,
+      status: 'ACCEPTED',
+      notes: 'پذیرش در پرونده باز'
+    });
+    assert(
+      !hasCurrentCycleAcceptance(legacyOpenCase),
+      'Test 18b: Legacy case in OPEN status strictly fails closed'
+    );
+
+    // 18c: Legitimate unambiguous legacy case (only Tech A records, matching Tech A, latest is ACCEPTED)
+    const legacyLegitimateCase = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'پرونده موروثی شفاف با تکنسین یکتا',
+      description: 'شرح',
+      priority: 'MEDIUM',
+      status: 'ASSIGNED',
+      assignedTechnicianId: techUserA.id,
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: []
+    });
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: legacyLegitimateCase.id,
+      technicianId: techUserA.id,
+      assignedBy: techUserA.id,
+      status: 'ACCEPTED',
+      notes: 'پذیرش معتبر موروثی'
+    });
+    assert(
+      hasCurrentCycleAcceptance(legacyLegitimateCase),
+      'Test 18c: Legitimate unambiguous legacy case preserves valid acceptance'
+    );
+
+    // 18d: Legacy case with status CLOSED and legacy ACCEPTED record strictly fails closed
+    const legacyClosedCase = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'پرونده بسته شده با سابقه پذیرش موروثی',
+      description: 'شرح',
+      priority: 'MEDIUM',
+      status: 'CLOSED',
+      assignedTechnicianId: techUserA.id,
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: []
+    });
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: legacyClosedCase.id,
+      technicianId: techUserA.id,
+      assignedBy: techUserA.id,
+      status: 'ACCEPTED',
+      notes: 'پذیرش قدیمی در پرونده بسته'
+    });
+    assert(
+      !hasCurrentCycleAcceptance(legacyClosedCase),
+      'Test 18d: Legacy case in CLOSED status strictly fails closed'
+    );
+
+    // 18e: Legacy history containing non-ACCEPTED status entry strictly fails closed
+    const legacyCorruptStatusCase = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'پرونده با سوابق نامعتبر موروثی',
+      description: 'شرح',
+      priority: 'MEDIUM',
+      status: 'ASSIGNED',
+      assignedTechnicianId: techUserA.id,
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: []
+    });
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: legacyCorruptStatusCase.id,
+      technicianId: techUserA.id,
+      assignedBy: techUserA.id,
+      status: 'CANCELLED',
+      notes: 'سابقه ابطال موروثی'
+    });
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: legacyCorruptStatusCase.id,
+      technicianId: techUserA.id,
+      assignedBy: techUserA.id,
+      status: 'ACCEPTED',
+      notes: 'پذیرش دوم موروثی'
+    });
+    assert(
+      !hasCurrentCycleAcceptance(legacyCorruptStatusCase),
+      'Test 18e: Legacy history with non-ACCEPTED entry strictly fails closed'
+    );
+
+    // 18f: Case in AWAITING_ASSIGNMENT status with legacy ACCEPTED record strictly fails closed
+    const legacyAwaitingAssignCase = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'پرونده در انتظار تخصیص با سابقه موروثی',
+      description: 'شرح',
+      priority: 'MEDIUM',
+      status: 'AWAITING_ASSIGNMENT' as any,
+      assignedTechnicianId: techUserA.id,
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: []
+    });
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: legacyAwaitingAssignCase.id,
+      technicianId: techUserA.id,
+      assignedBy: techUserA.id,
+      status: 'ACCEPTED',
+      notes: 'پذیرش در وضعیت در انتظار تخصیص'
+    });
+    assert(
+      !hasCurrentCycleAcceptance(legacyAwaitingAssignCase),
+      'Test 18f: Legacy case in AWAITING_ASSIGNMENT status strictly fails closed'
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST 19: ASSIGNMENT PERSISTENCE CONSISTENCY & COMPENSATING ROLLBACK
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 19: ASSIGNMENT PERSISTENCE CONSISTENCY & COMPENSATING ROLLBACK ---');
+    const rollbackTestCase = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'پرونده تست پایایی تخصیص و جبران خطا',
+      description: 'شرح',
+      priority: 'MEDIUM',
+      status: 'ASSIGNED',
+      assignedTechnicianId: techUserA.id,
+      assignedTechnicianName: 'تکنسین الف',
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: []
+    });
+
+    // Simulate failure during createAssignmentHistory
+    const originalCreateAssignmentHistory = maintenanceRepository.createAssignmentHistory;
+    (maintenanceRepository as any).createAssignmentHistory = () => {
+      throw new Error('Simulated repository disk write failure during assignment history creation');
+    };
+
+    const failedAssignRes = await fetch(`${baseUrl}/cases/${rollbackTestCase.id}/assign`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        technicianId: proTechB.id,
+        notes: 'تلاش تخصیص با شکست پایگاه داده در ذخیره سابقه'
+      })
+    });
+
+    assert(
+      failedAssignRes.status === 500,
+      'Test 19a: Persistence failure during history creation returns HTTP 500'
+    );
+
+    // Restore original method
+    (maintenanceRepository as any).createAssignmentHistory = originalCreateAssignmentHistory;
+
+    // Verify compensating rollback: case remains in pre-transition state (Tech A)
+    const caseAfterRollback = maintenanceRepository.getCaseById(rollbackTestCase.id);
+    assert(
+      caseAfterRollback?.status === 'ASSIGNED',
+      'Test 19a: Compensating rollback preserves case status'
+    );
+    assert(
+      areTechnicianIdentitiesEquivalent(caseAfterRollback?.assignedTechnicianId, techUserA.id),
+      'Test 19a: Compensating rollback restores assignedTechnicianId back to Technician A'
+    );
+
+    // 19b: Initial assignment rollback from OPEN status (verifies assignedTechnicianId is cleared)
+    const openRollbackCase = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'پرونده باز برای تست بازگردانی از وضعیت اولیه',
+      description: 'شرح',
+      priority: 'MEDIUM',
+      status: 'OPEN',
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: []
+    });
+
+    (maintenanceRepository as any).createAssignmentHistory = () => {
+      throw new Error('Simulated failure during initial assignment history creation');
+    };
+
+    const failedOpenAssignRes = await fetch(`${baseUrl}/cases/${openRollbackCase.id}/assign`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        technicianId: proTechA.id,
+        notes: 'تخصیص اولیه با خطا'
+      })
+    });
+
+    assert(
+      failedOpenAssignRes.status === 500,
+      'Test 19b: Initial assignment failure returns HTTP 500'
+    );
+
+    (maintenanceRepository as any).createAssignmentHistory = originalCreateAssignmentHistory;
+
+    const openCaseAfterRollback = maintenanceRepository.getCaseById(openRollbackCase.id);
+    assert(
+      openCaseAfterRollback?.status === 'OPEN',
+      'Test 19b: Compensating rollback preserves OPEN status'
+    );
+    assert(
+      !openCaseAfterRollback?.assignedTechnicianId,
+      'Test 19b: Compensating rollback ensures assignedTechnicianId remains unassigned/empty'
+    );
+
+    // 19c: Rollback in select-technician endpoint
+    const selectRollbackCase = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'پرونده انتخاب تکنسین با شکست پایایی',
+      description: 'شرح',
+      priority: 'MEDIUM',
+      status: 'OPEN',
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: []
+    });
+
+    (maintenanceRepository as any).createAssignmentHistory = () => {
+      throw new Error('Simulated failure during select-technician history creation');
+    };
+
+    const failedSelectRes = await fetch(`${baseUrl}/cases/${selectRollbackCase.id}/select-technician`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${customerToken}`
+      },
+      body: JSON.stringify({
+        technicianId: proTechA.id,
+        notes: 'انتخاب تکنسین با شکست پایایی'
+      })
+    });
+
+    assert(
+      failedSelectRes.status === 500,
+      'Test 19c: select-technician persistence failure returns HTTP 500'
+    );
+
+    (maintenanceRepository as any).createAssignmentHistory = originalCreateAssignmentHistory;
+
+    const selectCaseAfterRollback = maintenanceRepository.getCaseById(selectRollbackCase.id);
+    assert(
+      selectCaseAfterRollback?.status === 'OPEN',
+      'Test 19c: Compensating rollback restores OPEN status after failed select-technician'
+    );
+    assert(
+      !selectCaseAfterRollback?.assignedTechnicianId,
+      'Test 19c: Compensating rollback clears technician after failed select-technician'
+    );
+
     // Close server
     await new Promise<void>((resolve) => server.close(() => resolve()));
 
