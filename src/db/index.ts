@@ -460,31 +460,50 @@ const defaultDB: DB = {
     }
   ],
 };
+export class DatabaseStorageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DatabaseStorageError';
+  }
+}
+
 function readDB(): DB {
   if (!fs.existsSync(currentDbPath)) {
     writeDB(defaultDB);
     return defaultDB;
   }
   const data = fs.readFileSync(currentDbPath, "utf-8");
+  
+  let raw: unknown;
   try {
-    const raw = JSON.parse(data) as Partial<DB>;
-    const parsed: DB = { ...defaultDB, ...raw };
-    if (!parsed.subscriptionPlans || parsed.subscriptionPlans.length === 0) {
-      parsed.subscriptionPlans = defaultDB.subscriptionPlans;
-    }
-    if (!parsed.transactions) {
-      parsed.transactions = [];
-    }
-    if (!parsed.subscriptions) {
-      parsed.subscriptions = [];
-    }
-    if (!parsed.users) {
-      parsed.users = [];
-    }
-    return parsed;
-  } catch {
-    return defaultDB;
+    raw = JSON.parse(data);
+  } catch (err: any) {
+    throw new DatabaseStorageError(
+      'FATAL: Database storage corruption detected. The database file exists but contains invalid or malformed JSON data. Aborting to prevent data loss.'
+    );
   }
+
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new DatabaseStorageError(
+      'FATAL: Database storage structure invalid. The database file does not contain a valid JSON object structure. Aborting to prevent data loss.'
+    );
+  }
+
+  const typedRaw = raw as Partial<DB>;
+  const parsed: DB = { ...defaultDB, ...typedRaw };
+  if (!parsed.subscriptionPlans || parsed.subscriptionPlans.length === 0) {
+    parsed.subscriptionPlans = defaultDB.subscriptionPlans;
+  }
+  if (!parsed.transactions) {
+    parsed.transactions = [];
+  }
+  if (!parsed.subscriptions) {
+    parsed.subscriptions = [];
+  }
+  if (!parsed.users) {
+    parsed.users = [];
+  }
+  return parsed;
 }
 
 function writeDB(data: DB) {
@@ -495,7 +514,34 @@ function writeDB(data: DB) {
   if (process.env.NODE_ENV === 'test' && path.resolve(currentDbPath) === repoDbPath) {
     throw new Error('FATAL: Test environment attempted write to repository db.json! Test database must be isolated via TEST_DB_PATH or setDBPath.');
   }
-  fs.writeFileSync(currentDbPath, JSON.stringify(data, null, 2));
+
+  // 1. Pre-serialize to ensure JSON stringification succeeds before touching storage
+  const serialized = JSON.stringify(data, null, 2);
+
+  // 2. Atomic replacement strategy: write to unique temporary file in the same directory
+  // Writing in the same directory ensures same filesystem volume for atomic renameSync
+  const resolvedTarget = path.resolve(currentDbPath);
+  const targetDir = path.dirname(resolvedTarget);
+  const tempPath = path.join(
+    targetDir,
+    `.db.tmp.${process.pid}.${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+  );
+
+  try {
+    fs.writeFileSync(tempPath, serialized, 'utf-8');
+    // 3. Atomically replace target file using POSIX-rename
+    fs.renameSync(tempPath, resolvedTarget);
+  } catch (err: any) {
+    // 4. Clean up temporary file on failure without touching target file
+    try {
+      if (fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
+    } catch {
+      // ignore cleanup errors
+    }
+    throw new Error(`FATAL: Failed to persist database: ${err?.message || 'Storage write error'}`);
+  }
 }
 
 const defaultEPCs: Organization[] = [

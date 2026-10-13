@@ -2361,3 +2361,197 @@ maintenanceRouter.post('/maintenance/technicians/:id/approve', (req: Request, re
     return res.status(500).json({ error: err.message });
   }
 });
+
+// ==========================================
+// 6. ADMINISTRATIVE RECONCILIATION AUDIT (Read-Only)
+// ==========================================
+
+/**
+ * GET /api/admin/maintenance/reconciliation-audit
+ * Administrator-only read-only consistency audit across maintenance case states and assignment histories.
+ * Inspects all cases for assignment/acceptance discrepancies without mutating any database records.
+ */
+maintenanceRouter.get([
+  '/admin/maintenance/reconciliation-audit',
+  '/maintenance/admin/reconciliation-audit',
+  '/cases/admin/reconciliation-audit'
+], (req: Request, res: Response) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ error: 'احراز هویت الزامی است.' });
+  }
+
+  const userRolesList: string[] = Array.isArray((req.user as any)?.roles)
+    ? (req.user as any).roles
+    : (req.user?.role ? [req.user.role] : []);
+  const roleUpper = req.user?.role?.toUpperCase() || (userRolesList[0] ? userRolesList[0].toUpperCase() : '');
+  const isAdmin = roleUpper === 'ADMIN' || roleUpper === 'SUPER_ADMIN' || req.user?.role === 'admin' || userRolesList.some(r => ['ADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase()));
+
+  if (!isAdmin) {
+    return res.status(403).json({ error: 'دسترسی غیرمجاز: تنها مدیران سامانه مجاز به مشاهده نتایج پایش یکپارچگی هستند.' });
+  }
+
+  const allCases = maintenanceRepository.getAllCases() || [];
+  const findings: Array<{
+    caseId: string;
+    caseNumber?: string;
+    maintenanceCode?: string;
+    title: string;
+    status: MaintenanceStatus;
+    assignedTechnicianId?: string;
+    assignedTechnicianName?: string;
+    anomalyType: 'ORPHANED_ASSIGNMENT' | 'EXECUTION_WITHOUT_ACCEPTANCE' | 'MISMATCHED_ACCEPTANCE_ATTRIBUTION' | 'UNASSIGNED_BUT_ACTIVE_STATUS' | 'STALE_TECHNICIAN_METADATA' | 'LEGACY_INCONCLUSIVE_HISTORY';
+    severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+    details: string;
+    recommendedAction: string;
+  }> = [];
+
+  for (const mCase of allCases) {
+    const caseId = mCase.id;
+    const assignedTechId = mCase.assignedTechnicianId;
+    const status = mCase.status;
+    const histories = maintenanceRepository.getAssignmentHistories(caseId) || [];
+
+    // 1. UNASSIGNED_BUT_ACTIVE_STATUS
+    if (!assignedTechId && (status === 'ASSIGNED' || status === 'SCHEDULED' || status === 'IN_PROGRESS')) {
+      findings.push({
+        caseId,
+        caseNumber: mCase.caseNumber,
+        maintenanceCode: mCase.maintenanceCode,
+        title: mCase.title,
+        status,
+        anomalyType: 'UNASSIGNED_BUT_ACTIVE_STATUS',
+        severity: 'HIGH',
+        details: `پرونده در وضعیت فعال (${status}) قرار دارد اما شناسه تکنسین منتسب تهی است.`,
+        recommendedAction: 'تعیین تکنسین مجاز یا بازگردانی وضعیت پرونده به OPEN.'
+      });
+    }
+
+    // If an assigned technician exists
+    if (assignedTechId) {
+      let latestAssignedIdx = -1;
+      for (let i = histories.length - 1; i >= 0; i--) {
+        if (histories[i].status === 'ASSIGNED') {
+          latestAssignedIdx = i;
+          break;
+        }
+      }
+
+      // Check ORPHANED_ASSIGNMENT
+      if (latestAssignedIdx === -1) {
+        if (histories.length === 0) {
+          findings.push({
+            caseId,
+            caseNumber: mCase.caseNumber,
+            maintenanceCode: mCase.maintenanceCode,
+            title: mCase.title,
+            status,
+            assignedTechnicianId: assignedTechId,
+            assignedTechnicianName: mCase.assignedTechnicianName,
+            anomalyType: 'ORPHANED_ASSIGNMENT',
+            severity: 'HIGH',
+            details: 'تکنسین به پرونده منتسب شده است اما هیچ سابقه تخصیصی در تاریخچه ثبت نشده است.',
+            recommendedAction: 'ثبت سابقه تخصیص معتبر یا تخصیص مجدد پرونده از طریق پنل مدیریت.'
+          });
+        } else if (!hasCurrentCycleAcceptance(mCase, histories) && status !== 'CLOSED' && status !== 'CANCELLED') {
+          findings.push({
+            caseId,
+            caseNumber: mCase.caseNumber,
+            maintenanceCode: mCase.maintenanceCode,
+            title: mCase.title,
+            status,
+            assignedTechnicianId: assignedTechId,
+            assignedTechnicianName: mCase.assignedTechnicianName,
+            anomalyType: 'LEGACY_INCONCLUSIVE_HISTORY',
+            severity: 'MEDIUM',
+            details: 'سوابق موروثی پرونده فاقد نشانگر تخصیص صریح بوده و به دلیل ابهام رد شد.',
+            recommendedAction: 'انجام تخصیص رسمی مجدد جهت آغاز دور تخصیص شفاف و معتبر.'
+          });
+        }
+      } else {
+        const latestAssigned = histories[latestAssignedIdx];
+        if (!areTechnicianIdentitiesEquivalent(latestAssigned.technicianId, assignedTechId)) {
+          findings.push({
+            caseId,
+            caseNumber: mCase.caseNumber,
+            maintenanceCode: mCase.maintenanceCode,
+            title: mCase.title,
+            status,
+            assignedTechnicianId: assignedTechId,
+            assignedTechnicianName: mCase.assignedTechnicianName,
+            anomalyType: 'ORPHANED_ASSIGNMENT',
+            severity: 'HIGH',
+            details: 'تکنسین منتسب به پرونده با آخرین رکورد ثبت شده در تاریخچه تخصیص همخوانی ندارد.',
+            recommendedAction: 'بررسی عدم تطابق شناسه تکنسین و ثبت تخصیص رسمی جدید.'
+          });
+        }
+      }
+
+      // Check MISMATCHED_ACCEPTANCE_ATTRIBUTION
+      if (latestAssignedIdx !== -1) {
+        for (let i = latestAssignedIdx + 1; i < histories.length; i++) {
+          const h = histories[i];
+          if (h.status === 'ACCEPTED' && !areTechnicianIdentitiesEquivalent(h.technicianId, assignedTechId)) {
+            findings.push({
+              caseId,
+              caseNumber: mCase.caseNumber,
+              maintenanceCode: mCase.maintenanceCode,
+              title: mCase.title,
+              status,
+              assignedTechnicianId: assignedTechId,
+              assignedTechnicianName: mCase.assignedTechnicianName,
+              anomalyType: 'MISMATCHED_ACCEPTANCE_ATTRIBUTION',
+              severity: 'HIGH',
+              details: 'پذیرش ثبت شده در دور جاری به تکنسین دیگری انتساب دارد.',
+              recommendedAction: 'بررسی دسترسی و لغو پذیرش نامعتبر.'
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    // 2. EXECUTION_WITHOUT_ACCEPTANCE
+    if (status === 'IN_PROGRESS') {
+      const hasAcceptance = hasCurrentCycleAcceptance(mCase, histories);
+      if (!hasAcceptance) {
+        findings.push({
+          caseId,
+          caseNumber: mCase.caseNumber,
+          maintenanceCode: mCase.maintenanceCode,
+          title: mCase.title,
+          status,
+          assignedTechnicianId: assignedTechId,
+          assignedTechnicianName: mCase.assignedTechnicianName,
+          anomalyType: 'EXECUTION_WITHOUT_ACCEPTANCE',
+          severity: 'CRITICAL',
+          details: 'پرونده در وضعیت شروع به کار (IN_PROGRESS) قرار دارد اما سابقه پذیرش رسمی معتبر برای دور جاری احراز نشد.',
+          recommendedAction: 'توقف موقت فرآیند اجرا و اخذ پذیرش رسمی از تکنسین مجاز.'
+        });
+      }
+    }
+  }
+
+  const criticalCount = findings.filter(f => f.severity === 'CRITICAL').length;
+  const highCount = findings.filter(f => f.severity === 'HIGH').length;
+  const mediumCount = findings.filter(f => f.severity === 'MEDIUM').length;
+  const lowCount = findings.filter(f => f.severity === 'LOW').length;
+
+  const anomalousCaseIds = new Set(findings.map(f => f.caseId));
+  const anomalousCasesCount = anomalousCaseIds.size;
+  const healthyCasesCount = allCases.length - anomalousCasesCount;
+
+  return res.json({
+    timestamp: new Date().toISOString(),
+    totalCasesScanned: allCases.length,
+    healthyCasesCount,
+    anomalousCasesCount,
+    findings,
+    summary: {
+      criticalCount,
+      highCount,
+      mediumCount,
+      lowCount
+    }
+  });
+});
+
