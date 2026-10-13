@@ -935,6 +935,41 @@ maintenanceRouter.get(['/technicians/matching', '/maintenance/technicians/matchi
 maintenanceRouter.post(['/technicians/matching', '/maintenance/technicians/matching'], handleTechnicianMatching);
 
 /**
+ * Executes a compensating rollback for case assignment/reassignment.
+ * Verifies that the case state was successfully restored in the repository.
+ * If rollback fails or cannot be verified, returns a server error warning that
+ * administrative reconciliation is required, without leaking internal system details.
+ */
+function executeCompensatingRollback(
+  caseId: string,
+  previousCaseSnapshot: Partial<MaintenanceCase>,
+  res: Response
+): Response {
+  let rollbackSucceeded = false;
+  try {
+    const restored = maintenanceRepository.updateCase(caseId, previousCaseSnapshot);
+    const techMatches = (!restored?.assignedTechnicianId && !previousCaseSnapshot.assignedTechnicianId) ||
+      areTechnicianIdentitiesEquivalent(restored?.assignedTechnicianId, previousCaseSnapshot.assignedTechnicianId);
+
+    if (restored && restored.status === previousCaseSnapshot.status && techMatches) {
+      rollbackSucceeded = true;
+    }
+  } catch (rbErr) {
+    rollbackSucceeded = false;
+  }
+
+  if (rollbackSucceeded) {
+    return res.status(500).json({
+      error: 'خطا در ثبت تاریخچه تخصیص - تغییرات پرونده بازگردانده شد.'
+    });
+  } else {
+    return res.status(500).json({
+      error: 'خطا در ثبت تاریخچه تخصیص و عدم موفقیت در بازگردانی وضعیت پرونده. یکپارچگی تخصیص نیازمند بررسی مدیر سامانه است.'
+    });
+  }
+}
+
+/**
  * POST /api/maintenance/:maintenanceCaseId/select-technician, /api/cases/:maintenanceCaseId/select-technician
  * Customer selects or requests an approved technician for their maintenance case
  */
@@ -1020,13 +1055,7 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/select-technician', '/c
         notes: notes || 'تخصیص از طریق درگاه هوشمند تعمیرات و نگهداری'
       });
     } catch (histErr: any) {
-      // Compensating rollback to preserve assignment persistence consistency
-      try {
-        maintenanceRepository.updateCase(caseId, previousCaseSnapshot);
-      } catch (rbErr) {
-        // best effort rollback
-      }
-      return res.status(500).json({ error: 'خطا در ثبت تاریخچه تخصیص - تغییرات پرونده بازگردانده شد.' });
+      return executeCompensatingRollback(caseId, previousCaseSnapshot, res);
     }
 
     const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
@@ -1271,13 +1300,7 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/assign', '/cases/:maint
       notes: notes || 'تخصیص اولیه به تکنسین'
     });
   } catch (histErr: any) {
-    // Compensating rollback to preserve assignment persistence consistency
-    try {
-      maintenanceRepository.updateCase(caseId, previousCaseSnapshot);
-    } catch (rbErr) {
-      // best effort rollback
-    }
-    return res.status(500).json({ error: 'خطا در ثبت تاریخچه تخصیص - تغییرات پرونده بازگردانده شد.' });
+    return executeCompensatingRollback(caseId, previousCaseSnapshot, res);
   }
 
   try {

@@ -986,6 +986,119 @@ async function runTestSuite() {
       'Test 19c: Compensating rollback clears technician after failed select-technician'
     );
 
+    // 19d: Simulated FAILED rollback (updateCase throws during rollback) in /assign
+    const failedRollbackCase = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'پرونده تست شکست بازگردانی جبرانی',
+      description: 'شرح',
+      priority: 'MEDIUM',
+      status: 'ASSIGNED',
+      assignedTechnicianId: techUserA.id,
+      assignedTechnicianName: 'تکنسین الف',
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: []
+    });
+
+    const originalUpdateCase = maintenanceRepository.updateCase;
+    // Step 1: createAssignmentHistory throws
+    (maintenanceRepository as any).createAssignmentHistory = () => {
+      throw new Error('Disk write failure on history');
+    };
+    // Step 2: updateCase throws during rollback (simulating catastrophic failure)
+    (maintenanceRepository as any).updateCase = (id: string, updates: any) => {
+      // Allow the initial transition in transitionCaseStatus, but fail on the rollback call
+      if (updates.status === 'ASSIGNED' && updates.assignedTechnicianId === techUserA.id) {
+        throw new Error('Fatal storage failure during compensating rollback');
+      }
+      return originalUpdateCase(id, updates);
+    };
+
+    const failedRollbackAssignRes = await fetch(`${baseUrl}/cases/${failedRollbackCase.id}/assign`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        technicianId: proTechB.id,
+        notes: 'تست شکست همزمان ثبت سابقه و بازگردانی'
+      })
+    });
+
+    assert(
+      failedRollbackAssignRes.status === 500,
+      'Test 19d: Catastrophic rollback failure returns HTTP 500'
+    );
+    const failedRollbackData = await failedRollbackAssignRes.json();
+    assert(
+      failedRollbackData.error === 'خطا در ثبت تاریخچه تخصیص و عدم موفقیت در بازگردانی وضعیت پرونده. یکپارچگی تخصیص نیازمند بررسی مدیر سامانه است.',
+      'Test 19d: Error explicitly notifies that rollback failed and administrative reconciliation is required'
+    );
+    assert(
+      !failedRollbackData.error.includes('Fatal storage failure') && !failedRollbackData.stack,
+      'Test 19d: Response does NOT leak internal exception details or stack traces'
+    );
+
+    // Restore methods
+    (maintenanceRepository as any).createAssignmentHistory = originalCreateAssignmentHistory;
+    (maintenanceRepository as any).updateCase = originalUpdateCase;
+
+    // 19e: Simulated FAILED rollback (updateCase returns null) in /select-technician
+    const nullRollbackCase = maintenanceRepository.createCase({
+      projectId: 'CUSTOMER_DIRECT',
+      assetId: 'UNREGISTERED',
+      equipmentType: 'PORTABLE_GENERATOR',
+      title: 'پرونده تست بازگردانی با بازگشت null',
+      description: 'شرح',
+      priority: 'MEDIUM',
+      status: 'OPEN',
+      category: 'CORRECTIVE',
+      reportedBy: customerUser.id,
+      reportedAt: new Date().toISOString(),
+      alertIds: []
+    });
+
+    (maintenanceRepository as any).createAssignmentHistory = () => {
+      throw new Error('History persistence error');
+    };
+    (maintenanceRepository as any).updateCase = (id: string, updates: any) => {
+      // Simulate case missing / deleted during rollback attempt
+      if (id === nullRollbackCase.id && updates.status === 'OPEN') {
+        return null;
+      }
+      return originalUpdateCase(id, updates);
+    };
+
+    const failedNullRollbackRes = await fetch(`${baseUrl}/cases/${nullRollbackCase.id}/select-technician`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${customerToken}`
+      },
+      body: JSON.stringify({
+        technicianId: proTechA.id,
+        notes: 'انتخاب تکنسین با شکست بازگردانی null'
+      })
+    });
+
+    assert(
+      failedNullRollbackRes.status === 500,
+      'Test 19e: Null-result rollback failure returns HTTP 500'
+    );
+    const failedNullData = await failedNullRollbackRes.json();
+    assert(
+      failedNullData.error === 'خطا در ثبت تاریخچه تخصیص و عدم موفقیت در بازگردانی وضعیت پرونده. یکپارچگی تخصیص نیازمند بررسی مدیر سامانه است.',
+      'Test 19e: Error explicitly reports failed rollback when updateCase returns null'
+    );
+
+    // Restore methods
+    (maintenanceRepository as any).createAssignmentHistory = originalCreateAssignmentHistory;
+    (maintenanceRepository as any).updateCase = originalUpdateCase;
+
     // Close server
     await new Promise<void>((resolve) => server.close(() => resolve()));
 
