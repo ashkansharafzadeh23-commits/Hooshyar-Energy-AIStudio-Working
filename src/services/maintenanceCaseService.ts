@@ -2,7 +2,7 @@ import { maintenanceRepository } from '../repositories/maintenanceRepository.js'
 import { assetRepository } from '../repositories/assetRepository.js';
 import { alertService } from './alertService.js';
 import { projectRepository } from '../repositories/projectRepository.js';
-import { isCaseAssignedToTechnician } from './technicianIdentityService.js';
+import { isCaseAssignedToTechnician, areTechnicianIdentitiesEquivalent } from './technicianIdentityService.js';
 import {
   MaintenanceCase,
   MaintenanceCaseStatus,
@@ -10,8 +10,78 @@ import {
   MaintenanceCategory,
   MaintenanceAction,
   SparePartUsage,
-  MaintenanceHistorySummary
+  MaintenanceHistorySummary,
+  MaintenanceAssignmentHistory
 } from '../types/maintenance.js';
+
+/**
+ * Shared authoritative acceptance validator for the current assignment cycle.
+ * Verifies whether the currently assigned technician has formally accepted
+ * the CURRENT assignment cycle.
+ * 
+ * Invariants:
+ * 1. Must have an assigned technician.
+ * 2. An ACCEPTED record must belong to the currently assigned technician (using symmetric identity equivalence).
+ * 3. The ACCEPTED record must belong to the latest assignment cycle (must be after the latest ASSIGNED event
+ *    establishing the current technician's assignment).
+ * 4. Stale ACCEPTED records from previous assignment cycles (e.g. A -> B -> A) do not authorize the current cycle.
+ * 5. Rejection, cancellation, or subsequent reassignment invalidates previous acceptance.
+ */
+export function hasCurrentCycleAcceptance(
+  mCase: { id?: string; assignedTechnicianId?: string | null },
+  histories?: MaintenanceAssignmentHistory[]
+): boolean {
+  if (!mCase || !mCase.id || !mCase.assignedTechnicianId) {
+    return false;
+  }
+
+  const assignedTechId = mCase.assignedTechnicianId;
+  const list = histories || maintenanceRepository.getAssignmentHistories(mCase.id) || [];
+  if (list.length === 0) {
+    return false;
+  }
+
+  // Find the index of the latest ASSIGNED event in history
+  let latestAssignedIdx = -1;
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].status === 'ASSIGNED') {
+      latestAssignedIdx = i;
+      break;
+    }
+  }
+
+  if (latestAssignedIdx !== -1) {
+    const latestAssigned = list[latestAssignedIdx];
+    // The latest assignment event MUST be for the currently assigned technician
+    if (!areTechnicianIdentitiesEquivalent(latestAssigned.technicianId, assignedTechId)) {
+      return false;
+    }
+
+    // Now look for an ACCEPTED event that occurred strictly AFTER latestAssignedIdx
+    for (let i = latestAssignedIdx + 1; i < list.length; i++) {
+      const h = list[i];
+      if (h.status === 'ACCEPTED' && areTechnicianIdentitiesEquivalent(h.technicianId, assignedTechId)) {
+        // Ensure no subsequent reassignment, rejection, or cancellation after this acceptance
+        const hasSubsequentInvalidation = list.slice(i + 1).some(sub => 
+          sub.status === 'ASSIGNED' || sub.status === 'REJECTED' || sub.status === 'CANCELLED'
+        );
+        if (!hasSubsequentInvalidation) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // If there are NO 'ASSIGNED' records in history (legacy data),
+  // check if the latest record is an ACCEPTED record for the current technician
+  const latestRecord = list[list.length - 1];
+  if (latestRecord && latestRecord.status === 'ACCEPTED' && areTechnicianIdentitiesEquivalent(latestRecord.technicianId, assignedTechId)) {
+    return true;
+  }
+
+  return false;
+}
 
 export const maintenanceCaseService = {
   /**
@@ -148,7 +218,15 @@ export const maintenanceCaseService = {
     const currentStatus = mCase.status;
 
     if (currentStatus === newStatus) {
-      return mCase;
+      // If status is ASSIGNED and a different technician is provided in payload,
+      // this is a genuine reassignment within ASSIGNED status. Do NOT early-return!
+      const isReassignment = newStatus === 'ASSIGNED' &&
+        payload?.technicianId &&
+        (!mCase.assignedTechnicianId || !areTechnicianIdentitiesEquivalent(mCase.assignedTechnicianId, payload.technicianId));
+
+      if (!isReassignment) {
+        return mCase;
+      }
     }
 
     // Cancellation is allowed from any active status
@@ -178,25 +256,19 @@ export const maintenanceCaseService = {
         break;
 
       case 'ASSIGNED':
-        if (newStatus !== 'SCHEDULED' && newStatus !== 'IN_PROGRESS' && newStatus !== 'OPEN') {
-          throw new Error(`پرونده تخصیص یافته تنها می‌تواند زمان‌بندی شود (SCHEDULED)، شروع شود (IN_PROGRESS) یا بازگردانده شود (OPEN).`);
+        if (newStatus !== 'SCHEDULED' && newStatus !== 'IN_PROGRESS' && newStatus !== 'OPEN' && newStatus !== 'ASSIGNED') {
+          throw new Error(`پرونده تخصیص یافته تنها می‌تواند زمان‌بندی شود (SCHEDULED)، شروع شود (IN_PROGRESS)، بازگردانده شود (OPEN) یا مجدداً تخصیص یابد (ASSIGNED).`);
         }
         if (newStatus === 'IN_PROGRESS') {
           // Central Service Security Barrier:
           // Moving from ASSIGNED to IN_PROGRESS requires formal technician acceptance
           // evidenced by an authoritative persisted assignment history (status === 'ACCEPTED')
-          // belonging strictly to the currently assigned technician.
+          // belonging strictly to the currently assigned technician for the CURRENT assignment cycle.
           if (!mCase.assignedTechnicianId) {
             throw new Error('پرونده فاقد تکنسین تخصیص یافته است.');
           }
-          const assignedTechId = mCase.assignedTechnicianId;
-          const histories = maintenanceRepository.getAssignmentHistories(caseId) || [];
-          const hasValidAcceptance = histories.some(h => {
-            if (h.status !== 'ACCEPTED' || !h.technicianId) return false;
-            return h.technicianId === assignedTechId || isCaseAssignedToTechnician(assignedTechId, h.technicianId);
-          });
-          if (!hasValidAcceptance) {
-            throw new Error('شروع و اجرای پرونده از وضعیت تخصیص‌یافته مستلزم پذیرش رسمی تکنسین است. سابقه پذیرش معتبر یافت نشد.');
+          if (!hasCurrentCycleAcceptance(mCase)) {
+            throw new Error('شروع و اجرای پرونده از وضعیت تخصیص‌یافته مستلزم پذیرش رسمی تکنسین است. سابقه پذیرش معتبر برای دور جاری تخصیص یافت نشد.');
           }
         }
         break;
@@ -208,18 +280,12 @@ export const maintenanceCaseService = {
         if (newStatus === 'IN_PROGRESS') {
           // Central Service Security Barrier:
           // SCHEDULED alone does NOT imply acceptance. Moving from SCHEDULED to IN_PROGRESS
-          // requires formal technician acceptance evidenced by an authoritative persisted assignment history.
+          // requires formal technician acceptance evidenced by an authoritative persisted assignment history for the CURRENT assignment cycle.
           if (!mCase.assignedTechnicianId) {
             throw new Error('پرونده فاقد تکنسین تخصیص یافته است.');
           }
-          const assignedTechId = mCase.assignedTechnicianId;
-          const histories = maintenanceRepository.getAssignmentHistories(caseId) || [];
-          const hasValidAcceptance = histories.some(h => {
-            if (h.status !== 'ACCEPTED' || !h.technicianId) return false;
-            return h.technicianId === assignedTechId || isCaseAssignedToTechnician(assignedTechId, h.technicianId);
-          });
-          if (!hasValidAcceptance) {
-            throw new Error('شروع و اجرای پرونده از وضعیت زمان‌بندی‌شده مستلزم پذیرش رسمی تکنسین است. سابقه پذیرش معتبر یافت نشد.');
+          if (!hasCurrentCycleAcceptance(mCase)) {
+            throw new Error('شروع و اجرای پرونده از وضعیت زمان‌بندی‌شده مستلزم پذیرش رسمی تکنسین است. سابقه پذیرش معتبر برای دور جاری تخصیص یافت نشد.');
           }
         }
         break;
@@ -273,6 +339,12 @@ export const maintenanceCaseService = {
       updates.assignedTechnicianName = techName;
       if (payload?.technicianPhone) updates.assignedTechnicianPhone = payload.technicianPhone;
       if (payload?.scheduledDate) updates.scheduledDate = payload.scheduledDate;
+
+      // Reset startedAt if returning from IN_PROGRESS or reassigned to a different technician
+      const isDifferentTech = mCase.assignedTechnicianId && !areTechnicianIdentitiesEquivalent(mCase.assignedTechnicianId, techId);
+      if (currentStatus === 'IN_PROGRESS' || isDifferentTech) {
+        updates.startedAt = undefined;
+      }
     }
 
     // Handle scheduling

@@ -52,6 +52,61 @@ export function getTechnicianIdentities(userId: string): Set<string> {
 }
 
 /**
+ * Resolves all legitimate server-authoritative identifiers representing a technician,
+ * regardless of whether the provided identifier is a user.id or a professional.id.
+ */
+export function getTechnicianIdentitiesForAnyId(rawId: string | null | undefined): Set<string> {
+  const ids = new Set<string>();
+  if (!rawId) return ids;
+
+  ids.add(rawId);
+
+  // 1. Try resolving rawId as userId
+  const proByUserId = resolveTechnicianProfile(rawId);
+  if (proByUserId) {
+    if (proByUserId.id) ids.add(proByUserId.id);
+    if (proByUserId.userId) ids.add(proByUserId.userId);
+  }
+
+  // 2. Try resolving rawId as professionalId
+  const proById = professionalRepository.getProfessionalById(rawId);
+  if (proById) {
+    if (proById.id) ids.add(proById.id);
+    if (proById.userId) ids.add(proById.userId);
+  }
+
+  return ids;
+}
+
+/**
+ * Symmetric, authoritative check whether two technician identifiers refer to the same technician entity.
+ * Safely supports:
+ * - user ID <-> user ID
+ * - user ID <-> professional ID
+ * - professional ID <-> user ID
+ * - professional ID <-> professional ID
+ */
+export function areTechnicianIdentitiesEquivalent(
+  id1: string | null | undefined,
+  id2: string | null | undefined
+): boolean {
+  if (!id1 || !id2) return false;
+  if (id1 === id2) return true;
+
+  const ids1 = getTechnicianIdentitiesForAnyId(id1);
+  if (ids1.has(id2)) return true;
+
+  const ids2 = getTechnicianIdentitiesForAnyId(id2);
+  if (ids2.has(id1)) return true;
+
+  for (const id of ids1) {
+    if (ids2.has(id)) return true;
+  }
+
+  return false;
+}
+
+/**
  * Verifies whether a maintenance case is assigned to the authenticated technician.
  * 
  * Supports:
@@ -72,8 +127,7 @@ export function isCaseAssignedToTechnician(
   // Direct fast equality check for backward compatibility with actual user.id assignment
   if (assignedTechnicianId === userId) return true;
 
-  const legitimateIdentities = getTechnicianIdentities(userId);
-  return legitimateIdentities.has(assignedTechnicianId);
+  return areTechnicianIdentitiesEquivalent(assignedTechnicianId, userId);
 }
 
 /**
@@ -93,3 +147,4 @@ export function resolveTechnicianIdentity(userId: string): TechnicianIdentityRes
     professional: pro
   };
 }
+

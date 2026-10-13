@@ -6,9 +6,9 @@ import { maintenanceRepository } from '../repositories/maintenanceRepository.js'
 import { monitoringRepository } from '../repositories/monitoringRepository.js';
 import { alertService } from '../services/alertService.js';
 import { diagnosisService } from '../services/diagnosisService.js';
-import { maintenanceCaseService } from '../services/maintenanceCaseService.js';
+import { maintenanceCaseService, hasCurrentCycleAcceptance } from '../services/maintenanceCaseService.js';
 import { technicianMatchingService } from '../services/technicianMatchingService.js';
-import { isCaseAssignedToTechnician, getTechnicianIdentities, resolveTechnicianProfile } from '../services/technicianIdentityService.js';
+import { isCaseAssignedToTechnician, getTechnicianIdentities, resolveTechnicianProfile, areTechnicianIdentitiesEquivalent } from '../services/technicianIdentityService.js';
 import { professionalRepository } from '../repositories/professionalRepository.js';
 import { projectRepository } from '../repositories/projectRepository.js';
 import { validateAndNormalizeImage, ImageValidationError, ValidatedImage } from '../utils/imageValidator.js';
@@ -20,7 +20,8 @@ import {
   MaintenancePriority,
   MaintenanceStatus,
   AssetMaintenanceHistoryItem,
-  CaseAttachment
+  CaseAttachment,
+  MaintenanceAssignmentHistory
 } from '../types/maintenance.js';
 import {
   getFileStorageService,
@@ -106,34 +107,17 @@ export function checkCaseAccess(
  */
 /**
  * Checks server-authoritative evidence whether the currently assigned technician
- * has formally accepted the maintenance case.
+ * has formally accepted the maintenance case for the CURRENT assignment cycle.
  * 
  * Rules:
  * 1. Checks server-persisted assignment histories for status === 'ACCEPTED'.
  * 2. Matches technicianId strictly against the currently assigned technician.
- * 3. An ACCEPTED entry for another/previous technician NEVER authorizes the current technician.
+ * 3. An ACCEPTED entry for another/previous technician or a PREVIOUS assignment cycle
+ *    NEVER authorizes the current assignment cycle.
  * 4. SCHEDULED alone does NOT constitute formal acceptance.
- * 5. If status is IN_PROGRESS, AWAITING_VERIFICATION, PENDING_VERIFICATION, VERIFIED, COMPLETED, or CLOSED,
- *    and verified against assignment history or current active execution state, authorizes release.
  */
 export function hasTechnicianFormallyAccepted(mCase: MaintenanceCase): boolean {
-  if (!mCase || !mCase.id || !mCase.assignedTechnicianId) {
-    return false;
-  }
-
-  const assignedTechId = mCase.assignedTechnicianId;
-  const histories = maintenanceRepository.getAssignmentHistories(mCase.id) || [];
-
-  // Exact, server-authoritative acceptance source:
-  // Must have a persisted assignment history record with status === 'ACCEPTED'
-  // strictly belonging to the currently assigned technician for this exact case.
-  // There is NO status-based fallback (e.g. IN_PROGRESS, SCHEDULED, CLOSED alone never prove acceptance).
-  return histories.some(h => {
-    if (h.status !== 'ACCEPTED') return false;
-    if (!h.technicianId) return false;
-    // Direct match or verified identity match ensuring h.technicianId belongs to assignedTechId
-    return h.technicianId === assignedTechId || isCaseAssignedToTechnician(assignedTechId, h.technicianId);
-  });
+  return hasCurrentCycleAcceptance(mCase);
 }
 
 export function sanitizeCaseForTechnician(
@@ -984,6 +968,29 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/select-technician', '/c
     return res.status(400).json({ error: 'تنها متخصصان دارای تاییدیه رسمی صلاحیت ارزیابی مجاز به پذیرش پرونده هستند.' });
   }
 
+  const isSameTech = Boolean(
+    mCase.assignedTechnicianId &&
+    areTechnicianIdentitiesEquivalent(mCase.assignedTechnicianId, pro.id)
+  );
+
+  // Idempotent retry: if already assigned to this technician, do not reset status or invalidate valid acceptance
+  if (isSameTech && (mCase.status === 'ASSIGNED' || mCase.status === 'SCHEDULED' || mCase.status === 'IN_PROGRESS')) {
+    const updates: Partial<MaintenanceCase> = {};
+    if (scheduledDate) updates.scheduledDate = scheduledDate;
+    if (pro.phone) updates.assignedTechnicianPhone = pro.phone;
+    const updatedCase = Object.keys(updates).length > 0
+      ? maintenanceRepository.updateCase(caseId, updates)
+      : mCase;
+
+    const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
+    const isAccepted = hasCurrentCycleAcceptance(updatedCase!);
+    const responseData = (isReporterOrAdmin || isAccepted)
+      ? updatedCase
+      : sanitizeCaseForTechnician(updatedCase!, { isAccepted: false });
+
+    return res.json(responseData);
+  }
+
   try {
     const updated = maintenanceCaseService.transitionCaseStatus(caseId, 'ASSIGNED', req.user?.id || 'CUSTOMER', {
       technicianId: pro.id,
@@ -1166,6 +1173,12 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/assign', '/cases/:maint
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
+  // Authorization Policy: An assigned technician must NOT be able to reassign a case.
+  // Reassignment is strictly restricted to authorized reporters (customers) or system administrators.
+  if (!caseAccess.isReporter && !caseAccess.isAdmin) {
+    return res.status(403).json({ error: 'تنها ثبت‌کننده پرونده یا مدیر سامانه مجاز به تخصیص یا تغییر تکنسین هستند.' });
+  }
+
   const { technicianId, notes, scheduledAt } = req.body;
   if (!technicianId) {
     return res.status(400).json({ error: 'شناسه تکنسین الزامی است.' });
@@ -1175,6 +1188,29 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/assign', '/cases/:maint
   const pro = (professionalRepository.getProfessionalById && professionalRepository.getProfessionalById(technicianId)) || (professionalRepository.getProfessionalByUserId && professionalRepository.getProfessionalByUserId(technicianId)) || (professionalRepository.getProfessionals() || []).find(p => p.id === technicianId || p.userId === technicianId);
   const techName = pro?.fullName || req.body.technicianName || 'تکنسین تخصصی';
   const techPhone = pro?.phone || req.body.technicianPhone || '';
+
+  const isSameTech = Boolean(
+    mCase.assignedTechnicianId &&
+    areTechnicianIdentitiesEquivalent(mCase.assignedTechnicianId, technicianId)
+  );
+
+  // Idempotent retry: if already assigned to this technician, do not reset status or invalidate valid acceptance
+  if (isSameTech && (mCase.status === 'ASSIGNED' || mCase.status === 'SCHEDULED' || mCase.status === 'IN_PROGRESS')) {
+    const updates: Partial<MaintenanceCase> = {};
+    if (scheduledAt) updates.scheduledAt = scheduledAt;
+    if (techPhone) updates.assignedTechnicianPhone = techPhone;
+    const updatedCase = Object.keys(updates).length > 0
+      ? maintenanceRepository.updateCase(caseId, updates)
+      : mCase;
+
+    const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
+    const isAccepted = hasCurrentCycleAcceptance(updatedCase!);
+    const responseData = (isReporterOrAdmin || isAccepted)
+      ? updatedCase
+      : sanitizeCaseForTechnician(updatedCase!, { isAccepted: false });
+
+    return res.json(responseData);
+  }
 
   // Transition via canonical state machine
   let updated: MaintenanceCase;
@@ -1231,17 +1267,13 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/accept', '/cases/:maint
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
-  // Check if case is already accepted by this technician
-  const existingHistories = maintenanceRepository.getAssignmentHistories(caseId) || [];
-  const assignedTechId = mCase.assignedTechnicianId;
-  const alreadyAccepted = existingHistories.some(h => {
-    if (h.status !== 'ACCEPTED' || !h.technicianId) return false;
-    return h.technicianId === assignedTechId || isCaseAssignedToTechnician(assignedTechId, h.technicianId);
-  });
+  // Check if case is already accepted by this technician for the CURRENT assignment cycle
+  const alreadyAccepted = hasCurrentCycleAcceptance(mCase);
 
-  // Authoritative action: persist the ACCEPTED assignment history first
+  let newHistoryRecord: MaintenanceAssignmentHistory | null = null;
+  // Authoritative action: persist the ACCEPTED assignment history for this cycle if not already accepted
   if (!alreadyAccepted) {
-    maintenanceRepository.createAssignmentHistory({
+    newHistoryRecord = maintenanceRepository.createAssignmentHistory({
       maintenanceCaseId: caseId,
       technicianId: req.user.id,
       assignedBy: req.user.id,
@@ -1257,6 +1289,18 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/accept', '/cases/:maint
       notes: req.body?.notes
     });
   } catch (err: any) {
+    // Failure Safety: If status transition fails and we just persisted an ACCEPTED record,
+    // mark that record CANCELLED so it does not leave an active-looking orphaned acceptance
+    if (newHistoryRecord) {
+      try {
+        maintenanceRepository.updateAssignmentHistory(newHistoryRecord.id, {
+          status: 'CANCELLED',
+          notes: 'خطا در تغییر وضعیت پرونده - پذیرش لغو شد'
+        });
+      } catch (rollbackErr) {
+        // ignore
+      }
+    }
     return res.status(400).json({ error: err.message || 'خطا در پذیرش پرونده' });
   }
 
