@@ -21,7 +21,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 import express from 'express';
-import { db, DatabaseStorageError } from '../src/db/index.js';
+import { db, DatabaseStorageError, validateDBStructure } from '../src/db/index.js';
 import { maintenanceRepository } from '../src/repositories/maintenanceRepository.js';
 import { maintenanceCaseService } from '../src/services/maintenanceCaseService.js';
 import { professionalRepository } from '../src/repositories/professionalRepository.js';
@@ -56,6 +56,7 @@ async function runTestSuite() {
     // TEST 1: CORRUPT EXISTING DATABASE FILE IS NEVER SILENTLY RESET
     // -------------------------------------------------------------------------
     console.log('\n--- TEST 1: CORRUPT EXISTING DATABASE FILE IS NEVER RESET ---');
+    // 1a. Malformed JSON syntax
     const corruptTestPath = path.join('/tmp', `hooshyar_corrupt_test_${Date.now()}.json`);
     fs.writeFileSync(corruptTestPath, '{ "users": [ { "id": "1", INVALID_JSON', 'utf-8');
 
@@ -69,26 +70,218 @@ async function runTestSuite() {
 
     assert(
       caughtCorruptionError !== null,
-      'Test 1: Reading corrupt database file strictly throws an error instead of returning defaults'
+      'Test 1a: Reading corrupt database file strictly throws an error instead of returning defaults'
     );
     assert(
       caughtCorruptionError instanceof DatabaseStorageError || caughtCorruptionError.name === 'DatabaseStorageError',
-      'Test 1: Error thrown is an authoritative DatabaseStorageError instance'
+      'Test 1a: Error thrown is an authoritative DatabaseStorageError instance'
     );
     assert(
       caughtCorruptionError.message.includes('FATAL: Database storage corruption detected'),
-      'Test 1: Error message explicitly warns of database corruption and aborts to prevent data loss'
+      'Test 1a: Error message explicitly warns of database corruption and aborts to prevent data loss'
     );
 
     // Verify file content was NOT overwritten or reset to defaultDB
     const rawAfterAttempt = fs.readFileSync(corruptTestPath, 'utf-8');
     assert(
       rawAfterAttempt.includes('INVALID_JSON'),
-      'Test 1: Corrupted file was preserved intact without silent overwrite'
+      'Test 1a: Corrupted file was preserved intact without silent overwrite'
     );
-
-    // Clean up test file
     try { fs.unlinkSync(corruptTestPath); } catch {}
+
+    // 1b. Syntactically valid JSON with malformed top-level collection: users as object {} instead of Array
+    console.log('\n--- TEST 1B: MALFORMED TOP-LEVEL COLLECTION (OBJECT INSTEAD OF ARRAY) ---');
+    const objectUsersPath = path.join('/tmp', `hooshyar_obj_users_${Date.now()}.json`);
+    const objectUsersContent = JSON.stringify({ users: { id: "user_1" }, maintenanceCases: [] });
+    fs.writeFileSync(objectUsersPath, objectUsersContent, 'utf-8');
+
+    db.setDBPath(objectUsersPath);
+    let caughtObjectUsersError: any = null;
+    try {
+      db.getUsers();
+    } catch (e: any) {
+      caughtObjectUsersError = e;
+    }
+
+    assert(
+      caughtObjectUsersError !== null && caughtObjectUsersError instanceof DatabaseStorageError,
+      'Test 1b: Syntactically valid JSON with "users": {} strictly throws DatabaseStorageError'
+    );
+    assert(
+      caughtObjectUsersError.message.includes("Collection 'users' must be an Array"),
+      'Test 1b: Error message specifies collection "users" must be an Array'
+    );
+    // Verify file was NOT overwritten with defaultDB
+    assert(
+      fs.readFileSync(objectUsersPath, 'utf-8') === objectUsersContent,
+      'Test 1b: Existing file with malformed "users": {} was 100% preserved on disk without silent overwrite'
+    );
+    try { fs.unlinkSync(objectUsersPath); } catch {}
+
+    // 1c. Syntactically valid JSON with malformed top-level collection: maintenanceCases as string instead of Array
+    console.log('\n--- TEST 1C: MALFORMED TOP-LEVEL COLLECTION (STRING INSTEAD OF ARRAY) ---');
+    const stringCasesPath = path.join('/tmp', `hooshyar_str_cases_${Date.now()}.json`);
+    const stringCasesContent = JSON.stringify({ maintenanceCases: "invalid_cases_string", users: [] });
+    fs.writeFileSync(stringCasesPath, stringCasesContent, 'utf-8');
+
+    db.setDBPath(stringCasesPath);
+    let caughtStringCasesError: any = null;
+    try {
+      db.getMaintenanceCases();
+    } catch (e: any) {
+      caughtStringCasesError = e;
+    }
+
+    assert(
+      caughtStringCasesError !== null && caughtStringCasesError instanceof DatabaseStorageError,
+      'Test 1c: Syntactically valid JSON with "maintenanceCases": "invalid" strictly throws DatabaseStorageError'
+    );
+    assert(
+      caughtStringCasesError.message.includes("Collection 'maintenanceCases' must be an Array"),
+      'Test 1c: Error message specifies collection "maintenanceCases" must be an Array'
+    );
+    assert(
+      fs.readFileSync(stringCasesPath, 'utf-8') === stringCasesContent,
+      'Test 1c: Existing file with string maintenanceCases was 100% preserved on disk'
+    );
+    try { fs.unlinkSync(stringCasesPath); } catch {}
+
+    // 1d. Syntactically valid JSON with null collection: maintenanceCases as null
+    console.log('\n--- TEST 1D: NULL TOP-LEVEL COLLECTION (NULL INSTEAD OF ARRAY) ---');
+    const nullCasesPath = path.join('/tmp', `hooshyar_null_cases_${Date.now()}.json`);
+    const nullCasesContent = JSON.stringify({ maintenanceCases: null, users: [] });
+    fs.writeFileSync(nullCasesPath, nullCasesContent, 'utf-8');
+
+    db.setDBPath(nullCasesPath);
+    let caughtNullCasesError: any = null;
+    try {
+      db.getMaintenanceCases();
+    } catch (e: any) {
+      caughtNullCasesError = e;
+    }
+
+    assert(
+      caughtNullCasesError !== null && caughtNullCasesError instanceof DatabaseStorageError,
+      'Test 1d: Syntactically valid JSON with "maintenanceCases": null strictly throws DatabaseStorageError'
+    );
+    assert(
+      fs.readFileSync(nullCasesPath, 'utf-8') === nullCasesContent,
+      'Test 1d: Existing file with null maintenanceCases was 100% preserved on disk'
+    );
+    try { fs.unlinkSync(nullCasesPath); } catch {}
+
+    // 1e. Collection containing invalid non-object item (e.g. primitive string or null record)
+    console.log('\n--- TEST 1E: INVALID RECORD TYPES WITHIN COLLECTION ---');
+    const corruptItemsPath = path.join('/tmp', `hooshyar_bad_item_${Date.now()}.json`);
+    const corruptItemsContent = JSON.stringify({ users: [{ id: "u1" }, "corrupt_string_record"] });
+    fs.writeFileSync(corruptItemsPath, corruptItemsContent, 'utf-8');
+
+    db.setDBPath(corruptItemsPath);
+    let caughtCorruptItemError: any = null;
+    try {
+      db.getUsers();
+    } catch (e: any) {
+      caughtCorruptItemError = e;
+    }
+
+    assert(
+      caughtCorruptItemError !== null && caughtCorruptItemError instanceof DatabaseStorageError,
+      'Test 1e: Collection with primitive string item strictly throws DatabaseStorageError'
+    );
+    assert(
+      caughtCorruptItemError.message.includes('Record at index 1 in collection \'users\' must be an object'),
+      'Test 1e: Error message explicitly highlights index and non-object record'
+    );
+    assert(
+      fs.readFileSync(corruptItemsPath, 'utf-8') === corruptItemsContent,
+      'Test 1e: Existing file with primitive item was 100% preserved on disk'
+    );
+    try { fs.unlinkSync(corruptItemsPath); } catch {}
+
+    // 1f. Collection containing null item
+    const nullItemPath = path.join('/tmp', `hooshyar_null_item_${Date.now()}.json`);
+    const nullItemContent = JSON.stringify({ users: [null] });
+    fs.writeFileSync(nullItemPath, nullItemContent, 'utf-8');
+
+    db.setDBPath(nullItemPath);
+    let caughtNullItemError: any = null;
+    try {
+      db.getUsers();
+    } catch (e: any) {
+      caughtNullItemError = e;
+    }
+
+    assert(
+      caughtNullItemError !== null && caughtNullItemError instanceof DatabaseStorageError,
+      'Test 1f: Collection with null item strictly throws DatabaseStorageError'
+    );
+    try { fs.unlinkSync(nullItemPath); } catch {}
+
+    // 1g. Valid legacy records with partial fields are preserved and NOT rejected
+    console.log('\n--- TEST 1G: VALID LEGACY RECORDS WITH PARTIAL FIELDS ARE PRESERVED ---');
+    const legacyValidPath = path.join('/tmp', `hooshyar_legacy_valid_${Date.now()}.json`);
+    const legacyValidContent = JSON.stringify({
+      users: [
+        { id: "legacy_user_1", phone: "09121110001" }, // sparse legacy user record without roles or createdAt
+        { id: "legacy_user_2", phone: "09122220002", name: "کاربر موروثی" }
+      ],
+      maintenanceCases: [
+        { id: "case_legacy_1", title: "پرونده موروثی", status: "ASSIGNED", assignedTechnicianId: "tech-legacy" }
+      ]
+    });
+    fs.writeFileSync(legacyValidPath, legacyValidContent, 'utf-8');
+
+    db.setDBPath(legacyValidPath);
+    const loadedLegacyUsers = db.getUsers();
+    assert(
+      Array.isArray(loadedLegacyUsers) && loadedLegacyUsers.length === 2,
+      'Test 1g: Valid legacy records with sparse fields load successfully without being rejected'
+    );
+    assert(
+      loadedLegacyUsers[0].id === 'legacy_user_1' && loadedLegacyUsers[1].name === 'کاربر موروثی',
+      'Test 1g: Legacy user field values match persisted data exactly'
+    );
+    const loadedLegacyCases = db.getMaintenanceCases();
+    assert(
+      Array.isArray(loadedLegacyCases) && loadedLegacyCases.length === 1 && loadedLegacyCases[0].id === 'case_legacy_1',
+      'Test 1g: Legacy maintenance case loaded successfully'
+    );
+    try { fs.unlinkSync(legacyValidPath); } catch {}
+
+    // 1h. Legitimately absent optional collections preserve backward compatibility
+    console.log('\n--- TEST 1H: LEGITIMATELY ABSENT OPTIONAL COLLECTIONS PRESERVE BACKWARD COMPATIBILITY ---');
+    const sparseDbPath = path.join('/tmp', `hooshyar_sparse_${Date.now()}.json`);
+    // Database file containing only users and subscriptionPlans; all other collections legitimately absent
+    fs.writeFileSync(sparseDbPath, JSON.stringify({
+      users: [{ id: "u_sparse", phone: "09129998877" }]
+    }), 'utf-8');
+
+    db.setDBPath(sparseDbPath);
+    const sparseUsers = db.getUsers();
+    assert(
+      Array.isArray(sparseUsers) && sparseUsers.length === 1 && sparseUsers[0].id === 'u_sparse',
+      'Test 1h: Sparse database file with absent optional collections loads successfully'
+    );
+    const sparseCases = db.getMaintenanceCases();
+    assert(
+      Array.isArray(sparseCases) && sparseCases.length === 0,
+      'Test 1h: Absent optional maintenanceCases defaults gracefully to empty array'
+    );
+    try { fs.unlinkSync(sparseDbPath); } catch {}
+
+    // 1i. Validation does not mutate input object
+    console.log('\n--- TEST 1I: VALIDATION DOES NOT MUTATE INPUT DATA ---');
+    const inputSnapshot = {
+      users: [{ id: "u1", phone: "09121110001" }],
+      maintenanceCases: []
+    };
+    const inputBefore = JSON.stringify(inputSnapshot);
+    validateDBStructure(inputSnapshot);
+    const inputAfter = JSON.stringify(inputSnapshot);
+    assert(
+      inputBefore === inputAfter,
+      'Test 1i: validateDBStructure is strictly read-only and causes 0 mutations to loaded data'
+    );
 
     // -------------------------------------------------------------------------
     // TEST 2: MISSING DATABASE INITIALIZATION

@@ -467,6 +467,50 @@ export class DatabaseStorageError extends Error {
   }
 }
 
+/**
+ * Conservative runtime structural validation for persisted database collections.
+ * Ensures:
+ * 1. Root data is a non-null, non-array object.
+ * 2. Every present top-level collection is strictly an Array (rejecting objects, strings, numbers, booleans, null).
+ * 3. Every record within a collection is an object (rejecting primitives, null, nested arrays).
+ * 4. Legitimately absent optional fields (undefined) are permitted for backward compatibility.
+ * 5. Valid legacy records are preserved without strict business schema constraints.
+ * 6. The input data is never mutated.
+ */
+export function validateDBStructure(raw: unknown): void {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new DatabaseStorageError(
+      'FATAL: Database storage structure invalid. The database file does not contain a valid JSON object structure. Aborting to prevent data loss.'
+    );
+  }
+
+  const rawObj = raw as Record<string, unknown>;
+
+  for (const [key, value] of Object.entries(rawObj)) {
+    // Legitimately absent optional fields (undefined) are permitted for backward compatibility
+    if (value === undefined) {
+      continue;
+    }
+
+    // Top-level collections must be Arrays
+    if (!Array.isArray(value)) {
+      throw new DatabaseStorageError(
+        `FATAL: Database storage structure invalid. Collection '${key}' must be an Array, but received ${value === null ? 'null' : typeof value}. Aborting to prevent data loss.`
+      );
+    }
+
+    // Validate that each item within the collection is a non-null object record
+    for (let i = 0; i < value.length; i++) {
+      const item = value[i];
+      if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+        throw new DatabaseStorageError(
+          `FATAL: Database storage structure invalid. Record at index ${i} in collection '${key}' must be an object, but received ${item === null ? 'null' : (Array.isArray(item) ? 'array' : typeof item)}. Aborting to prevent data loss.`
+        );
+      }
+    }
+  }
+}
+
 function readDB(): DB {
   if (!fs.existsSync(currentDbPath)) {
     writeDB(defaultDB);
@@ -483,11 +527,8 @@ function readDB(): DB {
     );
   }
 
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    throw new DatabaseStorageError(
-      'FATAL: Database storage structure invalid. The database file does not contain a valid JSON object structure. Aborting to prevent data loss.'
-    );
-  }
+  // Authoritative runtime structural validation: reject incompatible structural types before merging
+  validateDBStructure(raw);
 
   const typedRaw = raw as Partial<DB>;
   const parsed: DB = { ...defaultDB, ...typedRaw };
