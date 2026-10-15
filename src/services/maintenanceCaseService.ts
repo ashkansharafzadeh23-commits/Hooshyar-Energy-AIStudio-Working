@@ -2,6 +2,8 @@ import { maintenanceRepository } from '../repositories/maintenanceRepository.js'
 import { assetRepository } from '../repositories/assetRepository.js';
 import { alertService } from './alertService.js';
 import { projectRepository } from '../repositories/projectRepository.js';
+import { professionalRepository } from '../repositories/professionalRepository.js';
+import { userRepository } from '../repositories/userRepository.js';
 import { isCaseAssignedToTechnician, areTechnicianIdentitiesEquivalent } from './technicianIdentityService.js';
 import {
   MaintenanceCase,
@@ -28,10 +30,33 @@ import {
  * 5. Rejection, cancellation, or subsequent reassignment invalidates previous acceptance.
  */
 export function hasCurrentCycleAcceptance(
-  mCase: { id?: string; assignedTechnicianId?: string | null },
+  mCase: { id?: string; assignedTechnicianId?: string | null; status?: string },
   histories?: MaintenanceAssignmentHistory[]
 ): boolean {
   if (!mCase || !mCase.id || !mCase.assignedTechnicianId) {
+    return false;
+  }
+
+  // Fail-closed terminal and unassigned status guard:
+  // Before evaluating any history records or past acceptances, verify that the case itself
+  // is in a legitimate active status that permits active execution and technician authorization.
+  let caseStatus = (mCase as any).status;
+  if (!caseStatus && mCase.id) {
+    const fullCase = maintenanceRepository.getCaseById(mCase.id);
+    if (fullCase) {
+      caseStatus = fullCase.status;
+    }
+  }
+
+  const unassignedOrTerminalStatuses: string[] = [
+    'CANCELLED',
+    'CLOSED',
+    'OPEN',
+    'DRAFT',
+    'DIAGNOSING',
+    'AWAITING_ASSIGNMENT'
+  ];
+  if (caseStatus && unassignedOrTerminalStatuses.includes(caseStatus)) {
     return false;
   }
 
@@ -75,23 +100,7 @@ export function hasCurrentCycleAcceptance(
 
   // If there are NO 'ASSIGNED' records in history (legacy data),
   // apply strict fail-closed validation:
-  // 1. If case status is known and unassigned or terminal, fail closed.
-  // Cases in OPEN, DRAFT, DIAGNOSING, AWAITING_ASSIGNMENT, CANCELLED, or CLOSED status
-  // cannot have active or trusted technician acceptance.
-  const caseStatus = (mCase as any).status;
-  const unassignedOrTerminalStatuses: string[] = [
-    'OPEN',
-    'DRAFT',
-    'DIAGNOSING',
-    'AWAITING_ASSIGNMENT',
-    'CANCELLED',
-    'CLOSED'
-  ];
-  if (caseStatus && unassignedOrTerminalStatuses.includes(caseStatus)) {
-    return false;
-  }
-
-  // 2. Unambiguous technician identity check & status purity:
+  // 1. Unambiguous technician identity check & status purity:
   // EVERY record in history must belong strictly to the currently assigned technician.
   // Any record belonging to a different/foreign technician makes the history ambiguous -> fail closed!
   //
@@ -261,11 +270,57 @@ export const maintenanceCaseService = {
       if (currentStatus === 'CLOSED') {
         throw new Error('امکان لغو پرونده بسته شده وجود ندارد.');
       }
+      if (currentStatus === 'CANCELLED') {
+        // Idempotent cancellation: do not create duplicate history or overwrite notes
+        return mCase;
+      }
+
+      const previousCaseSnapshot: Partial<MaintenanceCase> = {
+        ...mCase,
+        status: mCase.status,
+        closureNotes: mCase.closureNotes,
+        updatedAt: mCase.updatedAt
+      };
+
+      const closureNotes = payload?.closureNotes || 'پرونده لغو شد.';
       const updated = maintenanceRepository.updateCase(caseId, {
         status: 'CANCELLED',
-        closureNotes: payload?.closureNotes || 'پرونده لغو شد.'
+        closureNotes
       });
-      return updated!;
+      if (!updated) {
+        throw new Error('خطا در بروزرسانی وضعیت پرونده به لغو شده.');
+      }
+
+      // Persist exactly one CANCELLED assignment-history event if an assigned technician was present
+      if (mCase.assignedTechnicianId) {
+        try {
+          maintenanceRepository.createAssignmentHistory({
+            maintenanceCaseId: caseId,
+            technicianId: mCase.assignedTechnicianId,
+            assignedBy: actorUserId || 'SYSTEM',
+            status: 'CANCELLED',
+            notes: closureNotes
+          });
+        } catch (histErr: any) {
+          // Compensating Rollback
+          let rollbackVerified = false;
+          try {
+            const restored = maintenanceRepository.updateCase(caseId, previousCaseSnapshot);
+            if (restored && restored.status === previousCaseSnapshot.status) {
+              rollbackVerified = true;
+            }
+          } catch (rbErr) {
+            rollbackVerified = false;
+          }
+          if (rollbackVerified) {
+            throw new Error('خطا در ثبت تاریخچه لغو تخصیص - تغییرات پرونده بازگردانده شد.');
+          } else {
+            throw new Error('خطا در ثبت تاریخچه لغو تخصیص و عدم موفقیت در بازگردانی وضعیت پرونده. یکپارچگی نیازمند بررسی مدیر سامانه است.');
+          }
+        }
+      }
+
+      return updated;
     }
 
     // State Machine Validation (Canonical F.3 Transition Map)
@@ -355,22 +410,83 @@ export const maintenanceCaseService = {
 
     const updates: Partial<MaintenanceCase> = { status: newStatus };
 
+    // Handle return to OPEN: clear active assignment metadata
+    if (newStatus === 'OPEN') {
+      updates.assignedTechnicianId = undefined;
+      updates.assignedTechnicianName = undefined;
+      updates.assignedTechnicianPhone = undefined;
+      updates.scheduledDate = undefined;
+      updates.scheduledAt = undefined;
+      updates.startedAt = undefined;
+    }
+
     // Handle assignments
     if (newStatus === 'ASSIGNED') {
       const techId = payload?.technicianId || mCase.assignedTechnicianId;
-      const techName = payload?.technicianName || mCase.assignedTechnicianName;
-      if (!techId || !techName) {
+      if (!techId) {
         throw new Error('جهت تخصیص پرونده، مشخصات تکنسین الزامی است.');
       }
+
+      let techName = payload?.technicianName;
+      let techPhone = payload?.technicianPhone;
+
+      if (!techName || !techPhone) {
+        const pro = professionalRepository.getProfessionalById?.(techId) ||
+          professionalRepository.getProfessionalByUserId?.(techId) ||
+          (professionalRepository.getProfessionals?.() || []).find((p: any) => p.id === techId || p.userId === techId);
+        if (pro) {
+          if (!techName) techName = pro.fullName || pro.name;
+          if (!techPhone && pro.phone) techPhone = pro.phone;
+        }
+        if (!techPhone || !techName) {
+          const user = userRepository.getUserById?.(techId);
+          if (user) {
+            if (!techName && user.name) techName = user.name;
+            if (!techPhone && user.phone) techPhone = user.phone;
+          }
+        }
+      }
+
+      if (!techName) {
+        techName = mCase.assignedTechnicianName || 'تکنسین تخصصی';
+      }
+
       updates.assignedTechnicianId = techId;
       updates.assignedTechnicianName = techName;
-      if (payload?.technicianPhone) updates.assignedTechnicianPhone = payload.technicianPhone;
-      if (payload?.scheduledDate) updates.scheduledDate = payload.scheduledDate;
 
-      // Reset startedAt if returning from IN_PROGRESS or reassigned to a different technician
-      const isDifferentTech = mCase.assignedTechnicianId && !areTechnicianIdentitiesEquivalent(mCase.assignedTechnicianId, techId);
-      if (currentStatus === 'IN_PROGRESS' || isDifferentTech) {
+      // Detect if reassigning to a genuinely different technician
+      const isDifferentTech = Boolean(
+        mCase.assignedTechnicianId && !areTechnicianIdentitiesEquivalent(mCase.assignedTechnicianId, techId)
+      );
+
+      if (isDifferentTech) {
+        // Reset startedAt, schedule, and phone for new technician
         updates.startedAt = undefined;
+        if (payload?.scheduledDate) {
+          updates.scheduledDate = payload.scheduledDate;
+          updates.scheduledAt = payload.scheduledDate;
+        } else {
+          updates.scheduledDate = undefined;
+          updates.scheduledAt = undefined;
+        }
+        if (techPhone && techPhone.trim().length > 0) {
+          updates.assignedTechnicianPhone = techPhone.trim();
+        } else {
+          updates.assignedTechnicianPhone = undefined;
+        }
+      } else {
+        // Same technician / initial assignment
+        if (techPhone !== undefined) {
+          updates.assignedTechnicianPhone = techPhone && techPhone.trim().length > 0
+            ? techPhone.trim()
+            : undefined;
+        }
+        if (payload?.scheduledDate) {
+          updates.scheduledDate = payload.scheduledDate;
+        }
+        if (currentStatus === 'IN_PROGRESS') {
+          updates.startedAt = undefined;
+        }
       }
     }
 
@@ -451,6 +567,10 @@ export const maintenanceCaseService = {
       throw new Error('پرونده تعمیراتی یافت نشد.');
     }
 
+    if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+      throw new Error('امکان ثبت اقدام برای پرونده‌های لغو شده یا بسته شده وجود ندارد.');
+    }
+
     const created = maintenanceRepository.createAction({
       maintenanceCaseId: caseId,
       actionType: action.actionType,
@@ -479,6 +599,10 @@ export const maintenanceCaseService = {
     const mCase = maintenanceRepository.getCaseById(caseId);
     if (!mCase) {
       throw new Error('پرونده تعمیراتی یافت نشد.');
+    }
+
+    if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+      throw new Error('امکان ثبت قطعات یدکی برای پرونده‌های لغو شده یا بسته شده وجود ندارد.');
     }
 
     const existingParts = mCase.sparePartsUsed || [];

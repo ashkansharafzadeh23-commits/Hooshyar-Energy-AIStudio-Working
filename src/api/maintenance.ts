@@ -120,33 +120,99 @@ export function hasTechnicianFormallyAccepted(mCase: MaintenanceCase): boolean {
   return hasCurrentCycleAcceptance(mCase);
 }
 
+export function sanitizeAttachmentForTechnician(
+  att: CaseAttachment,
+  options?: { isAccepted?: boolean; isTerminal?: boolean }
+): Record<string, any> {
+  const isTerminal = options?.isTerminal ?? false;
+  const isAccepted = options?.isAccepted ?? false;
+
+  // Clone attachment shallowly to prevent database mutation
+  const safe: Record<string, any> = { ...att };
+
+  // Storage internals and raw buffers must never leak
+  delete safe.storageKey;
+  delete safe.data;
+
+  // Redact direct download URLs and scrub extracted customer data in terminal or unaccepted states
+  if (isTerminal || !isAccepted) {
+    delete safe.url;
+
+    if (safe.extractedData && typeof safe.extractedData === 'object') {
+      const safeExtracted = { ...safe.extractedData };
+      delete safeExtracted.customerPhone;
+      delete safeExtracted.phone;
+      delete safeExtracted.customerName;
+      delete safeExtracted.nationalId;
+      delete safeExtracted.contactPhone;
+      delete safeExtracted.contactName;
+      delete safeExtracted.address;
+      delete (safeExtracted as any).rawPhone;
+      if (isTerminal || safe.type === 'BILL') {
+        delete safeExtracted.billIdentifier;
+        delete safeExtracted.billId;
+        delete safeExtracted.paymentId;
+      }
+      safe.extractedData = safeExtracted;
+    }
+  }
+
+  // Preserve safe historical audit metadata (id, maintenanceCaseId, name, type, uploadedBy, uploadedAt, sizeBytes, mimeType, status, checksumSha256)
+  return safe;
+}
+
 export function sanitizeCaseForTechnician(
   mCase: MaintenanceCase,
   options?: { isAccepted?: boolean }
 ): Record<string, any> {
-  // If formally accepted, customer contact details are authorized for technical execution.
-  // SCHEDULED alone is strictly NOT treated as accepted.
-  const isAccepted = options?.isAccepted !== undefined
+  const isTerminal = mCase.status === 'CANCELLED' || mCase.status === 'CLOSED';
+  // If formally accepted and not terminal, customer contact details are authorized for technical execution.
+  // Terminal cases (CANCELLED or CLOSED) MUST NEVER expose customer contact info to technicians,
+  // even if the technician previously accepted the case during its active execution lifecycle.
+  const isAccepted = !isTerminal && (options?.isAccepted !== undefined
     ? options.isAccepted
-    : hasTechnicianFormallyAccepted(mCase);
+    : hasTechnicianFormallyAccepted(mCase));
 
   // Shallow clone top-level
   const safe: Record<string, any> = { ...mCase };
+
+  // Always sanitize attachments for technicians
+  if (Array.isArray(safe.attachments)) {
+    safe.attachments = safe.attachments.map(att =>
+      sanitizeAttachmentForTechnician(att, { isAccepted, isTerminal })
+    );
+  }
 
   if (!isAccepted) {
     // Strictly omit customer private contact information
     delete safe.contactName;
     delete safe.contactPhone;
+    delete (safe as any).customerPhone;
+    delete (safe as any).customerName;
+    delete (safe as any).rawPhone;
 
     // Check nested structures if any
     if (safe.billDoc && typeof safe.billDoc === 'object') {
       const safeBill = { ...safe.billDoc };
+      delete (safeBill as any).customerPhone;
+      delete (safeBill as any).phone;
+      delete (safeBill as any).customerName;
+      delete (safeBill as any).contactName;
+      delete (safeBill as any).contactPhone;
+      delete (safeBill as any).url;
+      delete (safeBill as any).storageKey;
+      delete (safeBill as any).data;
+
       if (safeBill.extractedData && typeof safeBill.extractedData === 'object') {
         const safeExtracted = { ...safeBill.extractedData };
         delete safeExtracted.customerPhone;
         delete safeExtracted.phone;
         delete safeExtracted.customerName;
         delete safeExtracted.nationalId;
+        delete safeExtracted.contactPhone;
+        delete safeExtracted.contactName;
+        delete safeExtracted.address;
+        delete (safeExtracted as any).rawPhone;
         safeBill.extractedData = safeExtracted;
       }
       safe.billDoc = safeBill;
@@ -229,13 +295,34 @@ maintenanceRouter.get('/alerts/:alertId', (req: Request, res: Response) => {
 
   // Also include linked diagnosis, maintenance case, and warranties if available
   const diagnoses = maintenanceRepository.getDiagnoses(alert.assetId, alert.id);
-  const mCase = alert.maintenanceCaseId ? maintenanceRepository.getCaseById(alert.maintenanceCaseId) : undefined;
   const warranties = assetRepository.getEquipmentWarranties(alert.assetId);
+
+  // Authoritative case-level authorization and field-level privacy for linked maintenance case
+  let authorizedCase: Record<string, any> | null = null;
+  if (alert.maintenanceCaseId) {
+    const rawCase = maintenanceRepository.getCaseById(alert.maintenanceCaseId);
+    if (rawCase) {
+      const caseAccess = checkCaseAccess(rawCase, req.user);
+      if (caseAccess.allowed) {
+        const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin || access.isOwner;
+        if (isReporterOrAdmin) {
+          authorizedCase = rawCase;
+        } else if (caseAccess.isAssignedTech) {
+          const isTerminal = rawCase.status === 'CANCELLED' || rawCase.status === 'CLOSED';
+          const isAccepted = !isTerminal && hasTechnicianFormallyAccepted(rawCase);
+          authorizedCase = sanitizeCaseForTechnician(rawCase, { isAccepted });
+        } else {
+          // Project viewer/member with alert access but no case-specific rights
+          authorizedCase = null;
+        }
+      }
+    }
+  }
 
   return res.json({
     ...alert,
     diagnoses,
-    maintenanceCase: mCase,
+    maintenanceCase: authorizedCase,
     warranties
   });
 });
@@ -536,12 +623,47 @@ maintenanceRouter.get('/assets/:assetId/maintenance', (req: Request, res: Respon
     return res.status(404).json({ error: 'دارایی انرژی یافت نشد.' });
   }
 
-  const access = checkProjectAccess(asset.projectId, req.user?.id, req.user?.role);
+  const userId = req.user?.id;
+  const userRolesList: string[] = Array.isArray((req.user as any)?.roles)
+    ? (req.user as any).roles
+    : (req.user?.role ? [req.user.role] : []);
+  const roleUpper = req.user?.role?.toUpperCase() || (userRolesList[0] ? userRolesList[0].toUpperCase() : '');
+  const isAdmin = roleUpper === 'ADMIN' || roleUpper === 'SUPER_ADMIN' || req.user?.role === 'admin' || userRolesList.some(r => ['ADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase()));
+  const isTech = ['technician', 'professional', 'expert'].includes(req.user?.role?.toLowerCase() || '') || userRolesList.some(r => ['technician', 'professional', 'expert'].includes(r.toLowerCase()));
+
+  // 1. Admin access: full visibility across all cases
+  if (isAdmin) {
+    const cases = maintenanceRepository.getCases(asset.projectId, assetId);
+    return res.json(cases);
+  }
+
+  // Check baseline project access
+  const access = checkProjectAccess(asset.projectId, userId, req.user?.role);
+
+  // 2. Technician access: strictly isolated to cases assigned to this technician
+  if (isTech) {
+    const allAssetCases = maintenanceRepository.getCases(asset.projectId, assetId);
+    const assignedCases = allAssetCases.filter(c => isCaseAssignedToTechnician(c.assignedTechnicianId, userId) || c.assignedTechnicianId === userId);
+
+    if (!access.allowed && assignedCases.length === 0) {
+      return res.status(403).json({ error: 'شما به عنوان تکنسین تنها به پرونده‌های محول شده به خودتان دسترسی دارید.' });
+    }
+
+    // Sanitize all cases for technician view (masks customer contact info before acceptance and on terminal cases)
+    const sanitized = assignedCases.map(c => sanitizeCaseForTechnician(c));
+    return res.json(sanitized);
+  }
+
+  // 3. Customer / Project Member access: requires project access
   if (!access.allowed) {
     return res.status(access.status || 403).json({ error: access.error });
   }
 
-  const cases = maintenanceRepository.getCases(asset.projectId, assetId);
+  let cases = maintenanceRepository.getCases(asset.projectId, assetId);
+  if (!access.isOwner && asset.projectId === 'CUSTOMER_DIRECT') {
+    cases = cases.filter(c => c.reportedBy === userId);
+  }
+
   return res.json(cases);
 });
 
@@ -989,6 +1111,13 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/select-technician', '/c
     return res.status(403).json({ error: 'تنها ثبت‌کننده پرونده یا مدیر سامانه مجاز به انتخاب متخصص هستند.' });
   }
 
+  // Terminal-state mutation protection:
+  if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+    return res.status(400).json({
+      error: 'امکان تخصیص تکنسین برای پرونده‌های لغو شده یا بسته شده وجود ندارد.'
+    });
+  }
+
   const { technicianId, scheduledDate, notes } = req.body;
   if (!technicianId) {
     return res.status(400).json({ error: 'شناسه متخصص الزامی است.' });
@@ -1141,11 +1270,12 @@ maintenanceRouter.get(['/maintenance/:maintenanceCaseId', '/cases/:maintenanceCa
   }
 
   const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
-  const isAccepted = hasTechnicianFormallyAccepted(mCase);
+  const isTerminal = mCase.status === 'CANCELLED' || mCase.status === 'CLOSED';
+  const isAccepted = !isTerminal && hasTechnicianFormallyAccepted(mCase);
 
-  const baseCaseData = (isReporterOrAdmin || isAccepted)
+  const baseCaseData = isReporterOrAdmin
     ? mCase
-    : sanitizeCaseForTechnician(mCase, { isAccepted: false });
+    : sanitizeCaseForTechnician(mCase, { isAccepted });
 
   return res.json({
     ...baseCaseData,
@@ -1170,6 +1300,23 @@ maintenanceRouter.patch(['/maintenance/:maintenanceCaseId', '/cases/:maintenance
   const caseAccess = checkCaseAccess(mCase, req.user);
   if (!caseAccess.allowed) {
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
+  }
+
+  // Separation of view and edit permissions:
+  // Having view access (e.g. assigned technician) does NOT grant edit rights to case definitions.
+  // Only the reporter (customer) or system admin may update case details.
+  if (!caseAccess.isReporter && !caseAccess.isAdmin) {
+    return res.status(403).json({
+      error: 'تنها ثبت‌کننده پرونده یا مدیر سامانه مجاز به ویرایش اطلاعات پرونده هستند.'
+    });
+  }
+
+  // Terminal-state mutation protection:
+  // Ordinary operational mutations on CANCELLED or CLOSED cases are strictly rejected.
+  if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+    return res.status(400).json({
+      error: 'امکان ویرایش پرونده‌های لغو شده یا بسته شده وجود ندارد.'
+    });
   }
 
   // Direct status manipulation defense:
@@ -1229,6 +1376,13 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/assign', '/cases/:maint
     return res.status(403).json({ error: 'تنها ثبت‌کننده پرونده یا مدیر سامانه مجاز به تخصیص یا تغییر تکنسین هستند.' });
   }
 
+  // Terminal-state mutation protection:
+  if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+    return res.status(400).json({
+      error: 'امکان تخصیص تکنسین برای پرونده‌های لغو شده یا بسته شده وجود ندارد.'
+    });
+  }
+
   const { technicianId, notes, scheduledAt } = req.body;
   if (!technicianId) {
     return res.status(400).json({ error: 'شناسه تکنسین الزامی است.' });
@@ -1280,7 +1434,7 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/assign', '/cases/:maint
       technicianId,
       technicianName: techName,
       technicianPhone: techPhone,
-      scheduledDate: scheduledAt || mCase.scheduledAt
+      scheduledDate: scheduledAt
     });
     if (scheduledAt) {
       maintenanceRepository.updateCase(caseId, { scheduledAt });
@@ -1334,6 +1488,13 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/accept', '/cases/:maint
   const caseAccess = checkCaseAccess(mCase, req.user, { requireTechnicianOrAdmin: true });
   if (!caseAccess.allowed) {
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
+  }
+
+  // Terminal-state mutation protection:
+  if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+    return res.status(400).json({
+      error: 'امکان پذیرش پرونده‌های لغو شده یا بسته شده وجود ندارد.'
+    });
   }
 
   // Check if case is already accepted by this technician for the CURRENT assignment cycle
@@ -1399,9 +1560,30 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/schedule', '/cases/:mai
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
-  const { scheduledAt } = req.body;
+  // Explicit scheduling authorization policy:
+  // Administrator: permitted.
+  // Case reporter / customer: permitted for existing supported scheduling operations.
+  // Currently assigned technician: permitted under existing approved scheduling workflow.
+  // Unassigned technician / technician assigned to another case: denied (403).
+  // Project viewer / member without scheduling authority: denied (403).
+  // Unauthenticated or unrelated user: denied (401/403).
+  const isAuthorizedScheduler = caseAccess.isAdmin || caseAccess.isReporter || caseAccess.isAssignedTech;
+  if (!isAuthorizedScheduler) {
+    return res.status(403).json({
+      error: 'شما مجاز به زمان‌بندی این پرونده تعمیراتی نیستید. تنها ثبت‌کننده، تکنسین منتسب یا مدیر سیستم مجاز به زمان‌بندی هستند.'
+    });
+  }
+
+  // Terminal-state mutation protection:
+  if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+    return res.status(400).json({
+      error: 'امکان زمان‌بندی پرونده‌های لغو شده یا بسته شده وجود ندارد.'
+    });
+  }
+
+  const scheduledAt = req.body?.scheduledAt || req.body?.scheduledDate;
   if (!scheduledAt) {
-    return res.status(400).json({ error: 'تاریخ زمان‌بندی (scheduledAt) الزامی است.' });
+    return res.status(400).json({ error: 'تاریخ زمان‌بندی (scheduledAt یا scheduledDate) الزامی است.' });
   }
 
   let updated: MaintenanceCase;
@@ -1455,6 +1637,13 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/start', '/cases/:mainte
   const caseAccess = checkCaseAccess(mCase, req.user, { requireTechnicianOrAdmin: true });
   if (!caseAccess.allowed) {
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
+  }
+
+  // Terminal-state mutation protection:
+  if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+    return res.status(400).json({
+      error: 'امکان آغاز اجرای پرونده‌های لغو شده یا بسته شده وجود ندارد.'
+    });
   }
 
   // Security Barrier: /start MUST NOT bypass formal /accept.
@@ -1525,6 +1714,20 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/actions', '/cases/:main
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
+  // Terminal-state action protection:
+  if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+    return res.status(400).json({
+      error: 'امکان ثبت اقدام برای پرونده‌های لغو شده یا بسته شده وجود ندارد.'
+    });
+  }
+
+  // Formal acceptance barrier: Technician must accept the case before logging repair actions
+  if (!caseAccess.isAdmin && !hasTechnicianFormallyAccepted(mCase)) {
+    return res.status(403).json({
+      error: 'ثبت اقدامات فنی نیازمند پذیرش رسمی پرونده توسط تکنسین است.'
+    });
+  }
+
   const {
     actionType,
     description,
@@ -1586,6 +1789,13 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/submit-verification', '
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
+  // Terminal-state mutation protection:
+  if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+    return res.status(400).json({
+      error: 'امکان ارسال پرونده‌های لغو شده یا بسته شده جهت تایید وجود ندارد.'
+    });
+  }
+
   const actions = maintenanceRepository.getActions(caseId);
   if (actions.length === 0) {
     return res.status(400).json({ error: 'حداقل یک اقدام ثبت‌شده برای ارسال پرونده به تایید الزامی است.' });
@@ -1634,6 +1844,13 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/verify', '/cases/:maint
   const caseAccess = checkCaseAccess(mCase, req.user);
   if (!caseAccess.allowed) {
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
+  }
+
+  // Terminal-state mutation protection:
+  if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+    return res.status(400).json({
+      error: 'امکان تایید یا رد پرونده‌های لغو شده یا بسته شده وجود ندارد.'
+    });
   }
 
   // Only project managers, owners, reporter customer or admins can verify - NOT the technician!
@@ -1689,6 +1906,16 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/close', '/cases/:mainte
     if (mCase.projectId === 'CUSTOMER_DIRECT') {
       return res.status(403).json({ error: 'تنها ثبت‌کننده پرونده یا مدیر سامانه مجاز به بستن پرونده هستند.' });
     }
+  }
+
+  // Terminal-state protection:
+  if (mCase.status === 'CANCELLED') {
+    return res.status(400).json({
+      error: 'امکان بستن پرونده لغو شده وجود ندارد.'
+    });
+  }
+  if (mCase.status === 'CLOSED') {
+    return res.json(mCase);
   }
 
   // Auto-resolve associated alerts
@@ -1769,7 +1996,7 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/close', '/cases/:mainte
  * GET /api/maintenance/:maintenanceCaseId/technician-matches
  * Run technician matching algorithm for this case
  */
-maintenanceRouter.get('/maintenance/:maintenanceCaseId/technician-matches', (req: Request, res: Response) => {
+const handleCaseTechnicianMatching = (req: Request, res: Response) => {
   const caseId = getParam(req.params.maintenanceCaseId);
   const mCase = maintenanceRepository.getCaseById(caseId);
   if (!mCase) {
@@ -1781,27 +2008,26 @@ maintenanceRouter.get('/maintenance/:maintenanceCaseId/technician-matches', (req
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
-  const matches = technicianMatchingService.matchTechniciansForCase(caseId);
-
-  return res.json(matches);
-});
-
-maintenanceRouter.get(['/cases/:maintenanceCaseId/technician-matches', '/maintenance/cases/:maintenanceCaseId/match-technicians', '/cases/:maintenanceCaseId/match-technicians'], (req: Request, res: Response) => {
-  const caseId = getParam(req.params.maintenanceCaseId);
-  const mCase = maintenanceRepository.getCaseById(caseId);
-  if (!mCase) {
-    return res.status(404).json({ error: 'پرونده تعمیراتی یافت نشد.' });
+  // Only reporter (customer) or system admin can view technician matches for a case
+  if (!caseAccess.isReporter && !caseAccess.isAdmin) {
+    return res.status(403).json({ error: 'تنها ثبت‌کننده پرونده یا مدیر سامانه مجاز به مشاهده تطبیق متخصصان هستند.' });
   }
 
-  const caseAccess = checkCaseAccess(mCase, req.user);
-  if (!caseAccess.allowed) {
-    return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
+  // Terminal-state protection:
+  if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+    return res.status(400).json({ error: 'امکان تطبیق تکنسین برای پرونده‌های لغو شده یا بسته شده وجود ندارد.' });
   }
 
   const matches = technicianMatchingService.matchTechniciansForCase(caseId);
-
   return res.json(matches);
-});
+};
+
+maintenanceRouter.get('/maintenance/:maintenanceCaseId/technician-matches', handleCaseTechnicianMatching);
+maintenanceRouter.get([
+  '/cases/:maintenanceCaseId/technician-matches',
+  '/maintenance/cases/:maintenanceCaseId/match-technicians',
+  '/cases/:maintenanceCaseId/match-technicians'
+], handleCaseTechnicianMatching);
 
 
 /**
@@ -1831,7 +2057,11 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/cancel', '/cases/:maint
     });
     return res.json(updated);
   } catch (err: any) {
-    return res.status(400).json({ error: err.message || 'خطا در لغو پرونده' });
+    const isPersistenceFailure = err.message && (
+      err.message.includes('نیازمند بررسی مدیر سامانه است') ||
+      err.message.includes('خطا در ثبت تاریخچه لغو تخصیص')
+    );
+    return res.status(isPersistenceFailure ? 500 : 400).json({ error: err.message || 'خطا در لغو پرونده' });
   }
 });
 
@@ -1851,7 +2081,18 @@ maintenanceRouter.get(['/maintenance/:maintenanceCaseId/attachments', '/cases/:m
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
-  return res.json(mCase.attachments || []);
+  const rawAttachments = mCase.attachments || [];
+  if (caseAccess.isAdmin || caseAccess.isReporter) {
+    return res.json(rawAttachments);
+  }
+
+  const isTerminal = mCase.status === 'CANCELLED' || mCase.status === 'CLOSED';
+  const isAccepted = !isTerminal && hasTechnicianFormallyAccepted(mCase);
+  const safeAttachments = rawAttachments.map(att =>
+    sanitizeAttachmentForTechnician(att, { isAccepted, isTerminal })
+  );
+
+  return res.json(safeAttachments);
 });
 
 /**
@@ -1876,6 +2117,13 @@ maintenanceRouter.post(
     const caseAccess = checkCaseAccess(mCase, user);
     if (!caseAccess.allowed) {
       return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
+    }
+
+    // Terminal-state attachment upload protection:
+    if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+      return res.status(400).json({
+        error: 'امکان بارگذاری پیوست برای پرونده‌های لغو شده یا بسته شده وجود ندارد.'
+      });
     }
 
     const file = req.file;
@@ -2013,6 +2261,20 @@ maintenanceRouter.get(
       return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
     }
 
+    // Terminal-state and acceptance download protection for technicians:
+    if (!caseAccess.isAdmin && !caseAccess.isReporter) {
+      if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+        return res.status(403).json({
+          error: 'امکان دانلود پیوست برای تکنسین در پرونده‌های لغو شده یا بسته شده وجود ندارد.'
+        });
+      }
+      if (!hasTechnicianFormallyAccepted(mCase)) {
+        return res.status(403).json({
+          error: 'مشاهده و دانلود پیوست‌های پرونده نیازمند پذیرش رسمی پرونده توسط تکنسین است.'
+        });
+      }
+    }
+
     const attachment = (mCase.attachments || []).find(a => a.id === attachmentId);
     if (!attachment) {
       return res.status(404).json({ error: 'پیوست مورد نظر یافت نشد.' });
@@ -2090,6 +2352,13 @@ maintenanceRouter.delete(
       return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
     }
 
+    // Terminal-state deletion protection:
+    if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+      return res.status(400).json({
+        error: 'امکان حذف پیوست از پرونده‌های لغو شده یا بسته شده وجود ندارد.'
+      });
+    }
+
     const attachment = (mCase.attachments || []).find(a => a.id === attachmentId);
     if (!attachment) {
       return res.status(404).json({ error: 'پیوست مورد نظر یافت نشد.' });
@@ -2098,6 +2367,11 @@ maintenanceRouter.delete(
     // Cross-case verification
     if (attachment.maintenanceCaseId && attachment.maintenanceCaseId !== caseId) {
       return res.status(404).json({ error: 'پیوست متعلق به این پرونده نیست.' });
+    }
+
+    // Attachment ownership protection: only uploader or admin can delete an attachment
+    if (!caseAccess.isAdmin && attachment.uploadedBy && attachment.uploadedBy !== user.id) {
+      return res.status(403).json({ error: 'شما تنها مجاز به حذف پیوست‌های بارگذاری‌شده توسط خودتان هستید.' });
     }
 
     // For S3_COMPATIBLE objects: delete object FIRST
@@ -2141,6 +2415,13 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/attachments', '/cases/:
   const caseAccess = checkCaseAccess(mCase, req.user);
   if (!caseAccess.allowed) {
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
+  }
+
+  // Terminal-state metadata attachment creation protection:
+  if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+    return res.status(400).json({
+      error: 'امکان ثبت اطلاعات پیوست برای پرونده‌های لغو شده یا بسته شده وجود ندارد.'
+    });
   }
 
   const { name, type, url, mimeType, sizeBytes, status, extractedData } = req.body;
@@ -2193,6 +2474,19 @@ maintenanceRouter.get('/assets/:assetId/maintenance-history', (req: Request, res
   const asset = assetRepository.getAssetById(assetId);
   if (!asset) {
     return res.status(404).json({ error: 'دارایی انرژی یافت نشد.' });
+  }
+
+  const userId = req.user?.id;
+  const userRolesList: string[] = Array.isArray((req.user as any)?.roles)
+    ? (req.user as any).roles
+    : (req.user?.role ? [req.user.role] : []);
+  const roleUpper = req.user?.role?.toUpperCase() || (userRolesList[0] ? userRolesList[0].toUpperCase() : '');
+  const isAdmin = roleUpper === 'ADMIN' || roleUpper === 'SUPER_ADMIN' || req.user?.role === 'admin' || userRolesList.some(r => ['ADMIN', 'SUPER_ADMIN'].includes(r.toUpperCase()));
+  const isTech = ['technician', 'professional', 'expert'].includes(req.user?.role?.toLowerCase() || '') || userRolesList.some(r => ['technician', 'professional', 'expert'].includes(r.toLowerCase()));
+
+  // Technicians are strictly restricted from querying comprehensive asset maintenance histories
+  if (isTech && !isAdmin) {
+    return res.status(403).json({ error: 'شما به عنوان تکنسین تنها به پرونده‌های محول شده به خودتان دسترسی دارید و مجاز به مشاهده تاریخچه جامع دارایی نیستید.' });
   }
 
   const access = checkProjectAccess(asset.projectId, req.user?.id, req.user?.role);
@@ -2399,7 +2693,17 @@ maintenanceRouter.get([
     status: MaintenanceStatus;
     assignedTechnicianId?: string;
     assignedTechnicianName?: string;
-    anomalyType: 'ORPHANED_ASSIGNMENT' | 'EXECUTION_WITHOUT_ACCEPTANCE' | 'MISMATCHED_ACCEPTANCE_ATTRIBUTION' | 'UNASSIGNED_BUT_ACTIVE_STATUS' | 'STALE_TECHNICIAN_METADATA' | 'LEGACY_INCONCLUSIVE_HISTORY';
+    anomalyType:
+      | 'ORPHANED_ASSIGNMENT'
+      | 'EXECUTION_WITHOUT_ACCEPTANCE'
+      | 'MISMATCHED_ACCEPTANCE_ATTRIBUTION'
+      | 'UNASSIGNED_BUT_ACTIVE_STATUS'
+      | 'STALE_TECHNICIAN_METADATA'
+      | 'LEGACY_INCONCLUSIVE_HISTORY'
+      | 'CANCELLED_CASE_WITH_ACTIVE_ACCEPTANCE'
+      | 'CANCELLED_CASE_ACTIVE_ASSIGNMENT'
+      | 'CONTRADICTORY_TIMESTAMPS'
+      | 'SCHEDULED_WITHOUT_DATE';
     severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
     details: string;
     recommendedAction: string;
@@ -2426,6 +2730,132 @@ maintenanceRouter.get([
       });
     }
 
+    // 2. STALE_TECHNICIAN_METADATA on unassigned OPEN or DRAFT cases
+    if ((status === 'OPEN' || status === 'DRAFT') && assignedTechId) {
+      findings.push({
+        caseId,
+        caseNumber: mCase.caseNumber,
+        maintenanceCode: mCase.maintenanceCode,
+        title: mCase.title,
+        status,
+        assignedTechnicianId: assignedTechId,
+        assignedTechnicianName: mCase.assignedTechnicianName,
+        anomalyType: 'STALE_TECHNICIAN_METADATA',
+        severity: 'MEDIUM',
+        details: `پرونده در وضعیت باز (${status}) قرار دارد اما شناسه تکنسین منتسب است.`,
+        recommendedAction: 'پاکسازی اطلاعات انتساب تکنسین از پرونده باز یا انتقال رسمی به وضعیت ASSIGNED.'
+      });
+    }
+
+    // 3. CONTRADICTORY_TIMESTAMPS: startedAt set on case before execution
+    if ((status === 'OPEN' || status === 'DRAFT' || status === 'ASSIGNED') && mCase.startedAt) {
+      findings.push({
+        caseId,
+        caseNumber: mCase.caseNumber,
+        maintenanceCode: mCase.maintenanceCode,
+        title: mCase.title,
+        status,
+        assignedTechnicianId: assignedTechId,
+        assignedTechnicianName: mCase.assignedTechnicianName,
+        anomalyType: 'CONTRADICTORY_TIMESTAMPS',
+        severity: 'MEDIUM',
+        details: `پرونده هنوز به مرحله اجرا نرسیده (${status}) است اما دارای زمان شروع به کار (startedAt) است.`,
+        recommendedAction: 'پاکسازی فیلد زمان شروع تا زمان آغاز رسمی عملیات.'
+      });
+    }
+
+    // Contradictory terminal verification on CANCELLED case
+    if (status === 'CANCELLED' && mCase.verificationPassed) {
+      findings.push({
+        caseId,
+        caseNumber: mCase.caseNumber,
+        maintenanceCode: mCase.maintenanceCode,
+        title: mCase.title,
+        status,
+        assignedTechnicianId: assignedTechId,
+        assignedTechnicianName: mCase.assignedTechnicianName,
+        anomalyType: 'CONTRADICTORY_TIMESTAMPS',
+        severity: 'MEDIUM',
+        details: 'پرونده لغو شده دارای تاییدیه فنی است که مغایر با وضعیت لغو شده می‌باشد.',
+        recommendedAction: 'بررسی وضعیت پرونده و اصلاح اطلاعات متناقض.'
+      });
+    }
+
+    // 4. SCHEDULED_WITHOUT_DATE: scheduled case lacking schedule date/time
+    if (status === 'SCHEDULED' && !mCase.scheduledAt && !mCase.scheduledDate) {
+      findings.push({
+        caseId,
+        caseNumber: mCase.caseNumber,
+        maintenanceCode: mCase.maintenanceCode,
+        title: mCase.title,
+        status,
+        assignedTechnicianId: assignedTechId,
+        assignedTechnicianName: mCase.assignedTechnicianName,
+        anomalyType: 'SCHEDULED_WITHOUT_DATE',
+        severity: 'MEDIUM',
+        details: 'پرونده در وضعیت زمان‌بندی‌شده (SCHEDULED) قرار دارد اما فاقد تاریخ زمان‌بندی است.',
+        recommendedAction: 'ثبت تاریخ زمان‌بندی معتبر برای پرونده.'
+      });
+    }
+
+    // 5. Inconsistent acceptance or assignment on CANCELLED case
+    if (status === 'CANCELLED' && assignedTechId) {
+      if (histories.length > 0) {
+        let latestAssignedIdx = -1;
+        for (let i = histories.length - 1; i >= 0; i--) {
+          if (histories[i].status === 'ASSIGNED') {
+            latestAssignedIdx = i;
+            break;
+          }
+        }
+
+        let hasAccepted = false;
+        let hasCancelledAfterAssignment = false;
+
+        const checkSlice = latestAssignedIdx >= 0 ? histories.slice(latestAssignedIdx) : histories;
+        for (const h of checkSlice) {
+          if (h.status === 'ACCEPTED' && areTechnicianIdentitiesEquivalent(h.technicianId, assignedTechId)) {
+            hasAccepted = true;
+          }
+          if (h.status === 'CANCELLED' && areTechnicianIdentitiesEquivalent(h.technicianId, assignedTechId)) {
+            hasCancelledAfterAssignment = true;
+          }
+        }
+
+        if (!hasCancelledAfterAssignment) {
+          if (hasAccepted) {
+            findings.push({
+              caseId,
+              caseNumber: mCase.caseNumber,
+              maintenanceCode: mCase.maintenanceCode,
+              title: mCase.title,
+              status,
+              assignedTechnicianId: assignedTechId,
+              assignedTechnicianName: mCase.assignedTechnicianName,
+              anomalyType: 'CANCELLED_CASE_WITH_ACTIVE_ACCEPTANCE',
+              severity: 'HIGH',
+              details: 'پرونده لغو شده است اما در تاریخچه تخصیص، خاتمه یا لغو انتساب پذیرش تکنسین ثبت نشده است.',
+              recommendedAction: 'ثبت سابقه لغو تخصیص یا تطبیق تاریخچه پرونده لغو شده.'
+            });
+          } else {
+            findings.push({
+              caseId,
+              caseNumber: mCase.caseNumber,
+              maintenanceCode: mCase.maintenanceCode,
+              title: mCase.title,
+              status,
+              assignedTechnicianId: assignedTechId,
+              assignedTechnicianName: mCase.assignedTechnicianName,
+              anomalyType: 'CANCELLED_CASE_ACTIVE_ASSIGNMENT',
+              severity: 'HIGH',
+              details: 'پرونده لغو شده است اما آخرین وضعیت تخصیص تکنسین در تاریخچه به لغو شده (CANCELLED) تغییر نیافته است.',
+              recommendedAction: 'ثبت سابقه لغو تخصیص برای پرونده لغو شده.'
+            });
+          }
+        }
+      }
+    }
+
     // If an assigned technician exists
     if (assignedTechId) {
       let latestAssignedIdx = -1;
@@ -2439,20 +2869,22 @@ maintenanceRouter.get([
       // Check ORPHANED_ASSIGNMENT
       if (latestAssignedIdx === -1) {
         if (histories.length === 0) {
-          findings.push({
-            caseId,
-            caseNumber: mCase.caseNumber,
-            maintenanceCode: mCase.maintenanceCode,
-            title: mCase.title,
-            status,
-            assignedTechnicianId: assignedTechId,
-            assignedTechnicianName: mCase.assignedTechnicianName,
-            anomalyType: 'ORPHANED_ASSIGNMENT',
-            severity: 'HIGH',
-            details: 'تکنسین به پرونده منتسب شده است اما هیچ سابقه تخصیصی در تاریخچه ثبت نشده است.',
-            recommendedAction: 'ثبت سابقه تخصیص معتبر یا تخصیص مجدد پرونده از طریق پنل مدیریت.'
-          });
-        } else if (!hasCurrentCycleAcceptance(mCase, histories) && status !== 'CLOSED' && status !== 'CANCELLED') {
+          if (status !== 'CLOSED' && status !== 'CANCELLED' && status !== 'COMPLETED' && status !== 'VERIFIED') {
+            findings.push({
+              caseId,
+              caseNumber: mCase.caseNumber,
+              maintenanceCode: mCase.maintenanceCode,
+              title: mCase.title,
+              status,
+              assignedTechnicianId: assignedTechId,
+              assignedTechnicianName: mCase.assignedTechnicianName,
+              anomalyType: 'ORPHANED_ASSIGNMENT',
+              severity: 'HIGH',
+              details: 'تکنسین به پرونده منتسب شده است اما هیچ سابقه تخصیصی در تاریخچه ثبت نشده است.',
+              recommendedAction: 'ثبت سابقه تخصیص معتبر یا تخصیص مجدد پرونده از طریق پنل مدیریت.'
+            });
+          }
+        } else if (status !== 'CLOSED' && status !== 'CANCELLED' && !hasCurrentCycleAcceptance(mCase, histories)) {
           findings.push({
             caseId,
             caseNumber: mCase.caseNumber,
@@ -2510,7 +2942,7 @@ maintenanceRouter.get([
       }
     }
 
-    // 2. EXECUTION_WITHOUT_ACCEPTANCE
+    // 6. EXECUTION_WITHOUT_ACCEPTANCE
     if (status === 'IN_PROGRESS') {
       const hasAcceptance = hasCurrentCycleAcceptance(mCase, histories);
       if (!hasAcceptance) {

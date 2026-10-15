@@ -2453,11 +2453,16 @@ export const db: any = {
     if (!d.maintenanceCases) d.maintenanceCases = [];
     const idx = d.maintenanceCases.findIndex((c: any) => c.id === id);
     if (idx > -1) {
-      d.maintenanceCases[idx] = {
-        ...d.maintenanceCases[idx],
-        ...updates,
-        updatedAt: new Date().toISOString()
-      };
+      const existing = { ...d.maintenanceCases[idx] };
+      for (const key of Object.keys(updates)) {
+        if ((updates as any)[key] === undefined) {
+          delete (existing as any)[key];
+        } else {
+          (existing as any)[key] = (updates as any)[key];
+        }
+      }
+      existing.updatedAt = new Date().toISOString();
+      d.maintenanceCases[idx] = existing;
       writeDB(d);
       return d.maintenanceCases[idx];
     }
