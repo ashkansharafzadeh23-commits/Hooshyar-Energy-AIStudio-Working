@@ -1785,6 +1785,182 @@ async function runTestSuite() {
     assert(alertNoCaseData.maintenanceCase === null, 'Test 18.7.8: maintenanceCase is null when alert has no linked case');
 
     // -------------------------------------------------------------------------
+    // Tests 18.7.9 - 18.7.14: Project Owner Customer-PII Privacy Reconciliation
+    // -------------------------------------------------------------------------
+    // Setup dedicated project owned by ownerOnlyUser, but case reported by thirdPartyReporter
+    const ownerOnlyUser = userRepository.createUser({
+      name: 'مالک غیر گزارش‌دهنده پروژه',
+      email: 'owner.privacy@example.com',
+      role: 'customer'
+    });
+    const ownerOnlyToken = jwtService.sign({ userId: ownerOnlyUser.id, role: 'customer' });
+
+    const thirdPartyReporter = userRepository.createUser({
+      name: 'مشتری متقاضی گزارش‌دهنده',
+      email: 'thirdparty.reporter@example.com',
+      role: 'customer'
+    });
+    const thirdPartyReporterToken = jwtService.sign({ userId: thirdPartyReporter.id, role: 'customer' });
+
+    const projOwnerPrivacy = projectRepository.create({
+      projectCode: 'PRJ-OWNER-PRIV-001',
+      title: 'پروژه تست حریم خصوصی مالک پروژه',
+      ownerId: ownerOnlyUser.id,
+      projectType: 'SOLAR',
+      status: 'OPERATIONAL',
+      location: { country: 'ایران', province: 'تهران', city: 'تهران' }
+    });
+
+    projectRepository.addMember({
+      projectId: projOwnerPrivacy.id,
+      userId: thirdPartyReporter.id,
+      role: 'MEMBER' as any,
+      status: 'ACTIVE' as any
+    });
+
+    const assetOwnerPrivacy = assetRepository.createAsset({
+      name: 'پنل تست حریم خصوصی',
+      assetCode: 'AST-PRIV-001',
+      assetType: 'SOLAR_PV',
+      projectId: projOwnerPrivacy.id,
+      installedCapacityKw: 50
+    });
+
+    const caseWithPrivatePII = maintenanceRepository.createCase({
+      title: 'تعمیر اضطراری ماژول برق',
+      description: 'پرونده با اطلاعات حساس هویتی و اسناد مشترک',
+      projectId: projOwnerPrivacy.id,
+      assetId: assetOwnerPrivacy.id,
+      alertIds: [],
+      category: 'INVERTER',
+      priority: 'HIGH',
+      status: 'ASSIGNED',
+      reportedBy: thirdPartyReporter.id,
+      contactName: 'مشتری متقاضی گزارش‌دهنده',
+      contactPhone: '09129998877',
+      assignedTechnicianId: techProA.id,
+      assignedTechnicianName: techProA.fullName,
+      assignedTechnicianPhone: techProA.phone
+    });
+
+    const piiAttachment: any = {
+      id: 'att-pii-secret-doc-1',
+      maintenanceCaseId: caseWithPrivatePII.id,
+      name: 'private_customer_contract.pdf',
+      type: 'DOCUMENT',
+      url: 'https://example.com/private/contract.pdf',
+      storageKey: 's3://internal-secure-bucket/secret/contract.pdf',
+      data: 'rawSecretBufferData12345',
+      uploadedBy: thirdPartyReporter.id,
+      uploadedAt: new Date().toISOString()
+    };
+
+    maintenanceRepository.updateCase(caseWithPrivatePII.id, {
+      customerPhone: '09129998877',
+      rawPhone: '09129998877',
+      customerName: 'مشتری متقاضی گزارش‌دهنده',
+      attachments: [piiAttachment],
+      billDoc: {
+        name: 'utility_bill_jan.pdf',
+        url: 'https://example.com/private_bills/bill123.pdf',
+        storageKey: 's3://internal-billing/bills/bill123.pdf',
+        contactName: 'مشتری متقاضی گزارش‌دهنده',
+        contactPhone: '09129998877',
+        customerPhone: '09129998877',
+        phone: '09129998877',
+        data: 'billRawDataBuffer',
+        extractedData: {
+          customerName: 'مشتری متقاضی گزارش‌دهنده',
+          nationalId: '0012345678',
+          phone: '09129998877',
+          customerPhone: '09129998877',
+          contactPhone: '09129998877',
+          address: 'تهران، خیابان آزادی، پلاک ۱۰',
+          rawPhone: '09129998877'
+        }
+      } as any
+    } as any);
+
+    const alertOwnerPrivacy = maintenanceRepository.createAlert({
+      projectId: projOwnerPrivacy.id,
+      assetId: assetOwnerPrivacy.id,
+      severity: 'CRITICAL',
+      status: 'OPEN',
+      title: 'هشدار نقص فنی ترانسفورماتور',
+      description: 'نقص فنی نیازمند ارجاع فوری',
+      maintenanceCaseId: caseWithPrivatePII.id
+    });
+
+    // Test A9: Project Owner (NOT reporter and NOT admin) gets privacy-sanitized case in alert detail
+    const ownerAlertRes = await fetch(`${baseUrl}/alerts/${alertOwnerPrivacy.id}`, {
+      headers: { 'Authorization': `Bearer ${ownerOnlyToken}` }
+    });
+    assert(ownerAlertRes.status === 200, 'Test 18.7.9: Project Owner accesses alert detail with HTTP 200');
+    const ownerAlertData = await ownerAlertRes.json();
+    assert(ownerAlertData.maintenanceCase !== null, 'Test 18.7.9: Project Owner receives linked maintenanceCase');
+    assert(ownerAlertData.maintenanceCase.id === caseWithPrivatePII.id, 'Test 18.7.9: Linked case ID matches');
+    assert(ownerAlertData.maintenanceCase.contactPhone === undefined, 'Test 18.7.9: Customer contactPhone strictly scrubbed for non-reporter Project Owner');
+    assert(ownerAlertData.maintenanceCase.contactName === undefined, 'Test 18.7.9: Customer contactName strictly scrubbed for non-reporter Project Owner');
+    assert(ownerAlertData.maintenanceCase.customerPhone === undefined, 'Test 18.7.9: Customer customerPhone strictly scrubbed for non-reporter Project Owner');
+    assert(ownerAlertData.maintenanceCase.rawPhone === undefined, 'Test 18.7.9: Customer rawPhone strictly scrubbed for non-reporter Project Owner');
+    assert(ownerAlertData.maintenanceCase.billDoc?.url === undefined, 'Test 18.7.9: billDoc url scrubbed for non-reporter Project Owner');
+    assert(ownerAlertData.maintenanceCase.billDoc?.storageKey === undefined, 'Test 18.7.9: billDoc storageKey scrubbed for non-reporter Project Owner');
+    assert(ownerAlertData.maintenanceCase.billDoc?.data === undefined, 'Test 18.7.9: billDoc raw data buffer scrubbed for non-reporter Project Owner');
+    assert(ownerAlertData.maintenanceCase.billDoc?.extractedData?.nationalId === undefined, 'Test 18.7.9: billDoc nationalId scrubbed for non-reporter Project Owner');
+    assert(ownerAlertData.maintenanceCase.billDoc?.extractedData?.customerPhone === undefined, 'Test 18.7.9: billDoc extracted phone scrubbed for non-reporter Project Owner');
+    assert(ownerAlertData.maintenanceCase.billDoc?.extractedData?.address === undefined, 'Test 18.7.9: billDoc address scrubbed for non-reporter Project Owner');
+    assert(!ownerAlertData.maintenanceCase.attachments?.some((a: any) => a.storageKey || a.data || a.url), 'Test 18.7.9: Attachment storageKey, data, and URL scrubbed for non-reporter Project Owner');
+    const ownerAlertStr = JSON.stringify(ownerAlertData);
+    assert(!ownerAlertStr.includes('09129998877'), 'Test 18.7.9: Alert detail reveals 0 bytes customer phone to Project Owner');
+    assert(!ownerAlertStr.includes('0012345678'), 'Test 18.7.9: Alert detail reveals 0 bytes customer nationalId to Project Owner');
+    assert(!ownerAlertStr.includes('s3://internal'), 'Test 18.7.9: Alert detail reveals 0 internal storage keys to Project Owner');
+    assert(!ownerAlertStr.includes('خیابان آزادی'), 'Test 18.7.9: Alert detail reveals 0 customer address info to Project Owner');
+
+    // Test A10: Legitimate Case Reporter receives full unsanitized case in alert detail
+    const reporterAlertRes2 = await fetch(`${baseUrl}/alerts/${alertOwnerPrivacy.id}`, {
+      headers: { 'Authorization': `Bearer ${thirdPartyReporterToken}` }
+    });
+    assert(reporterAlertRes2.status === 200, 'Test 18.7.10: Case reporter accesses alert detail with HTTP 200');
+    const reporterAlertData2 = await reporterAlertRes2.json();
+    assert(reporterAlertData2.maintenanceCase !== null, 'Test 18.7.10: Reporter receives linked maintenanceCase');
+    assert(reporterAlertData2.maintenanceCase.contactPhone === '09129998877', 'Test 18.7.10: Reporter retains legitimate access to customer contactPhone');
+    assert(reporterAlertData2.maintenanceCase.billDoc?.extractedData?.nationalId === '0012345678', 'Test 18.7.10: Reporter retains legitimate access to billDoc nationalId');
+    assert(reporterAlertData2.maintenanceCase.attachments?.[0]?.storageKey === 's3://internal-secure-bucket/secret/contract.pdf', 'Test 18.7.10: Reporter retains legitimate access to attachment storageKey');
+
+    // Test A11: System Administrator receives full unsanitized case in alert detail
+    const adminAlertRes2 = await fetch(`${baseUrl}/alerts/${alertOwnerPrivacy.id}`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert(adminAlertRes2.status === 200, 'Test 18.7.11: Administrator accesses alert detail with HTTP 200');
+    const adminAlertData2 = await adminAlertRes2.json();
+    assert(adminAlertData2.maintenanceCase !== null, 'Test 18.7.11: Administrator receives linked maintenanceCase');
+    assert(adminAlertData2.maintenanceCase.contactPhone === '09129998877', 'Test 18.7.11: Administrator retains legitimate access to customer contactPhone');
+    assert(adminAlertData2.maintenanceCase.billDoc?.extractedData?.nationalId === '0012345678', 'Test 18.7.11: Administrator retains legitimate access to billDoc nationalId');
+    assert(adminAlertData2.maintenanceCase.attachments?.[0]?.storageKey === 's3://internal-secure-bucket/secret/contract.pdf', 'Test 18.7.11: Administrator retains legitimate access to attachment storageKey');
+
+    // Test A12: Direct GET /cases/:id verifies matching privacy projection for non-reporter Project Owner
+    const ownerCaseDetailRes = await fetch(`${baseUrl}/cases/${caseWithPrivatePII.id}`, {
+      headers: { 'Authorization': `Bearer ${ownerOnlyToken}` }
+    });
+    assert(ownerCaseDetailRes.status === 200, 'Test 18.7.12: Project Owner accesses direct GET /cases/:id with HTTP 200');
+    const ownerCaseDetailData = await ownerCaseDetailRes.json();
+    assert(ownerCaseDetailData.contactPhone === undefined, 'Test 18.7.12: Direct GET /cases/:id strictly scrubs contactPhone for non-reporter Project Owner');
+    assert(ownerCaseDetailData.contactName === undefined, 'Test 18.7.12: Direct GET /cases/:id strictly scrubs contactName for non-reporter Project Owner');
+    assert(ownerCaseDetailData.customerPhone === undefined, 'Test 18.7.12: Direct GET /cases/:id strictly scrubs customerPhone for non-reporter Project Owner');
+    assert(ownerCaseDetailData.billDoc?.extractedData?.nationalId === undefined, 'Test 18.7.12: Direct GET /cases/:id strictly scrubs billDoc nationalId for non-reporter Project Owner');
+    assert(!ownerCaseDetailData.attachments?.some((a: any) => a.storageKey || a.data || a.url), 'Test 18.7.12: Direct GET /cases/:id strictly scrubs attachment storageKey and url for non-reporter Project Owner');
+
+    // Test A13: Unauthenticated request to alert detail rejected with HTTP 401
+    const unauthAlertRes = await fetch(`${baseUrl}/alerts/${alertOwnerPrivacy.id}`);
+    assert(unauthAlertRes.status === 401, 'Test 18.7.13: Unauthenticated request to alert detail rejected with HTTP 401');
+
+    // Test A14: Unauthorized stranger request to alert detail rejected with HTTP 403
+    const unrelatedAlertRes = await fetch(`${baseUrl}/alerts/${alertOwnerPrivacy.id}`, {
+      headers: { 'Authorization': `Bearer ${unrelatedCustToken}` }
+    });
+    assert(unrelatedAlertRes.status === 403, 'Test 18.7.14: Unauthorized stranger request to alert detail rejected with HTTP 403');
+
+    // -------------------------------------------------------------------------
     // Subtest 18.8: Defect B — Scheduling Permission Escalation
     // -------------------------------------------------------------------------
     console.log('\n--- SUBTEST 18.8: DEFECT B — SCHEDULING PERMISSION ESCALATION ---');

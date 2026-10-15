@@ -304,13 +304,17 @@ maintenanceRouter.get('/alerts/:alertId', (req: Request, res: Response) => {
     if (rawCase) {
       const caseAccess = checkCaseAccess(rawCase, req.user);
       if (caseAccess.allowed) {
-        const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin || access.isOwner;
+        const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
         if (isReporterOrAdmin) {
           authorizedCase = rawCase;
         } else if (caseAccess.isAssignedTech) {
           const isTerminal = rawCase.status === 'CANCELLED' || rawCase.status === 'CLOSED';
           const isAccepted = !isTerminal && hasTechnicianFormallyAccepted(rawCase);
           authorizedCase = sanitizeCaseForTechnician(rawCase, { isAccepted });
+        } else if (access.isOwner) {
+          // Project owner who is neither reporter nor administrator:
+          // Consistent with direct case-detail privacy policy, receives privacy-sanitized case omitting customer PII
+          authorizedCase = sanitizeCaseForTechnician(rawCase, { isAccepted: false });
         } else {
           // Project viewer/member with alert access but no case-specific rights
           authorizedCase = null;
@@ -1271,7 +1275,7 @@ maintenanceRouter.get(['/maintenance/:maintenanceCaseId', '/cases/:maintenanceCa
 
   const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
   const isTerminal = mCase.status === 'CANCELLED' || mCase.status === 'CLOSED';
-  const isAccepted = !isTerminal && hasTechnicianFormallyAccepted(mCase);
+  const isAccepted = !isTerminal && caseAccess.isAssignedTech && hasTechnicianFormallyAccepted(mCase);
 
   const baseCaseData = isReporterOrAdmin
     ? mCase
