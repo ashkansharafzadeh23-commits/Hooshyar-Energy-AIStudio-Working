@@ -13,80 +13,92 @@ export type DataProvenanceType =
   | 'AI' 
   | 'MISSING';
 
-interface DataTruthBadgeProps {
+export interface DataTruthBadgeProps {
   type?: DataProvenanceType;
   provenance?: DataProvenanceType | string;
   customLabel?: string;
   className?: string;
   size?: 'sm' | 'md';
+  variant?: 'badge' | 'inline';
 }
 
-const BADGE_CONFIG: Record<DataProvenanceType, { label: string; bg: string; text: string; border: string }> = {
+const BADGE_CONFIG: Record<DataProvenanceType, { label: string; bg: string; text: string; border: string; dot: string }> = {
   REAL: {
     label: 'داده واقعی',
     bg: 'bg-emerald-50 dark:bg-emerald-950/40',
     text: 'text-emerald-700 dark:text-emerald-300',
-    border: 'border-emerald-200 dark:border-emerald-800'
+    border: 'border-emerald-200 dark:border-emerald-800',
+    dot: 'bg-emerald-500'
   },
   VERIFIED_SOURCE: {
     label: 'منبع داده تأییدشده',
     bg: 'bg-emerald-50 dark:bg-emerald-950/40',
     text: 'text-emerald-700 dark:text-emerald-300',
-    border: 'border-emerald-200 dark:border-emerald-800'
+    border: 'border-emerald-200 dark:border-emerald-800',
+    dot: 'bg-emerald-500'
   },
   REFERENCE_ESTIMATE: {
     label: 'برآورد مرجع',
     bg: 'bg-amber-50 dark:bg-amber-950/40',
     text: 'text-amber-700 dark:text-amber-300',
-    border: 'border-amber-200 dark:border-amber-800'
+    border: 'border-amber-200 dark:border-amber-800',
+    dot: 'bg-amber-500'
   },
   CALCULATED: {
     label: 'محاسباتی مهندسی',
     bg: 'bg-blue-50 dark:bg-blue-950/40',
     text: 'text-blue-700 dark:text-blue-300',
-    border: 'border-blue-200 dark:border-blue-800'
+    border: 'border-blue-200 dark:border-blue-800',
+    dot: 'bg-blue-500'
   },
   USER_PROVIDED: {
     label: 'اظهار کاربر',
     bg: 'bg-slate-100 dark:bg-slate-800/60',
     text: 'text-slate-700 dark:text-slate-300',
-    border: 'border-slate-200 dark:border-slate-700'
+    border: 'border-slate-200 dark:border-slate-700',
+    dot: 'bg-slate-400'
   },
   CONTRACTOR_SUBMITTED: {
     label: 'ثبت‌شده توسط پیمانکار',
     bg: 'bg-sky-50 dark:bg-sky-950/40',
     text: 'text-sky-700 dark:text-sky-300',
-    border: 'border-sky-200 dark:border-sky-800'
+    border: 'border-sky-200 dark:border-sky-800',
+    dot: 'bg-sky-500'
   },
   VENDOR_SUBMITTED: {
     label: 'ثبت‌شده توسط فروشنده',
     bg: 'bg-purple-50 dark:bg-purple-950/40',
     text: 'text-purple-700 dark:text-purple-300',
-    border: 'border-purple-200 dark:border-purple-800'
+    border: 'border-purple-200 dark:border-purple-800',
+    dot: 'bg-purple-500'
   },
   UNVERIFIED: {
     label: 'تأیید نشده',
     bg: 'bg-amber-50 dark:bg-amber-950/40',
     text: 'text-amber-700 dark:text-amber-300',
-    border: 'border-amber-200 dark:border-amber-800'
+    border: 'border-amber-200 dark:border-amber-800',
+    dot: 'bg-amber-500'
   },
   MARKET: {
     label: 'شاخص بازار',
     bg: 'bg-amber-50 dark:bg-amber-950/40',
     text: 'text-amber-700 dark:text-amber-300',
-    border: 'border-amber-200 dark:border-amber-800'
+    border: 'border-amber-200 dark:border-amber-800',
+    dot: 'bg-amber-500'
   },
   AI: {
     label: 'تحلیل هوش مصنوعی',
     bg: 'bg-indigo-50 dark:bg-indigo-950/40',
     text: 'text-indigo-700 dark:text-indigo-300',
-    border: 'border-indigo-200 dark:border-indigo-800'
+    border: 'border-indigo-200 dark:border-indigo-800',
+    dot: 'bg-indigo-500'
   },
   MISSING: {
-    label: 'داده در دسترس نیست',
+    label: 'عدم اتصال / ثبت نشده',
     bg: 'bg-rose-50 dark:bg-rose-950/40',
     text: 'text-rose-700 dark:text-rose-300',
-    border: 'border-rose-200 dark:border-rose-800'
+    border: 'border-rose-200 dark:border-rose-800',
+    dot: 'bg-rose-500'
   }
 };
 
@@ -95,11 +107,25 @@ export const DataTruthBadge: React.FC<DataTruthBadgeProps> = ({
   provenance,
   customLabel,
   className = '',
-  size = 'sm' 
+  size = 'sm',
+  variant = 'badge'
 }) => {
   const resolvedType = (type || (provenance as DataProvenanceType) || 'USER_PROVIDED') as DataProvenanceType;
   const config = BADGE_CONFIG[resolvedType] || BADGE_CONFIG.USER_PROVIDED;
   const displayText = customLabel || config.label;
+  
+  if (variant === 'inline') {
+    return (
+      <span 
+        className={`inline-flex items-center gap-1.5 text-xs font-medium ${config.text} ${className}`}
+        title={`خاستگاه داده: ${displayText}`}
+      >
+        <span className={`w-1.5 h-1.5 rounded-full ${config.dot}`} />
+        <span>{displayText}</span>
+      </span>
+    );
+  }
+
   const sizeClasses = size === 'sm' 
     ? 'text-[11px] px-2 py-0.5' 
     : 'text-xs px-2.5 py-1';

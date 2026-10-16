@@ -5,7 +5,7 @@
 @layer base {
   :root {
     /* ==========================================================================
-       HOOSHYAR ENERGY — DESIGN SYSTEM FOUNDATION (STAGE 13.1)
+       HOOSHYAR ENERGY — DESIGN SYSTEM FOUNDATION (STAGE D.1)
        ========================================================================== */
 
     /* --- BRAND / ENERGY BLUE (Primary Platform Identity) --- */
@@ -21,6 +21,18 @@
     --he-brand-hover: #0369A1;
     --he-brand-active: #075985;
 
+    /* --- FINTECH BLUE (Financial Infrastructure, Banking Facility, PPA) --- */
+    --he-fintech-900: #1E3A8A;
+    --he-fintech-800: #1E40AF;
+    --he-fintech-700: #1D4ED8;
+    --he-fintech-600: #2563EB;
+    --he-fintech-500: #3B82F6;
+    --he-fintech-soft: #EFF6FF;
+    --he-fintech-border: #BFDBFE;
+
+    --he-fintech: #2563EB;
+    --he-fintech-hover: #1D4ED8;
+
     /* --- STRUCTURAL DARK / ENTERPRISE FRAMING --- */
     --he-dark-950: #020617;
     --he-dark-900: #0F172A;
@@ -29,12 +41,13 @@
     --he-dark-600: #475569;
     --he-dark-500: #64748B;
 
-    /* --- ENERGY GREEN (Generation, Operational Health, Environmental Yield) --- */
+    /* --- ENERGY GREEN (Clean Emerald: Generation, Operational Health) --- */
     --he-energy-800: #065F46;
     --he-energy-700: #047857;
     --he-energy-600: #059669;
     --he-energy-500: #10B981;
     --he-energy-soft: #ECFDF5;
+    --he-energy-border: #A7F3D0;
 
     --he-energy: #059669;
     --he-energy-hover: #047857;
@@ -45,11 +58,12 @@
     --he-solar-500: #F59E0B;
     --he-solar-400: #FBBF24;
     --he-solar-soft: #FEF3C7;
+    --he-solar-border: #FDE68A;
 
     --he-solar: #F59E0B;
     --he-solar-hover: #D97706;
 
-    /* --- LIGHT SURFACE SYSTEM --- */
+    /* --- LIGHT SURFACE SYSTEM (Light-First Enterprise Standard) --- */
     --he-bg-canvas: #F8FAFC;
     --he-bg-surface: #FFFFFF;
     --he-bg-subtle: #F1F5F9;
@@ -81,16 +95,19 @@
     --he-focus-ring-offset: #FFFFFF;
 
     /* --- RADIUS SYSTEM --- */
+    --he-radius-xs: 6px;
     --he-radius-sm: 10px;
     --he-radius-md: 12px;
     --he-radius-lg: 16px;
     --he-radius-xl: 20px;
+    --he-radius-full: 9999px;
 
     /* --- SHADOW SYSTEM (Restrained & Architectural) --- */
     --he-shadow-none: none;
     --he-shadow-subtle: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
     --he-shadow-card: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.03);
     --he-shadow-floating: 0 10px 25px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.03);
+    --he-shadow-modal: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.05);
 
     /* --- LEGACY TOKENS (PRESERVED FOR BACKWARD COMPATIBILITY) --- */
     --color-base-bg: var(--he-bg-canvas);
@@ -157,7 +174,7 @@
   body {
     background-color: var(--he-bg-canvas);
     color: var(--he-text-primary);
-    font-family: 'Vazirmatn', sans-serif;
+    font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     direction: rtl;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -168,14 +185,14 @@
    HOOSHYAR ENERGY — REUSABLE UI PRIMITIVES
    ========================================================================== */
 
-/* --- BUTTON SYSTEM --- */
+/* --- BUTTON SYSTEM (Enforces 2:1 Horizontal:Vertical Padding and 44px Touch Targets) --- */
 .btn-he-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
   min-height: 44px;
-  padding: 0.625rem 1.25rem;
+  padding: 0.625rem 1.25rem; /* 10px vertical : 20px horizontal (2:1 ratio) */
   border-radius: var(--he-radius-md);
   font-weight: 700;
   font-size: 0.875rem;
@@ -185,6 +202,7 @@
   transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: var(--he-shadow-subtle);
   cursor: pointer;
+  user-select: none;
 }
 .btn-he-primary:hover {
   background-color: var(--he-brand-hover);
@@ -219,6 +237,7 @@
   transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);
   cursor: pointer;
+  user-select: none;
 }
 .btn-he-solar:hover {
   background-color: var(--he-solar-hover);
@@ -252,6 +271,7 @@
   border: 1px solid transparent;
   transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
+  user-select: none;
 }
 .btn-he-secondary:hover {
   background-color: var(--he-border);
@@ -284,6 +304,7 @@
   border: 1px solid var(--he-border-strong);
   transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
+  user-select: none;
 }
 .btn-he-outline:hover {
   background-color: var(--he-bg-subtle);
@@ -317,6 +338,7 @@
   border: 1px solid transparent;
   transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
+  user-select: none;
 }
 .btn-he-ghost:hover {
   color: var(--he-text-primary);
@@ -343,6 +365,7 @@
   border: 1px solid rgba(220, 38, 38, 0.3);
   transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
+  user-select: none;
 }
 .btn-he-danger:hover {
   background-color: rgba(220, 38, 38, 0.2);
@@ -366,6 +389,7 @@
   border: 1px solid transparent;
   transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
+  user-select: none;
 }
 .btn-he-icon:hover {
   color: var(--he-text-primary);
@@ -418,6 +442,19 @@
   padding: 1rem;
 }
 
+.card-he-glass {
+  background-color: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: var(--he-radius-lg);
+  box-shadow: var(--he-shadow-card);
+}
+.dark .card-he-glass {
+  background-color: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(51, 65, 85, 0.6);
+}
+
 /* --- FORM SYSTEM --- */
 .input-he {
   width: 100%;
@@ -444,6 +481,45 @@
   opacity: 0.6;
   background-color: var(--he-bg-subtle);
   cursor: not-allowed;
+}
+
+.select-he {
+  width: 100%;
+  min-height: 44px;
+  height: 44px;
+  padding: 0.625rem 0.875rem;
+  background-color: var(--he-bg-surface);
+  border: 1px solid var(--he-border-strong);
+  border-radius: var(--he-radius-md);
+  font-size: 0.875rem;
+  color: var(--he-text-primary);
+  transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+  cursor: pointer;
+}
+.select-he:focus {
+  outline: none;
+  border-color: var(--he-brand);
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+
+.textarea-he {
+  width: 100%;
+  min-height: 88px;
+  padding: 0.75rem 0.875rem;
+  background-color: var(--he-bg-surface);
+  border: 1px solid var(--he-border-strong);
+  border-radius: var(--he-radius-md);
+  font-size: 0.875rem;
+  color: var(--he-text-primary);
+  transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+  resize: vertical;
+}
+.textarea-he:focus {
+  outline: none;
+  border-color: var(--he-brand);
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
 }
 
 .label-he {
@@ -475,6 +551,21 @@
 .he-num {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+}
+
+/* --- ZERO-PILL METADATA DISCIPLINE --- */
+.he-meta-item {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.8125rem;
+  color: var(--he-text-secondary);
+  font-weight: 500;
+}
+.he-meta-separator {
+  display: inline-block;
+  margin: 0 0.5rem;
+  color: var(--he-border-strong);
+  user-select: none;
 }
 
 /* --- TYPOGRAPHY UTILITIES --- */
@@ -524,15 +615,19 @@
 
 /* Glassmorphism utility */
 .glass-effect {
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.75);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.5);
 }
+.dark .glass-effect {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+}
 
 /* Refined shadow utility */
 .shadow-premium {
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 0 3px rgba(0,0,0,0.02);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 0 3px rgba(0, 0, 0, 0.02);
 }
 
 @custom-variant dark (&:is(.dark *));

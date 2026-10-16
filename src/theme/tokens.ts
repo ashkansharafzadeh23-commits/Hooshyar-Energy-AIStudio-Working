@@ -2,11 +2,12 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  * 
- * Hooshyar Energy Design System Tokens — Stage 13.1 Foundation
+ * Hooshyar Energy Design System Tokens — Stage D.1 Premium Foundation
  * 
  * Provides centralized, typed design tokens for the Hooshyar Energy platform.
- * Supports light & dark modes, Persian RTL ergonomics, and domain-native
- * solar energy technology visual language.
+ * Supports light & dark modes, Persian RTL ergonomics, domain-native
+ * solar energy visual language, zero-pill metadata discipline, and mathematical
+ * geometric harmony (nested radii, 2:1 button aspect padding, 44px touch targets).
  */
 
 export const HE_COLORS = {
@@ -22,6 +23,19 @@ export const HE_COLORS = {
     default: '#0284C7',
     hover: '#0369A1',
     active: '#075985'
+  },
+
+  // Fintech Blue (Financial Infrastructure, Banking Facility, Power Purchase Agreements)
+  fintech: {
+    900: '#1E3A8A',
+    800: '#1E40AF',
+    700: '#1D4ED8',
+    600: '#2563EB',
+    500: '#3B82F6',
+    soft: '#EFF6FF',
+    border: '#BFDBFE',
+    default: '#2563EB',
+    hover: '#1D4ED8'
   },
 
   // Structural Dark / Enterprise Framing (Secondary Neutral)
@@ -41,6 +55,7 @@ export const HE_COLORS = {
     600: '#059669',
     500: '#10B981',
     soft: '#ECFDF5',
+    border: '#A7F3D0',
     default: '#059669',
     hover: '#047857'
   },
@@ -52,11 +67,12 @@ export const HE_COLORS = {
     500: '#F59E0B',
     400: '#FBBF24',
     soft: '#FEF3C7',
+    border: '#FDE68A',
     default: '#F59E0B',
     hover: '#D97706'
   },
 
-  // Light Mode Surfaces & Text
+  // Light Mode Surfaces & Text (Light-First Enterprise Standard)
   light: {
     canvas: '#F8FAFC',
     surface: '#FFFFFF',
@@ -67,6 +83,7 @@ export const HE_COLORS = {
     textMuted: '#64748B',
     textInverse: '#FFFFFF',
     border: '#E2E8F0',
+    borderSubtle: '#F1F5F9',
     borderStrong: '#CBD5E1'
   },
 
@@ -81,6 +98,7 @@ export const HE_COLORS = {
     textMuted: '#94A3B8',
     textInverse: '#0F172A',
     border: '#334155',
+    borderSubtle: '#1E293B',
     borderStrong: '#475569'
   },
 
@@ -94,26 +112,105 @@ export const HE_COLORS = {
     dangerSoft: '#FEF2F2',
     info: '#0284C7',
     infoSoft: '#F0F9FF'
+  },
+
+  // Critical Data Truth / Provenance Tokens (Section 5)
+  provenance: {
+    real: {
+      key: 'REAL',
+      label: 'داده واقعی',
+      color: '#059669',
+      bgLight: '#ECFDF5',
+      bgDark: 'rgba(5, 150, 105, 0.15)',
+      borderLight: '#A7F3D0',
+      borderDark: 'rgba(5, 150, 105, 0.3)'
+    },
+    calculated: {
+      key: 'CALCULATED',
+      label: 'محاسباتی مهندسی',
+      color: '#2563EB',
+      bgLight: '#EFF6FF',
+      bgDark: 'rgba(37, 99, 235, 0.15)',
+      borderLight: '#BFDBFE',
+      borderDark: 'rgba(37, 99, 235, 0.3)'
+    },
+    userProvided: {
+      key: 'USER_PROVIDED',
+      label: 'اظهار کاربر',
+      color: '#475569',
+      bgLight: '#F1F5F9',
+      bgDark: 'rgba(71, 85, 105, 0.2)',
+      borderLight: '#E2E8F0',
+      borderDark: 'rgba(71, 85, 105, 0.4)'
+    },
+    market: {
+      key: 'MARKET',
+      label: 'شاخص بازار',
+      color: '#D97706',
+      bgLight: '#FFFBEB',
+      bgDark: 'rgba(217, 119, 6, 0.15)',
+      borderLight: '#FDE68A',
+      borderDark: 'rgba(217, 119, 6, 0.3)'
+    },
+    ai: {
+      key: 'AI',
+      label: 'تحلیل هوش مصنوعی',
+      color: '#6366F1',
+      bgLight: '#EEF2FF',
+      bgDark: 'rgba(99, 102, 241, 0.15)',
+      borderLight: '#C7D2FE',
+      borderDark: 'rgba(99, 102, 241, 0.3)'
+    },
+    missing: {
+      key: 'MISSING',
+      label: 'عدم اتصال / ثبت نشده',
+      color: '#DC2626',
+      bgLight: '#FEF2F2',
+      bgDark: 'rgba(220, 38, 38, 0.15)',
+      borderLight: '#FECACA',
+      borderDark: 'rgba(220, 38, 38, 0.3)'
+    }
   }
 } as const;
 
 export const HE_RADIUS = {
-  sm: '10px',   // Small badges, tags, compact controls
+  xs: '6px',    // Micro controls, inner indicators
+  sm: '10px',   // Badges, tags, compact controls
   md: '12px',   // Buttons, inputs, interactive controls
   lg: '16px',   // Standard cards, metric containers
-  xl: '20px'    // Feature surfaces, modals, drawers
+  xl: '20px',   // Feature surfaces, modals, drawers
+  full: '9999px' // Avatars, circular icon buttons
 } as const;
+
+/**
+ * Calculates nested corner radius according to architectural formula:
+ * R_inside = max(0, R_outside - Padding)
+ */
+export function getNestedRadius(outerRadiusPx: number, paddingPx: number): number {
+  return Math.max(0, outerRadiusPx - paddingPx);
+}
 
 export const HE_SHADOWS = {
   none: 'none',
   subtle: '0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.04)',
   card: '0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.03)',
-  floating: '0 10px 25px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.03)'
+  floating: '0 10px 25px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.03)',
+  modal: '0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.05)',
+  solarAmber: '0 4px 14px 0 rgba(245, 158, 11, 0.22)'
 } as const;
 
 export const HE_TOUCH_TARGET = {
   minSizePx: 44,
   touchClass: 'min-h-[44px] min-w-[44px]'
+} as const;
+
+/**
+ * Mathematical 2:1 horizontal:vertical padding ratios for buttons
+ */
+export const HE_BUTTON_PADDING = {
+  sm: 'px-4 py-2 text-xs',         // 16px horizontal : 8px vertical
+  md: 'px-5 py-2.5 text-sm',       // 20px horizontal : 10px vertical (Default)
+  lg: 'px-6 py-3 text-base'        // 24px horizontal : 12px vertical
 } as const;
 
 /**
@@ -134,14 +231,19 @@ export const HE_CLASSES = {
   cardMetric: 'card-he-metric',
   cardInteractive: 'card-he-interactive',
   cardPanel: 'card-he-panel',
+  cardGlass: 'card-he-glass',
 
   // Forms
   input: 'input-he',
+  select: 'select-he',
+  textarea: 'textarea-he',
   label: 'label-he',
   helper: 'helper-he',
   error: 'error-he',
 
   // Numerics & Typography
   num: 'he-num',
-  tabular: 'tabular-nums'
+  tabular: 'tabular-nums',
+  metaItem: 'he-meta-item',
+  metaSeparator: 'he-meta-separator'
 } as const;
