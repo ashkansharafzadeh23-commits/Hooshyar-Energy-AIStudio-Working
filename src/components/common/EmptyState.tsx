@@ -44,10 +44,11 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
       {actionLabel && (
         <div>
           {actionHref ? (
-            <Link to={actionHref} className="inline-block">
-              <Button variant="primary" size="md">
-                {actionLabel}
-              </Button>
+            <Link
+              to={actionHref}
+              className="btn-he-primary px-5 py-2.5 text-sm min-h-[44px]"
+            >
+              <span>{actionLabel}</span>
             </Link>
           ) : onAction ? (
             <Button variant="primary" size="md" onClick={onAction}>
