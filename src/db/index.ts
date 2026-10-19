@@ -14,6 +14,7 @@ import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { ProjectContract, ContractParty, ContractRevision, ProjectMilestone, MilestoneDependency, ApprovalRequest, ChangeRequest, ProjectBaseline } from '../types/execution.js';
 import { Portfolio, OrganizationMember } from '../types/portfolio.js';
+import { ShowcaseProjectRecord } from '../types/showcase.js';
 
 let currentDbPath = process.env.TEST_DB_PATH || path.join(process.cwd(), "db.json");
 
@@ -331,9 +332,11 @@ interface DB {
   subscriptions: Subscription[];
   subscriptionPlans: SubscriptionPlan[];
   cityIrradianceCache: CityIrradianceCache[];
+  showcaseProjects?: ShowcaseProjectRecord[];
 }
 
 const defaultDB: DB = {
+  showcaseProjects: [],
   solarAssets: [],
   assetDocuments: [],
   assetAuditLogs: [],
@@ -543,6 +546,9 @@ function readDB(): DB {
   }
   if (!parsed.users) {
     parsed.users = [];
+  }
+  if (!parsed.showcaseProjects) {
+    parsed.showcaseProjects = [];
   }
   return parsed;
 }
@@ -2572,6 +2578,15 @@ export const db: any = {
       return d.maintenanceAssignmentHistories[idx];
     }
     return null;
+  },
+
+  getShowcaseProjects: (): ShowcaseProjectRecord[] => {
+    const d = readDB();
+    return Array.isArray(d.showcaseProjects) ? d.showcaseProjects : [];
+  },
+  getShowcaseProjectById: (id: string): ShowcaseProjectRecord | undefined => {
+    const d = readDB();
+    return (d.showcaseProjects || []).find((p: any) => p && p.id === id);
   },
 
   setDBPath: (newPath: string) => {

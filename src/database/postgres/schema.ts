@@ -212,3 +212,42 @@ export const energyProjectsRelations = relations(energyProjects, ({ many, one })
     references: [users.id],
   }),
 }));
+
+// --- Verified Solar Project Showcase (Stage D.2-P2B-2A) ---
+export const showcaseProjects = pgTable('showcase_projects', {
+  id: text('id').primaryKey(),
+  internalProjectRefId: text('internal_project_ref_id'),
+  internalAssetRefId: text('internal_asset_ref_id'),
+
+  // Presentation fields
+  publicTitle: text('public_title').notNull(),
+  location: jsonb('location').notNull(), // { province: string, city: string }
+  installedCapacityKw: doublePrecision('installed_capacity_kw').notNull(),
+  operationalStatus: text('operational_status').notNull(), // 'OPERATIONAL' | 'COMMISSIONED'
+  statusLabel: text('status_label'),
+  commissioningDate: text('commissioning_date'),
+
+  measuredProduction: jsonb('measured_production'), // { value, unit, period, source }
+  timeSeriesData: jsonb('time_series_data'), // [{ label, value }]
+
+  publicImageUrl: text('public_image_url'),
+  connectionDescription: text('connection_description'),
+
+  // Private governance and verification evidence
+  ownerConsent: jsonb('owner_consent').notNull(), // { isGranted, consentingPartyName, consentDocumentReferenceId, consentedAt, withdrawnAt }
+  technicalEvidence: jsonb('technical_evidence').notNull(), // { evidenceType, documentReferenceId, verifiedAt, verifiedBy, isValid }
+
+  publicationStatus: text('publication_status').notNull().default('DRAFT'),
+  displayOrder: integer('display_order').notNull().default(0),
+  rejectionReason: text('rejection_reason'),
+  unpublishReason: text('unpublish_reason'),
+  version: integer('version').notNull().default(1),
+
+  createdByUserId: text('created_by_user_id').notNull(),
+  reviewedByUserId: text('reviewed_by_user_id'),
+  reviewedAt: timestamp('reviewed_at'),
+  publishedByUserId: text('published_by_user_id'),
+  publishedAt: timestamp('published_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});

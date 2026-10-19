@@ -60,6 +60,7 @@ async function migrate() {
     financingOffers: { source: data.financingOffers?.length || 0, dest: 0, status: 'PENDING' },
     procurementPackages: { source: data.procurementPackages?.length || 0, dest: 0, status: 'PENDING' },
     purchaseOrders: { source: data.purchaseOrders?.length || 0, dest: 0, status: 'PENDING' },
+    showcaseProjects: { source: data.showcaseProjects?.length || 0, dest: 0, status: 'PENDING' },
   };
 
   console.log(`[2/4] Validating source schema...`);
@@ -149,6 +150,41 @@ async function migrate() {
           })));
           report.energyProjects.dest = data.energyProjects.length;
           report.energyProjects.status = 'SUCCESS';
+        }
+
+        // --- 5. Showcase Projects (Stage D.2-P2B-2A) ---
+        if (data.showcaseProjects && data.showcaseProjects.length > 0) {
+          await tx.insert(schema.showcaseProjects).values(data.showcaseProjects.map((p: any) => ({
+            id: p.id,
+            internalProjectRefId: p.internalProjectRefId || null,
+            internalAssetRefId: p.internalAssetRefId || null,
+            publicTitle: p.publicTitle,
+            location: p.location,
+            installedCapacityKw: typeof p.installedCapacityKw === 'number' ? p.installedCapacityKw : Number(p.installedCapacityKw),
+            operationalStatus: p.operationalStatus,
+            statusLabel: p.statusLabel || null,
+            commissioningDate: p.commissioningDate || null,
+            measuredProduction: p.measuredProduction || null,
+            timeSeriesData: p.timeSeriesData || null,
+            publicImageUrl: p.publicImageUrl || null,
+            connectionDescription: p.connectionDescription || null,
+            ownerConsent: p.ownerConsent,
+            technicalEvidence: p.technicalEvidence,
+            publicationStatus: p.publicationStatus || 'DRAFT',
+            displayOrder: typeof p.displayOrder === 'number' ? p.displayOrder : 0,
+            rejectionReason: p.rejectionReason || null,
+            unpublishReason: p.unpublishReason || null,
+            version: typeof p.version === 'number' ? p.version : 1,
+            createdByUserId: p.createdByUserId,
+            reviewedByUserId: p.reviewedByUserId || null,
+            reviewedAt: p.reviewedAt ? new Date(p.reviewedAt) : null,
+            publishedByUserId: p.publishedByUserId || null,
+            publishedAt: p.publishedAt ? new Date(p.publishedAt) : null,
+            createdAt: new Date(p.createdAt || Date.now()),
+            updatedAt: new Date(p.updatedAt || p.createdAt || Date.now())
+          })));
+          report.showcaseProjects.dest = data.showcaseProjects.length;
+          report.showcaseProjects.status = 'SUCCESS';
         }
 
         // Add more entity inserts sequentially below to handle FKs

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 function runTestSuite() {
   console.log('====================================================');
@@ -297,7 +298,7 @@ function runTestSuite() {
   // 20. SmartMaintenance isolation verification
   const smPreviewPath = path.resolve('./src/pages/dev/SmartMaintenancePreview.tsx');
   const smHash = 'b4b6bc9e0728dc2af8e8a385fb2b5e0041aa32fd9f49e2d85ee66a197c8383eb';
-  const currentSmHash = require('crypto').createHash('sha256').update(fs.readFileSync(smPreviewPath)).digest('hex');
+  const currentSmHash = crypto.createHash('sha256').update(fs.readFileSync(smPreviewPath)).digest('hex');
   assert(
     currentSmHash === smHash,
     '20. SmartMaintenancePreview remains identical to the protected pre-Stage-13.8 baseline'
@@ -307,6 +308,14 @@ function runTestSuite() {
   const dbHash = '60e0a9ebb91794ee43f4fb8daa4a18feb2830f1ef3c993ab60981ae7a0b3d68f';
   const pkgHash = '90486ca155c8ea72b179c001d32af8c2eac08259837a1817520326b9194379cc';
   const bunHash = '79ef5b3a7ccbd526c213eac475e3485120c6823b5f71980721b972f5e4bf5386';
+
+  const currentDbHash = crypto.createHash('sha256').update(fs.readFileSync('db.json')).digest('hex');
+  const currentPkgHash = crypto.createHash('sha256').update(fs.readFileSync('package.json')).digest('hex');
+  const currentBunHash = crypto.createHash('sha256').update(fs.readFileSync('bun.lock')).digest('hex');
+
+  assert(currentDbHash === dbHash, '21a. db.json remains identical to protected baseline');
+  assert(currentPkgHash === pkgHash, '21b. package.json remains identical to protected baseline');
+  assert(currentBunHash === bunHash, '21c. bun.lock remains identical to protected baseline');
 
   console.log('\n====================================================');
   console.log(`RESULTS: ${passed} PASSED, ${failed} FAILED`);

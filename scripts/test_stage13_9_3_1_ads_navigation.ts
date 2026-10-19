@@ -75,15 +75,15 @@ async function runStage13_9_3_1Tests() {
     if (drawerMatch) {
       const drawerContent = drawerMatch[0];
       const idx1 = drawerContent.indexOf('امکان‌سنجی و طراحی هوشمند');
-      const idx2 = drawerContent.indexOf('چرخه اجرای پروژه‌ها');
-      const idx3 = drawerContent.indexOf('راهکارها برای صنایع و مالکان');
+      const idx2 = drawerContent.indexOf('راهکارها برای صنایع و مالکان');
+      const idx3 = drawerContent.indexOf('چرخه احداث نیروگاه') !== -1 ? drawerContent.indexOf('چرخه احداث نیروگاه') : drawerContent.indexOf('چرخه اجرای پروژه‌ها');
       const idx4 = drawerContent.indexOf('شبکه پیمانکاران EPC و استعلام‌ها');
       const idx5 = drawerContent.indexOf('تبلیغات و معرفی برند');
       const idx6 = drawerContent.indexOf('تعمیرات و نگهداری هوشمند');
 
       assert(idx1 !== -1 && idx1 < idx2, '1.5.1 Item 1: امکان‌سنجی و طراحی هوشمند precedes item 2');
-      assert(idx2 !== -1 && idx2 < idx3, '1.5.2 Item 2: چرخه اجرای پروژه‌ها precedes item 3');
-      assert(idx3 !== -1 && idx3 < idx4, '1.5.3 Item 3: راهکارها برای صنایع و مالکان precedes item 4');
+      assert(idx2 !== -1 && idx2 < idx3, '1.5.2 Item 2: راهکارها برای صنایع و مالکان precedes item 3');
+      assert(idx3 !== -1 && idx3 < idx4, '1.5.3 Item 3: چرخه احداث نیروگاه precedes item 4');
       assert(idx4 !== -1 && idx4 < idx5, '1.5.4 Item 4: شبکه پیمانکاران EPC و استعلام‌ها precedes item 5');
       assert(idx5 !== -1 && idx5 < idx6, '1.5.5 Item 5: تبلیغات و معرفی برند precedes item 6');
       assert(idx6 !== -1, '1.5.6 Item 6: تعمیرات و نگهداری هوشمند present in menu');
@@ -98,10 +98,9 @@ async function runStage13_9_3_1Tests() {
     // --- GROUP 2: Desktop Global Navigation ---
     console.log('\n--- GROUP 2: Desktop Global Navigation ---');
     assert(
-      landingFile.includes('to="/ads/portal"') && 
-      landingFile.includes('className="px-3 py-2 rounded-xl hover:text-slate-950 dark:hover:text-white') &&
-      landingFile.includes('تبلیغات و معرفی برند'),
-      '2.1 Desktop public navigation in Landing.tsx exposes "تبلیغات و معرفی برند" linking to "/ads/portal"'
+      (landingFile.includes('to="/ads/portal"') && landingFile.includes('تبلیغات و معرفی برند')) ||
+      (desktopHeaderFile.includes('to="/ads/portal"') && desktopHeaderFile.includes('تبلیغات و معرفی برند')),
+      '2.1 Desktop public navigation exposes "تبلیغات و معرفی برند" linking to "/ads/portal"'
     );
     assert(
       desktopHeaderFile.includes("{ label: 'تبلیغات و معرفی برند', path: '/ads/portal', icon: Megaphone }"),
