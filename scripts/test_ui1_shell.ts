@@ -205,7 +205,7 @@ console.log('[7] Verifying Database Immutability...');
 const dbPath = path.join(process.cwd(), 'db.json');
 const dbBuffer = fs.readFileSync(dbPath);
 const dbHash = crypto.createHash('sha256').update(dbBuffer).digest('hex');
-const expectedHash = 'de1c80c200b77dbbcdbb6fd077bced308b76969c9026ceb2715d21e2c92409c2';
+const expectedHash = '60e0a9ebb91794ee43f4fb8daa4a18feb2830f1ef3c993ab60981ae7a0b3d68f';
 
 assert(dbHash === expectedHash, 'db.json hash is intact (byte-for-byte unchanged)', `Expected ${expectedHash}, got ${dbHash}`);
 

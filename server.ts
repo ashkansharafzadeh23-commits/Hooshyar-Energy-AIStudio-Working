@@ -30,6 +30,7 @@ import enterpriseRouter from "./src/api/enterprise.js";
 import healthRouter from "./src/api/health.js";
 import { energyCenterRouter } from "./src/api/energyCenter.js";
 import partnersRouter, { signMediaItem, signMediaArray } from "./src/api/partners.js";
+import publicShowcaseRouter from "./src/api/publicShowcase.js";
 import { validateEnvironment, assertProductionReadiness } from "./src/config/environment.js";
 import { closePostgresDB } from "./src/database/postgres/connection.js";
 
@@ -636,6 +637,7 @@ app.post('/api/plan-powerplant', handlePowerPlantPlanning);
 app.post('/api/analyze-powerplant', handlePowerPlantPlanning);
 
 // Domain sub-routers
+app.use("/api/public", publicShowcaseRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/partners", partnersRouter);
 app.use("/api/professionals", professionalsRouter);
