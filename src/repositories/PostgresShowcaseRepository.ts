@@ -1,9 +1,9 @@
 import { eq, asc, desc, and, or, gt, lt } from 'drizzle-orm';
 import { getPostgresDB } from '../database/postgres/connection.js';
 import { showcaseProjects } from '../database/postgres/schema.js';
-import { 
-  ShowcaseProjectRecord, 
-  isRecordEligibleForPublicShowcase 
+import {
+  ShowcaseProjectRecord,
+  isRecordEligibleForPublicShowcase
 } from '../types/showcase.js';
 import { IShowcaseRepository } from './interfaces/IShowcaseRepository.js';
 
@@ -33,18 +33,18 @@ export class PostgresShowcaseRepository implements IShowcaseRepository {
       const location = typeof row.location === 'string' ? JSON.parse(row.location) : row.location;
       const ownerConsent = typeof row.ownerConsent === 'string' ? JSON.parse(row.ownerConsent) : row.ownerConsent;
       const technicalEvidence = typeof row.technicalEvidence === 'string' ? JSON.parse(row.technicalEvidence) : row.technicalEvidence;
-      
+
       let measuredProduction = null;
       if (row.measuredProduction) {
-        measuredProduction = typeof row.measuredProduction === 'string' 
-          ? JSON.parse(row.measuredProduction) 
+        measuredProduction = typeof row.measuredProduction === 'string'
+          ? JSON.parse(row.measuredProduction)
           : row.measuredProduction;
       }
 
       let timeSeriesData = null;
       if (row.timeSeriesData) {
-        timeSeriesData = typeof row.timeSeriesData === 'string' 
-          ? JSON.parse(row.timeSeriesData) 
+        timeSeriesData = typeof row.timeSeriesData === 'string'
+          ? JSON.parse(row.timeSeriesData)
           : row.timeSeriesData;
       }
 
@@ -273,4 +273,3 @@ export class PostgresShowcaseRepository implements IShowcaseRepository {
     return this.mapRowToRecord(rows[0]);
   }
 }
-

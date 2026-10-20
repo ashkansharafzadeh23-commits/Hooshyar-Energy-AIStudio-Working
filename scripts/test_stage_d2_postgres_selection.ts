@@ -1,6 +1,6 @@
 /**
  * Stage D.2 Final Validation — PostgreSQL Boundary Defect Fix, Keyset Progression & Parity Test Suite
- * 
+ *
  * Verifies:
  * 1. Bounded keyset batching past revoked consent (25 records: 15 withdrawn, 10 valid).
  * 2. All-invalid records dataset fails closed to empty array.
@@ -36,10 +36,10 @@ import path from 'path';
 
 import { PostgresShowcaseRepository } from '../src/repositories/PostgresShowcaseRepository.js';
 import { JSONShowcaseRepository } from '../src/repositories/JSONShowcaseRepository.js';
-import { 
-  toPublicShowcaseDTO, 
-  ShowcaseProjectRecord, 
-  isRecordEligibleForPublicShowcase 
+import {
+  toPublicShowcaseDTO,
+  ShowcaseProjectRecord,
+  isRecordEligibleForPublicShowcase
 } from '../src/types/showcase.js';
 import { setupTestDatabaseIsolation } from './test_isolation_guard.js';
 
