@@ -31,7 +31,8 @@ import {
  */
 export function hasCurrentCycleAcceptance(
   mCase: { id?: string; assignedTechnicianId?: string | null; status?: string },
-  histories?: MaintenanceAssignmentHistory[]
+  histories?: MaintenanceAssignmentHistory[],
+  options?: { requireExecutionStatusForModern?: boolean }
 ): boolean {
   if (!mCase || !mCase.id || !mCase.assignedTechnicianId) {
     return false;
@@ -91,6 +92,15 @@ export function hasCurrentCycleAcceptance(
           sub.status === 'ASSIGNED' || sub.status === 'REJECTED' || sub.status === 'CANCELLED'
         );
         if (!hasSubsequentInvalidation) {
+          // If execution status is explicitly required for modern cycles (e.g. for technician authorization):
+          // The case must have reached an active execution state (IN_PROGRESS, AWAITING_VERIFICATION, etc.)
+          // An orphaned ACCEPTED record on an ASSIGNED or SCHEDULED case fails closed.
+          if (options?.requireExecutionStatusForModern) {
+            const executionStatuses = ['IN_PROGRESS', 'AWAITING_VERIFICATION', 'PENDING_VERIFICATION', 'VERIFIED', 'COMPLETED'];
+            if (!caseStatus || !executionStatuses.includes(caseStatus)) {
+              return false;
+            }
+          }
           return true;
         }
       }
