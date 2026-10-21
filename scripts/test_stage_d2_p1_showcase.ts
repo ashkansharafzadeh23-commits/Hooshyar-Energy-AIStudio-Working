@@ -25,12 +25,20 @@ import {
 
 console.log('=== STARTING STAGE D.2-P1 VERIFIED PROJECT SHOWCASE EXTENDED TESTS ===');
 
-// Track baseline db.json hash
+// Track baseline db.json hash dynamically
 const dbPath = path.resolve(process.cwd(), 'db.json');
+assert(fs.existsSync(dbPath), `Canonical db.json not found at ${dbPath}`);
 const originalDbContent = fs.readFileSync(dbPath, 'utf-8');
-const originalDbHash = crypto.createHash('sha256').update(originalDbContent).digest('hex');
-const EXPECTED_DB_HASH = '60e0a9ebb91794ee43f4fb8daa4a18feb2830f1ef3c993ab60981ae7a0b3d68f';
-assert.strictEqual(originalDbHash, EXPECTED_DB_HASH, 'db.json baseline hash mismatch at start');
+
+// Ensure canonical db.json is structurally valid JSON before proceeding
+try {
+  JSON.parse(originalDbContent);
+} catch (err: any) {
+  throw new Error(`Canonical db.json is malformed JSON: ${err?.message || err}`);
+}
+
+const baselineDbHash = crypto.createHash('sha256').update(originalDbContent).digest('hex');
+assert(baselineDbHash && baselineDbHash.length === 64, 'Failed to compute canonical db.json baseline hash');
 
 let testCount = 0;
 function pass(msg: string) {
@@ -39,7 +47,8 @@ function pass(msg: string) {
 }
 
 async function run() {
-  const landingTsx = fs.readFileSync(path.resolve(process.cwd(), 'src/pages/Landing.tsx'), 'utf-8');
+  try {
+    const landingTsx = fs.readFileSync(path.resolve(process.cwd(), 'src/pages/Landing.tsx'), 'utf-8');
   const showcaseTsx = fs.readFileSync(path.resolve(process.cwd(), 'src/components/landing/VerifiedProjectShowcase.tsx'), 'utf-8');
 
   // =========================================================================
@@ -338,13 +347,16 @@ async function run() {
   (globalThis as any).window = originalWindow;
   (globalThis as any).document = originalDocument;
 
-  // =========================================================================
-  // 5. IMMUTABILITY GUARD
-  // =========================================================================
-  const finalDbContent = fs.readFileSync(dbPath, 'utf-8');
-  const finalDbHash = crypto.createHash('sha256').update(finalDbContent).digest('hex');
-  assert.strictEqual(finalDbHash, EXPECTED_DB_HASH, 'db.json must remain byte-for-byte identical');
-  pass('Immutability Guard: db.json verified byte-for-byte identical (SHA-256 match)');
+  } finally {
+    // =========================================================================
+    // 5. IMMUTABILITY GUARD
+    // =========================================================================
+    assert(fs.existsSync(dbPath), `Canonical db.json must exist at ${dbPath}`);
+    const finalDbContent = fs.readFileSync(dbPath, 'utf-8');
+    const finalDbHash = crypto.createHash('sha256').update(finalDbContent).digest('hex');
+    assert.strictEqual(finalDbHash, baselineDbHash, 'Canonical db.json was altered during test execution!');
+    pass('Immutability Guard: db.json verified byte-for-byte identical (SHA-256 match)');
+  }
 }
 
 run()

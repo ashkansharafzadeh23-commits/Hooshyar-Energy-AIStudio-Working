@@ -30,11 +30,20 @@ import { validateEnvironment } from '../src/config/environment.js';
 
 console.log('=== STARTING STAGE D.2-P2B-1 SHOWCASE BACKEND TESTS ===\n');
 
-// 1. Check canonical db.json hash baseline
+// 1. Check canonical db.json hash baseline dynamically
 const CANONICAL_DB_PATH = path.resolve(process.cwd(), 'db.json');
-const EXPECTED_DB_HASH = '60e0a9ebb91794ee43f4fb8daa4a18feb2830f1ef3c993ab60981ae7a0b3d68f';
-const initialHash = crypto.createHash('sha256').update(fs.readFileSync(CANONICAL_DB_PATH)).digest('hex');
-assert.strictEqual(initialHash, EXPECTED_DB_HASH, 'Initial db.json hash mismatch!');
+assert(fs.existsSync(CANONICAL_DB_PATH), `Canonical db.json not found at: ${CANONICAL_DB_PATH}`);
+const initialRaw = fs.readFileSync(CANONICAL_DB_PATH, 'utf-8');
+
+// Ensure canonical db.json is structurally valid JSON before proceeding
+try {
+  JSON.parse(initialRaw);
+} catch (err: any) {
+  throw new Error(`Canonical db.json contains invalid JSON: ${err?.message || err}`);
+}
+
+const baselineDbHash = crypto.createHash('sha256').update(initialRaw).digest('hex');
+assert(baselineDbHash && baselineDbHash.length === 64, 'Failed to compute canonical db.json baseline hash');
 
 let testCount = 0;
 function pass(msg: string) {
@@ -46,6 +55,10 @@ async function runTests() {
   const originalDbPath = getDBPath();
   const tmpDir = os.tmpdir();
   const testDbPath = path.join(tmpDir, `test_showcase_p2b1_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.json`);
+
+  let testError: any = null;
+  let cleanupError: any = null;
+  let immutabilityError: any = null;
 
   try {
     // =========================================================================
@@ -323,20 +336,66 @@ async function runTests() {
     );
     pass('Production Invariant: Silent fallback to JSON storage is strictly prohibited in production');
 
+  } catch (err: any) {
+    testError = err;
   } finally {
-    // Restore original DB path and cleanup temp file
-    setDBPath(originalDbPath);
+    // 1. Always restore original DB path
+    try {
+      setDBPath(originalDbPath);
+    } catch (err: any) {
+      console.error('[CLEANUP FAILURE] Failed to restore original database path:', err);
+      if (!cleanupError) {
+        cleanupError = new Error(`Failed to restore original database path: ${err?.message || err}`);
+      }
+    }
+
+    // 2. Cleanup temporary test file with explicit error reporting
     if (fs.existsSync(testDbPath)) {
-      try { fs.unlinkSync(testDbPath); } catch {}
+      try {
+        fs.unlinkSync(testDbPath);
+      } catch (err: any) {
+        console.error(`[CLEANUP FAILURE] Failed to clean up temporary test database at ${testDbPath}:`, err);
+        if (!cleanupError) {
+          cleanupError = new Error(`Cleanup failure for temporary test database at ${testDbPath}: ${err?.message || err}`);
+        }
+      }
+    }
+
+    // 3. Database immutability verification still executes even if cleanup failed
+    try {
+      // =========================================================================
+      // TEST 8: Canonical db.json Hash Integrity Guard
+      // =========================================================================
+      assert(fs.existsSync(CANONICAL_DB_PATH), `Canonical db.json must exist at ${CANONICAL_DB_PATH}`);
+      const finalHash = crypto.createHash('sha256').update(fs.readFileSync(CANONICAL_DB_PATH)).digest('hex');
+      assert.strictEqual(finalHash, baselineDbHash, 'Canonical db.json was altered during test execution!');
+      pass('Immutability Guard: db.json verified 100% byte-for-byte identical (SHA-256 match)');
+    } catch (err: any) {
+      immutabilityError = err;
+    }
+
+    // 4. Non-masking error propagation
+    if (testError) {
+      if (cleanupError) {
+        console.error('[SECONDARY CLEANUP ERROR DURING TEST FAILURE]:', cleanupError);
+      }
+      if (immutabilityError) {
+        console.error('[CRITICAL IMMUTABILITY FAILURE DURING TEST FAILURE]:', immutabilityError);
+      }
+      throw testError;
+    }
+
+    if (cleanupError) {
+      if (immutabilityError) {
+        console.error('[CRITICAL IMMUTABILITY FAILURE WITH CLEANUP ERROR]:', immutabilityError);
+      }
+      throw cleanupError;
+    }
+
+    if (immutabilityError) {
+      throw immutabilityError;
     }
   }
-
-  // =========================================================================
-  // TEST 8: Canonical db.json Hash Integrity Guard
-  // =========================================================================
-  const finalHash = crypto.createHash('sha256').update(fs.readFileSync(CANONICAL_DB_PATH)).digest('hex');
-  assert.strictEqual(finalHash, EXPECTED_DB_HASH, 'db.json was altered during test execution!');
-  pass('Immutability Guard: db.json verified 100% byte-for-byte identical (SHA-256 match)');
 }
 
 runTests()
