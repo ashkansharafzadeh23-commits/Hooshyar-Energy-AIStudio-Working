@@ -117,7 +117,7 @@ export function checkCaseAccess(
  * 4. SCHEDULED alone does NOT constitute formal acceptance.
  */
 export function hasTechnicianFormallyAccepted(mCase: MaintenanceCase): boolean {
-  return hasCurrentCycleAcceptance(mCase);
+  return hasCurrentCycleAcceptance(mCase, undefined, { requireExecutionStatusForModern: true });
 }
 
 export function sanitizeAttachmentForTechnician(
@@ -1151,7 +1151,7 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/select-technician', '/c
       : mCase;
 
     const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
-    const isAccepted = hasCurrentCycleAcceptance(updatedCase!);
+    const isAccepted = hasTechnicianFormallyAccepted(updatedCase!);
     const responseData = (isReporterOrAdmin || isAccepted)
       ? updatedCase
       : sanitizeCaseForTechnician(updatedCase!, { isAccepted: false });
@@ -1412,7 +1412,7 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/assign', '/cases/:maint
       : mCase;
 
     const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
-    const isAccepted = hasCurrentCycleAcceptance(updatedCase!);
+    const isAccepted = hasTechnicianFormallyAccepted(updatedCase!);
     const responseData = (isReporterOrAdmin || isAccepted)
       ? updatedCase
       : sanitizeCaseForTechnician(updatedCase!, { isAccepted: false });
@@ -1501,8 +1501,8 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/accept', '/cases/:maint
     });
   }
 
-  // Check if case is already accepted by this technician for the CURRENT assignment cycle
-  const alreadyAccepted = hasCurrentCycleAcceptance(mCase);
+  // Check if case is already formally accepted by this technician for the CURRENT assignment cycle
+  const alreadyAccepted = hasTechnicianFormallyAccepted(mCase);
 
   let newHistoryRecord: MaintenanceAssignmentHistory | null = null;
   // Authoritative action: persist the ACCEPTED assignment history for this cycle if not already accepted
@@ -1526,13 +1526,32 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/accept', '/cases/:maint
     // Failure Safety: If status transition fails and we just persisted an ACCEPTED record,
     // mark that record CANCELLED so it does not leave an active-looking orphaned acceptance
     if (newHistoryRecord) {
+      let rollbackVerified = false;
       try {
-        maintenanceRepository.updateAssignmentHistory(newHistoryRecord.id, {
+        const restored = maintenanceRepository.updateAssignmentHistory(newHistoryRecord.id, {
           status: 'CANCELLED',
           notes: 'خطا در تغییر وضعیت پرونده - پذیرش لغو شد'
         });
+        if (restored && restored.status === 'CANCELLED') {
+          rollbackVerified = true;
+        }
       } catch (rollbackErr) {
-        // ignore
+        rollbackVerified = false;
+      }
+
+      if (!rollbackVerified) {
+        // Structured server-side diagnostic without leaking customer information or stack traces
+        console.error(JSON.stringify({
+          event: 'MAINTENANCE_ACCEPTANCE_ROLLBACK_FAILURE',
+          caseId,
+          historyId: newHistoryRecord.id,
+          technicianId: req.user.id,
+          timestamp: new Date().toISOString(),
+          error: 'Failed to compensate acceptance history after status transition failure'
+        }));
+        return res.status(500).json({
+          error: 'خطا در تغییر وضعیت پرونده و عدم موفقیت در بازگردانی سابقه پذیرش. یکپارچگی نیازمند بررسی مدیر سامانه است.'
+        });
       }
     }
     return res.status(400).json({ error: err.message || 'خطا در پذیرش پرونده' });
