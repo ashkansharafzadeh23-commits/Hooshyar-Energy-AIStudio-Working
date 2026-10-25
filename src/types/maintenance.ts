@@ -337,8 +337,43 @@ export interface MaintenanceAction {
   performedAt: string;
   resultStatus?: string;
   notes?: string;
+  clientRequestId?: string;
+  payloadHash?: string;
   createdAt?: string;
 }
+
+export interface RecordCaseActionInput {
+  actionType: MaintenanceActionType;
+  description: string;
+  componentId?: string;
+  replacedComponentId?: string;
+  newComponentSerial?: string;
+  newComponentModel?: string;
+  performedBy?: string;
+  performedAt?: string;
+  resultStatus?: string;
+  notes?: string;
+  createdAt?: string;
+  clientRequestId?: string;
+  payloadHash?: string;
+}
+
+export interface RecordCaseActionTotalsUpdate {
+  mode?: 'CUMULATIVE_OVERWRITE' | 'INCREMENTAL';
+  laborCost?: number | null;
+  partsCost?: number | null;
+  totalCost?: number | null;
+  totalCostIrr?: number;
+  totalLaborHours?: number;
+  deltaLaborHours?: number | null;
+  deltaCostIrr?: number | null;
+}
+
+export type RecordCaseActionResult =
+  | { success: true; isReplay: false; action: MaintenanceAction; case: MaintenanceCase }
+  | { success: true; isReplay: true; action: MaintenanceAction; case: MaintenanceCase }
+  | { success: false; conflict: true; existingAction: MaintenanceAction; message: string; actorMismatch?: false }
+  | { success: false; conflict: false; actorMismatch: true; message: string };
 
 export interface TechnicianMatch {
   technicianId: string;

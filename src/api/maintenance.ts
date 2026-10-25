@@ -6,7 +6,13 @@ import { maintenanceRepository } from '../repositories/maintenanceRepository.js'
 import { monitoringRepository } from '../repositories/monitoringRepository.js';
 import { alertService } from '../services/alertService.js';
 import { diagnosisService } from '../services/diagnosisService.js';
-import { maintenanceCaseService, hasCurrentCycleAcceptance } from '../services/maintenanceCaseService.js';
+import {
+  maintenanceCaseService,
+  hasCurrentCycleAcceptance,
+  validateFinancialAmount,
+  validateClientRequestId,
+  computeActionPayloadHash
+} from '../services/maintenanceCaseService.js';
 import { technicianMatchingService } from '../services/technicianMatchingService.js';
 import { isCaseAssignedToTechnician, getTechnicianIdentities, resolveTechnicianProfile, areTechnicianIdentitiesEquivalent } from '../services/technicianIdentityService.js';
 import { professionalRepository } from '../repositories/professionalRepository.js';
@@ -21,7 +27,8 @@ import {
   MaintenanceStatus,
   AssetMaintenanceHistoryItem,
   CaseAttachment,
-  MaintenanceAssignmentHistory
+  MaintenanceAssignmentHistory,
+  RecordCaseActionResult
 } from '../types/maintenance.js';
 import {
   getFileStorageService,
@@ -31,6 +38,25 @@ import {
   sanitizeOriginalFilename,
   FileValidationError
 } from '../storage/index.js';
+import { DatabaseStorageError } from '../db/index.js';
+
+export function isPersistenceError(err: any): boolean {
+  if (!err) return false;
+  if (err instanceof DatabaseStorageError || err.isPersistenceError === true || err.name === 'DatabaseStorageError') {
+    return true;
+  }
+  const msg = typeof err.message === 'string' ? err.message : '';
+  return (
+    msg.includes('FATAL: Failed to persist database') ||
+    msg.includes('Storage write error') ||
+    msg.includes('SIMULATED_FILESYSTEM_WRITE_FAILURE') ||
+    msg.includes('ENOSPC') ||
+    msg.includes('EACCES') ||
+    msg.includes('EPERM') ||
+    msg.includes('EROFS') ||
+    msg.includes('EIO')
+  );
+}
 
 export const maintenanceRouter = express.Router();
 
@@ -1767,33 +1793,97 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/actions', '/cases/:main
     return res.status(400).json({ error: 'نوع اقدام و شرح آن الزامی است.' });
   }
 
-  const createdAction = maintenanceRepository.createAction({
-    maintenanceCaseId: caseId,
-    actionType: actionType || 'REPAIR',
+  // Input validation & extraction
+  let clientRequestId: string | undefined;
+  let lCost: number | undefined;
+  let pCost: number | undefined;
+
+  try {
+    const rawKey = req.headers['idempotency-key'] || req.headers['x-client-request-id'] || req.body?.clientRequestId;
+    clientRequestId = validateClientRequestId(rawKey);
+
+    // Correction 1: Explicit null policy
+    if (laborCost === null) {
+      return res.status(400).json({ error: 'مقدار هزینه دستمزد نمی‌تواند null باشد. در صورت تمایل به حفظ مقدار قبلی، فیلد را ارسال نکنید.' });
+    }
+    if (partsCost === null) {
+      return res.status(400).json({ error: 'مقدار هزینه قطعات نمی‌تواند null باشد. در صورت تمایل به حفظ مقدار قبلی، فیلد را ارسال نکنید.' });
+    }
+
+    if (laborCost !== undefined) {
+      lCost = validateFinancialAmount(laborCost, 'هزینه دستمزد');
+    }
+    if (partsCost !== undefined) {
+      pCost = validateFinancialAmount(partsCost, 'هزینه قطعات');
+    }
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'ورودی‌های مالی یا شناسه درخواست نامعتبر است.' });
+  }
+
+  const payloadHash = computeActionPayloadHash({
+    actionType,
     description,
     componentId,
     replacedComponentId,
     newComponentSerial,
     newComponentModel,
-    performedBy: req.user.id,
-    performedAt: new Date().toISOString(),
     notes,
-    createdAt: new Date().toISOString()
+    laborCost: laborCost !== undefined ? lCost : undefined,
+    partsCost: partsCost !== undefined ? pCost : undefined
   });
 
-  // Calculate new total costs if provided
-  const lCost = laborCost !== undefined ? Number(laborCost) : (mCase.laborCost || 0);
-  const pCost = partsCost !== undefined ? Number(partsCost) : (mCase.partsCost || 0);
-  const totalCost = lCost + pCost;
+  let result: RecordCaseActionResult;
+  try {
+    result = maintenanceRepository.recordCaseAction(
+      caseId,
+      {
+        actionType: actionType || 'REPAIR',
+        description,
+        componentId,
+        replacedComponentId,
+        newComponentSerial,
+        newComponentModel,
+        performedBy: req.user.id,
+        notes,
+        clientRequestId,
+        payloadHash
+      },
+      {
+        mode: 'CUMULATIVE_OVERWRITE',
+        laborCost: laborCost !== undefined ? lCost : undefined,
+        partsCost: partsCost !== undefined ? pCost : undefined
+      }
+    );
+  } catch (err: any) {
+    if (isPersistenceError(err)) {
+      return res.status(500).json({ error: 'خطا در ثبت پایدار اطلاعات در پایگاه داده' });
+    }
+    if (err?.message && err.message.includes('پرونده تعمیراتی یافت نشد')) {
+      return res.status(404).json({ error: 'پرونده تعمیراتی یافت نشد.' });
+    }
+    return res.status(400).json({ error: err.message || 'خطا در ثبت اقدام' });
+  }
 
-  maintenanceRepository.updateCase(caseId, {
-    laborCost: lCost,
-    partsCost: pCost,
-    totalCost,
-    totalCostIrr: totalCost
-  });
+  if (!result.success) {
+    if ((result as any).actorMismatch) {
+      // Correction 2: Map unauthorized cross-actor replay to HTTP 403 without exposing action details
+      return res.status(403).json({
+        error: (result as any).message || 'شناسه درخواست متعلق به کاربر دیگری است و امکان استفاده مجدد از آن وجود ندارد.'
+      });
+    }
 
-  return res.status(200).json(createdAction);
+    if ((result as any).conflict) {
+      return res.status(409).json({
+        error: (result as any).message || 'شناسه درخواست تکراری با محتوای متفاوت.',
+        code: 'IDEMPOTENCY_PAYLOAD_CONFLICT',
+        existingActionId: (result as any).existingAction?.id
+      });
+    }
+
+    return res.status(400).json({ error: (result as any).message || 'خطا در ثبت اقدام' });
+  }
+
+  return res.status(200).json((result as any).action);
 });
 
 /**

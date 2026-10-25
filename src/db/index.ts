@@ -8,7 +8,7 @@ import { InvestmentOpportunity, LandProfile, InvestorProfile, ProjectMatch, Proj
 import { BillOfQuantities, BOQItem, ProcurementRFQ, ProcurementPackage, SupplierInvitation, VendorQuote, VendorQuoteItem, VendorQuoteRevision, SupplierAward, PurchaseOrder, PurchaseOrderItem, DeliveryRecord, DeliveryItem, DeliveryInspection } from '../types/procurement.js';
 import { EnergyAsset, AssetComponent, EquipmentWarranty, CommissioningRecord, CommissioningTest, AssetOwnershipRecord, AssetPassportSnapshot, AssetPerformanceBaseline, ProjectHandover, FinalProjectCostSummary, PunchListItem } from '../types/asset.js';
 import { TelemetrySource, TelemetryReading, AssetPerformanceSnapshot, AssetHealthAssessment } from '../types/monitoring.js';
-import { AssetAlert, AlertRule, MaintenanceCase, MaintenanceDiagnosis, MaintenanceAction, MaintenanceAssignmentHistory } from '../types/maintenance.js';
+import { AssetAlert, AlertRule, MaintenanceCase, MaintenanceDiagnosis, MaintenanceAction, MaintenanceAssignmentHistory, RecordCaseActionInput, RecordCaseActionTotalsUpdate, RecordCaseActionResult } from '../types/maintenance.js';
 import { FinancialPartnerProfile, FinancingProduct, FinancingRequest, FinanceReadinessSnapshot, FinancialPartnerMatch, FinancingSubmission, FinanceInformationRequest, FinancingOffer, ProjectFinancingRecord, FinanceReviewNote, FinanceDueDiligenceChecklist, FinancingNeed, FinancingApplication, FinancingPartner, FinancingAgreementRecord } from '../types/financing.js';
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
@@ -256,7 +256,7 @@ interface DB {
   financeDueDiligenceChecklists?: FinanceDueDiligenceChecklist[];
   energyAssets?: EnergyAsset[];
   assetComponents?: AssetComponent[];
-  
+
   commissioningRecords?: CommissioningRecord[];
   commissioningTests?: CommissioningTest[];
   assetOwnershipRecords?: AssetOwnershipRecord[];
@@ -464,9 +464,11 @@ const defaultDB: DB = {
   ],
 };
 export class DatabaseStorageError extends Error {
-  constructor(message: string) {
+  public readonly isPersistenceError = true;
+  constructor(message: string, public readonly cause?: unknown) {
     super(message);
     this.name = 'DatabaseStorageError';
+    Object.setPrototypeOf(this, DatabaseStorageError.prototype);
   }
 }
 
@@ -520,7 +522,7 @@ function readDB(): DB {
     return defaultDB;
   }
   const data = fs.readFileSync(currentDbPath, "utf-8");
-  
+
   let raw: unknown;
   try {
     raw = JSON.parse(data);
@@ -575,7 +577,13 @@ function writeDB(data: DB) {
   );
 
   try {
+    if (process.env.NODE_ENV === 'test' && testWriteFailureHook) {
+      testWriteFailureHook('before_temp_write');
+    }
     fs.writeFileSync(tempPath, serialized, 'utf-8');
+    if (process.env.NODE_ENV === 'test' && testWriteFailureHook) {
+      testWriteFailureHook('before_atomic_rename');
+    }
     // 3. Atomically replace target file using POSIX-rename
     fs.renameSync(tempPath, resolvedTarget);
   } catch (err: any) {
@@ -587,9 +595,18 @@ function writeDB(data: DB) {
     } catch {
       // ignore cleanup errors
     }
-    throw new Error(`FATAL: Failed to persist database: ${err?.message || 'Storage write error'}`);
+    throw new DatabaseStorageError(`FATAL: Failed to persist database: ${err?.message || 'Storage write error'}`, err);
   }
 }
+
+export type TestWriteFailureStage = 'before_temp_write' | 'before_atomic_rename';
+let testWriteFailureHook: ((stage: TestWriteFailureStage) => void) | null = null;
+export const __setTestWriteFailureHook = (
+  hook: ((stage: TestWriteFailureStage) => void) | null
+) => {
+  if (process.env.NODE_ENV !== 'test') return;
+  testWriteFailureHook = hook;
+};
 
 const defaultEPCs: Organization[] = [
   {
@@ -626,6 +643,62 @@ const defaultEPCs: Organization[] = [
     updatedAt: "2025-01-15T09:30:00.000Z"
   }
 ];
+
+export function validateStoredRialAmount(val: unknown, fieldName: string): number | undefined {
+  if (val === undefined || val === null) {
+    return undefined;
+  }
+  if (typeof val === 'boolean' || (typeof val !== 'number' && typeof val !== 'string')) {
+    throw new Error(`مقدار ذخیره‌شده ${fieldName} در پرونده نامعتبر یا فاسد است.`);
+  }
+  const n = Number(val);
+  if (Number.isNaN(n) || !Number.isFinite(n) || n < 0 || n > Number.MAX_SAFE_INTEGER || !Number.isInteger(n)) {
+    throw new Error(`مقدار ذخیره‌شده ${fieldName} در پرونده (${val}) نامعتبر، اعشاری یا فاسد است.`);
+  }
+  return n;
+}
+
+export function validateStoredLaborHours(val: unknown): number | undefined {
+  if (val === undefined || val === null) {
+    return undefined;
+  }
+  if (typeof val === 'boolean' || (typeof val !== 'number' && typeof val !== 'string')) {
+    throw new Error(`مقدار ساعات کارکرد ذخیره‌شده در پرونده نامعتبر یا فاسد است.`);
+  }
+  const n = Number(val);
+  if (Number.isNaN(n) || !Number.isFinite(n) || n < 0 || n > 100000) {
+    throw new Error(`مقدار ساعات کارکرد ذخیره‌شده در پرونده (${val}) نامعتبر یا فاسد است.`);
+  }
+  return n;
+}
+
+export function validateInputRialAmount(val: unknown, fieldName: string): number {
+  if (val === undefined || val === null) {
+    return 0;
+  }
+  if (typeof val === 'boolean' || (typeof val !== 'number' && typeof val !== 'string')) {
+    throw new Error(`نوع داده ${fieldName} نامعتبر است.`);
+  }
+  const n = Number(val);
+  if (Number.isNaN(n) || !Number.isFinite(n) || n < 0 || n > Number.MAX_SAFE_INTEGER || !Number.isInteger(n)) {
+    throw new Error(`مقدار ${fieldName} باید یک عدد صحیح غیرمنفی ریالی باشد.`);
+  }
+  return n;
+}
+
+export function validateInputLaborHours(val: unknown): number {
+  if (val === undefined || val === null) {
+    return 0;
+  }
+  if (typeof val === 'boolean' || (typeof val !== 'number' && typeof val !== 'string')) {
+    throw new Error('نوع داده ساعات کارکرد نامعتبر است.');
+  }
+  const n = Number(val);
+  if (Number.isNaN(n) || !Number.isFinite(n) || n < 0 || n > 10000) {
+    throw new Error('مقدار ساعات کارکرد باید بین ۰ تا ۱۰۰۰۰ باشد.');
+  }
+  return n;
+}
 
 export const db: any = {
 
@@ -802,8 +875,8 @@ export const db: any = {
     // Alias for createEnergyProject to support test files
     const data = readDB();
     if (!data.energyProjects) data.energyProjects = [];
-    const newProject = { 
-      ...project, 
+    const newProject = {
+      ...project,
       projectCode: project.projectCode || `PRJ-${Date.now()}`,
       title: project.title || project.name || 'Untitled Project',
       projectType: project.type || project.projectType || 'SOLAR',
@@ -811,9 +884,9 @@ export const db: any = {
       targetCapacityKw: project.capacityKw || project.targetCapacityKw || 0,
       location: project.location || { province: project.province, city: project.city },
       status: project.status || 'DRAFT',
-      id: uuidv4(), 
-      createdAt: new Date().toISOString(), 
-      updatedAt: new Date().toISOString() 
+      id: uuidv4(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
     data.energyProjects.push(newProject as EnergyProject);
     writeDB(data);
@@ -841,7 +914,7 @@ export const db: any = {
     }
     return null;
   },
-  
+
   getProjectMembers: (projectId: string) => (readDB().projectMembers || []).filter(m => m.projectId === projectId),
   createProjectMember: (member: Omit<ProjectMember, "id" | "createdAt">) => {
     const data = readDB();
@@ -1129,11 +1202,11 @@ export const db: any = {
   createEPCBid: (bid: Omit<EPCBid, "id" | "createdAt" | "currentRevisionNumber">) => {
     const data = readDB();
     if (!data.epcBids) data.epcBids = [];
-    const newBid: EPCBid = { 
-      ...bid, 
-      id: uuidv4(), 
-      currentRevisionNumber: 1, 
-      createdAt: new Date().toISOString() 
+    const newBid: EPCBid = {
+      ...bid,
+      id: uuidv4(),
+      currentRevisionNumber: 1,
+      createdAt: new Date().toISOString()
     };
     data.epcBids.push(newBid);
     writeDB(data);
@@ -1161,7 +1234,7 @@ export const db: any = {
     writeDB(data);
     return newRev as EPCBidRevision;
   },
-  
+
   updateAnalysisHistoryProjectId: (id: string, projectId: string) => {
     const data = readDB();
     const index = data.analysisHistory.findIndex(h => h.id === id);
@@ -1325,12 +1398,12 @@ export const db: any = {
   },
   createAd: (ad: Omit<Ad, "id" | "createdAt" | "status"> & { status?: Ad["status"]; paymentStatus?: Ad["paymentStatus"] }) => {
     const data = readDB();
-    const newAd: Ad = { 
-      ...ad, 
-      id: uuidv4(), 
-      status: ad.status || "pending_review", 
+    const newAd: Ad = {
+      ...ad,
+      id: uuidv4(),
+      status: ad.status || "pending_review",
       ...(ad.paymentStatus !== undefined ? { paymentStatus: ad.paymentStatus } : {}),
-      createdAt: new Date().toISOString() 
+      createdAt: new Date().toISOString()
     };
     data.ads.push(newAd);
     writeDB(data);
@@ -1518,7 +1591,7 @@ export const db: any = {
     }
     return null;
   },
-  
+
   getFinancialAssumptionSetById: (id: string) => (readDB().financialAssumptionSets || []).find(a => a.id === id),
   createFinancialAssumptionSet: (set: Omit<FinancialAssumptionSet, "id" | "createdAt" | "updatedAt">) => {
     const data = readDB();
@@ -1538,7 +1611,7 @@ export const db: any = {
     writeDB(data);
     return newScenario;
   },
-  
+
   getProjectProposalsByProjectId: (projectId: string) => (readDB().projectProposals || []).filter(p => p.projectId === projectId),
   createProjectProposal: (proposal: Omit<ProjectProposal, "id" | "createdAt">) => {
     const data = readDB();
@@ -1583,7 +1656,7 @@ export const db: any = {
     writeDB(data);
     return newProfile;
   },
-  
+
   getProjectMatchesForInvestor: (investorProfileId: string) => (readDB().projectMatches || []).filter(m => m.investorProfileId === investorProfileId),
   getProjectMatchesForOpportunity: (opportunityId: string) => (readDB().projectMatches || []).filter(m => m.opportunityId === opportunityId),
   createProjectMatch: (match: Omit<ProjectMatch, "id" | "createdAt" | "updatedAt">) => {
@@ -1611,14 +1684,14 @@ export const db: any = {
     return projectId ? list.filter((b: any) => b.projectId === projectId) : list;
   },
   getBOQById: (id: string) => readDB().boqs?.find((b: any) => b.id === id),
-  createBOQ: (boq: any) => { 
-    const d = readDB(); 
-    if(!d.boqs) d.boqs = []; 
+  createBOQ: (boq: any) => {
+    const d = readDB();
+    if(!d.boqs) d.boqs = [];
     const codeNum = String(d.boqs.length + 1).padStart(6, '0');
-    const n = { ...boq, id: uuidv4(), boqCode: boq.boqCode || `BOQ-HSE-${codeNum}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; 
-    d.boqs.push(n); 
-    writeDB(d); 
-    return n; 
+    const n = { ...boq, id: uuidv4(), boqCode: boq.boqCode || `BOQ-HSE-${codeNum}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    d.boqs.push(n);
+    writeDB(d);
+    return n;
   },
   updateBOQ: (id: string, updates: any) => { const d = readDB(); if(!d.boqs) d.boqs = []; const idx = d.boqs.findIndex((b: any) => b.id === id); if(idx > -1) { d.boqs[idx] = { ...d.boqs[idx], ...updates, updatedAt: new Date().toISOString() }; writeDB(d); return d.boqs[idx]; } return null; },
   getBOQItems: (boqId: string) => readDB().boqItems?.filter((i: any) => i.boqId === boqId) || [],
@@ -1628,14 +1701,14 @@ export const db: any = {
   deleteBOQItem: (id: string) => { const d = readDB(); if(!d.boqItems) return; d.boqItems = d.boqItems.filter((i: any) => i.id !== id); writeDB(d); },
   getProcurementRFQs: (projectId: string) => readDB().procurementRfqs?.filter((r: any) => r.projectId === projectId) || [],
   getProcurementRFQById: (id: string) => readDB().procurementRfqs?.find((r: any) => r.id === id),
-  createProcurementRFQ: (rfq: any) => { 
-    const d = readDB(); 
-    if(!d.procurementRfqs) d.procurementRfqs = []; 
+  createProcurementRFQ: (rfq: any) => {
+    const d = readDB();
+    if(!d.procurementRfqs) d.procurementRfqs = [];
     const codeNum = String(d.procurementRfqs.length + 1).padStart(6, '0');
-    const n = { ...rfq, id: uuidv4(), procurementRfqCode: rfq.procurementRfqCode || `PRFQ-HSE-${codeNum}`, createdAt: new Date().toISOString() }; 
-    d.procurementRfqs.push(n); 
-    writeDB(d); 
-    return n; 
+    const n = { ...rfq, id: uuidv4(), procurementRfqCode: rfq.procurementRfqCode || `PRFQ-HSE-${codeNum}`, createdAt: new Date().toISOString() };
+    d.procurementRfqs.push(n);
+    writeDB(d);
+    return n;
   },
   updateProcurementRFQ: (id: string, updates: any) => { const d = readDB(); if(!d.procurementRfqs) d.procurementRfqs = []; const idx = d.procurementRfqs.findIndex((r: any) => r.id === id); if(idx > -1) { d.procurementRfqs[idx] = { ...d.procurementRfqs[idx], ...updates }; writeDB(d); return d.procurementRfqs[idx]; } return null; },
   getSupplierInvitations: (rfqId: string) => readDB().supplierInvitations?.filter((i: any) => i.procurementRfqId === rfqId) || [],
@@ -1644,14 +1717,14 @@ export const db: any = {
   updateSupplierInvitation: (id: string, updates: any) => { const d = readDB(); if(!d.supplierInvitations) d.supplierInvitations = []; const idx = d.supplierInvitations.findIndex((i: any) => i.id === id); if(idx > -1) { d.supplierInvitations[idx] = { ...d.supplierInvitations[idx], ...updates }; writeDB(d); return d.supplierInvitations[idx]; } return null; },
   getVendorQuotes: (rfqId: string) => readDB().vendorQuotes?.filter((q: any) => q.procurementRfqId === rfqId) || [],
   getVendorQuoteById: (id: string) => readDB().vendorQuotes?.find((q: any) => q.id === id),
-  createVendorQuote: (quote: any) => { 
-    const d = readDB(); 
-    if(!d.vendorQuotes) d.vendorQuotes = []; 
+  createVendorQuote: (quote: any) => {
+    const d = readDB();
+    if(!d.vendorQuotes) d.vendorQuotes = [];
     const codeNum = String(d.vendorQuotes.length + 1).padStart(6, '0');
-    const n = { ...quote, id: uuidv4(), quoteCode: quote.quoteCode || `VQ-HSE-${codeNum}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; 
-    d.vendorQuotes.push(n); 
-    writeDB(d); 
-    return n; 
+    const n = { ...quote, id: uuidv4(), quoteCode: quote.quoteCode || `VQ-HSE-${codeNum}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    d.vendorQuotes.push(n);
+    writeDB(d);
+    return n;
   },
   updateVendorQuote: (id: string, updates: any) => { const d = readDB(); if(!d.vendorQuotes) d.vendorQuotes = []; const idx = d.vendorQuotes.findIndex((q: any) => q.id === id); if(idx > -1) { d.vendorQuotes[idx] = { ...d.vendorQuotes[idx], ...updates, updatedAt: new Date().toISOString() }; writeDB(d); return d.vendorQuotes[idx]; } return null; },
   getVendorQuoteItems: (quoteId: string) => readDB().vendorQuoteItems?.filter((i: any) => i.quoteId === quoteId) || [],
@@ -1666,14 +1739,14 @@ export const db: any = {
     return projectId ? list.filter((p: any) => p.projectId === projectId) : list;
   },
   getPurchaseOrderById: (id: string) => readDB().purchaseOrders?.find((p: any) => p.id === id),
-  createPurchaseOrder: (po: any) => { 
-    const d = readDB(); 
-    if(!d.purchaseOrders) d.purchaseOrders = []; 
+  createPurchaseOrder: (po: any) => {
+    const d = readDB();
+    if(!d.purchaseOrders) d.purchaseOrders = [];
     const codeNum = String(d.purchaseOrders.length + 1).padStart(6, '0');
-    const n = { ...po, id: uuidv4(), poCode: po.poCode || `PO-HSE-${codeNum}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; 
-    d.purchaseOrders.push(n); 
-    writeDB(d); 
-    return n; 
+    const n = { ...po, id: uuidv4(), poCode: po.poCode || `PO-HSE-${codeNum}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    d.purchaseOrders.push(n);
+    writeDB(d);
+    return n;
   },
   updatePurchaseOrder: (id: string, updates: any) => { const d = readDB(); if(!d.purchaseOrders) d.purchaseOrders = []; const idx = d.purchaseOrders.findIndex((p: any) => p.id === id); if(idx > -1) { d.purchaseOrders[idx] = { ...d.purchaseOrders[idx], ...updates, updatedAt: new Date().toISOString() }; writeDB(d); return d.purchaseOrders[idx]; } return null; },
   getPurchaseOrderItems: (poId: string) => readDB().purchaseOrderItems?.filter((i: any) => i.purchaseOrderId === poId) || [],
@@ -1684,14 +1757,14 @@ export const db: any = {
     return projectId ? list.filter((d: any) => d.projectId === projectId) : list;
   },
   getDeliveryRecordById: (id: string) => readDB().deliveryRecords?.find((d: any) => d.id === id),
-  createDeliveryRecord: (rec: any) => { 
-    const d = readDB(); 
-    if(!d.deliveryRecords) d.deliveryRecords = []; 
+  createDeliveryRecord: (rec: any) => {
+    const d = readDB();
+    if(!d.deliveryRecords) d.deliveryRecords = [];
     const codeNum = String(d.deliveryRecords.length + 1).padStart(6, '0');
-    const n = { ...rec, id: uuidv4(), deliveryNumber: rec.deliveryNumber || `DLV-HSE-${codeNum}`, createdAt: new Date().toISOString() }; 
-    d.deliveryRecords.push(n); 
-    writeDB(d); 
-    return n; 
+    const n = { ...rec, id: uuidv4(), deliveryNumber: rec.deliveryNumber || `DLV-HSE-${codeNum}`, createdAt: new Date().toISOString() };
+    d.deliveryRecords.push(n);
+    writeDB(d);
+    return n;
   },
   updateDeliveryRecord: (id: string, updates: any) => { const d = readDB(); if(!d.deliveryRecords) d.deliveryRecords = []; const idx = d.deliveryRecords.findIndex((dr: any) => dr.id === id); if(idx > -1) { d.deliveryRecords[idx] = { ...d.deliveryRecords[idx], ...updates }; writeDB(d); return d.deliveryRecords[idx]; } return null; },
   getDeliveryItems: (deliveryRecordId: string) => readDB().deliveryItems?.filter((i: any) => i.deliveryRecordId === deliveryRecordId) || [],
@@ -1704,14 +1777,14 @@ export const db: any = {
   getAssets: () => readDB().energyAssets || [],
   getAssetById: (id: string) => readDB().energyAssets?.find((a: any) => a.id === id),
   getAssetsByProjectId: (projectId: string) => readDB().energyAssets?.filter((a: any) => a.projectId === projectId) || [],
-  createAsset: (asset: any) => { 
-    const d = readDB(); 
-    if(!d.energyAssets) d.energyAssets = []; 
+  createAsset: (asset: any) => {
+    const d = readDB();
+    if(!d.energyAssets) d.energyAssets = [];
     const codeNum = String(d.energyAssets.length + 1).padStart(6, '0');
-    const n = { ...asset, id: uuidv4(), assetCode: asset.assetCode || `HEA-IR-${codeNum}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; 
-    d.energyAssets.push(n); 
-    writeDB(d); 
-    return n; 
+    const n = { ...asset, id: uuidv4(), assetCode: asset.assetCode || `HEA-IR-${codeNum}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    d.energyAssets.push(n);
+    writeDB(d);
+    return n;
   },
   updateAsset: (id: string, updates: any) => { const d = readDB(); if(!d.energyAssets) d.energyAssets = []; const idx = d.energyAssets.findIndex((a: any) => a.id === id); if(idx > -1) { d.energyAssets[idx] = { ...d.energyAssets[idx], ...updates, updatedAt: new Date().toISOString() }; writeDB(d); return d.energyAssets[idx]; } return null; },
   getAssetComponents: (assetId: string) => readDB().assetComponents?.filter((c: any) => c.assetId === assetId) || [],
@@ -1735,14 +1808,14 @@ export const db: any = {
   updateProjectHandover: (id: string, updates: any) => { const d = readDB(); if(!d.projectHandovers) d.projectHandovers = []; const idx = d.projectHandovers.findIndex((h: any) => h.id === id); if(idx > -1) { d.projectHandovers[idx] = { ...d.projectHandovers[idx], ...updates }; writeDB(d); return d.projectHandovers[idx]; } return null; },
   getPunchListItems: (projectId: string) => readDB().punchListItems?.filter((p: any) => p.projectId === projectId) || [],
   getPunchListItemById: (id: string) => readDB().punchListItems?.find((p: any) => p.id === id),
-  createPunchListItem: (item: any) => { 
-    const d = readDB(); 
-    if(!d.punchListItems) d.punchListItems = []; 
+  createPunchListItem: (item: any) => {
+    const d = readDB();
+    if(!d.punchListItems) d.punchListItems = [];
     const codeNum = String(d.punchListItems.length + 1).padStart(4, '0');
-    const n = { ...item, id: uuidv4(), itemNumber: item.itemNumber || `PL-${codeNum}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; 
-    d.punchListItems.push(n); 
-    writeDB(d); 
-    return n; 
+    const n = { ...item, id: uuidv4(), itemNumber: item.itemNumber || `PL-${codeNum}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    d.punchListItems.push(n);
+    writeDB(d);
+    return n;
   },
   updatePunchListItem: (id: string, updates: any) => { const d = readDB(); if(!d.punchListItems) d.punchListItems = []; const idx = d.punchListItems.findIndex((p: any) => p.id === id); if(idx > -1) { d.punchListItems[idx] = { ...d.punchListItems[idx], ...updates, updatedAt: new Date().toISOString() }; writeDB(d); return d.punchListItems[idx]; } return null; },
   deletePunchListItem: (id: string) => { const d = readDB(); if(!d.punchListItems) return; d.punchListItems = d.punchListItems.filter((p: any) => p.id !== id); writeDB(d); },
@@ -2425,8 +2498,8 @@ export const db: any = {
     const cleanId = String(id).trim();
     const cases = readDB().maintenanceCases || [];
     // Match by internal UUID primary key, or human-readable caseNumber, or maintenanceCode (case-insensitive)
-    return cases.find((c: any) => 
-      c.id === cleanId || 
+    return cases.find((c: any) =>
+      c.id === cleanId ||
       (c.caseNumber && String(c.caseNumber).trim().toLowerCase() === cleanId.toLowerCase()) ||
       (c.maintenanceCode && String(c.maintenanceCode).trim().toLowerCase() === cleanId.toLowerCase())
     );
@@ -2548,6 +2621,189 @@ export const db: any = {
     return n;
   },
 
+  recordCaseAction: (
+    caseId: string,
+    actionData: RecordCaseActionInput,
+    totalsUpdate?: RecordCaseActionTotalsUpdate
+  ): RecordCaseActionResult => {
+    const d = readDB();
+    if (!d.maintenanceCases) d.maintenanceCases = [];
+    if (!d.maintenanceActions) d.maintenanceActions = [];
+
+    const cleanCaseId = String(caseId).trim();
+    const caseIdx = d.maintenanceCases.findIndex((c: any) =>
+      c.id === cleanCaseId ||
+      (c.caseNumber && String(c.caseNumber).trim().toLowerCase() === cleanCaseId.toLowerCase()) ||
+      (c.maintenanceCode && String(c.maintenanceCode).trim().toLowerCase() === cleanCaseId.toLowerCase())
+    );
+
+    if (caseIdx === -1) {
+      throw new Error('پرونده تعمیراتی یافت نشد.');
+    }
+
+    const targetCase = d.maintenanceCases[caseIdx];
+
+    // Status check
+    if (targetCase.status === 'CANCELLED' || targetCase.status === 'CLOSED') {
+      throw new Error('امکان ثبت اقدام برای پرونده‌های لغو شده یا بسته شده وجود ندارد.');
+    }
+
+    // Idempotency check if clientRequestId is provided
+    if (actionData.clientRequestId) {
+      const reqId = actionData.clientRequestId.trim();
+      const existing = d.maintenanceActions.find((a: any) =>
+        (a.maintenanceCaseId === targetCase.id || a.caseId === targetCase.id) && a.clientRequestId === reqId
+      );
+
+      if (existing) {
+        // Cross-actor reuse protection at persistence boundary:
+        // A previously persisted clientRequestId cannot be replayed by a different actor.
+        // Rejects cross-actor reuse when either actor identity is missing, rather than treating absent identities as equivalent.
+        const actorMatches = Boolean(
+          existing.performedBy &&
+          actionData.performedBy &&
+          typeof existing.performedBy === 'string' &&
+          typeof actionData.performedBy === 'string' &&
+          existing.performedBy.trim() !== '' &&
+          actionData.performedBy.trim() !== '' &&
+          existing.performedBy.trim() === actionData.performedBy.trim()
+        );
+
+        if (!actorMatches) {
+          return {
+            success: false,
+            actorMismatch: true,
+            conflict: false,
+            message: 'شناسه درخواست متعلق به کاربر دیگری است یا هویت عامل ثبت نامشخص است و امکان استفاده مجدد از آن وجود ندارد.'
+          };
+        }
+
+        // If payloadHash matches, it is an identical retry -> return committed action without rewrite or re-updating totals
+        if (actionData.payloadHash && existing.payloadHash === actionData.payloadHash) {
+          return {
+            success: true,
+            isReplay: true,
+            action: existing,
+            case: targetCase
+          };
+        }
+
+        // If payloadHash differs, conflict!
+        return {
+          success: false,
+          conflict: true,
+          existingAction: existing,
+          message: 'شناسه درخواست تکراری با محتوای متفاوت. امکان تغییر داده‌های اقدام قبلاً ثبت‌شده با این شناسه وجود ندارد.'
+        };
+      }
+    }
+
+    // Validate and update totals inside the synchronous read-modify-write operation
+    if (totalsUpdate) {
+      const mode = totalsUpdate.mode || (
+        (totalsUpdate.laborCost !== undefined || totalsUpdate.partsCost !== undefined)
+          ? 'CUMULATIVE_OVERWRITE'
+          : (totalsUpdate.deltaLaborHours !== undefined || totalsUpdate.deltaCostIrr !== undefined)
+            ? 'INCREMENTAL'
+            : undefined
+      );
+
+      if (mode === 'CUMULATIVE_OVERWRITE') {
+        // Validate existing stored case totals (reject negative, NaN, Infinity, fractional, unsafe integer)
+        const existingLaborCost = validateStoredRialAmount(targetCase.laborCost, 'laborCost');
+        const existingPartsCost = validateStoredRialAmount(targetCase.partsCost, 'partsCost');
+        validateStoredRialAmount(targetCase.totalCost, 'totalCost');
+        validateStoredRialAmount(targetCase.totalCostIrr, 'totalCostIrr');
+
+        // Only calculate/update if at least one financial field was provided in this action request
+        if (totalsUpdate.laborCost !== undefined || totalsUpdate.partsCost !== undefined) {
+          let newLabor = existingLaborCost ?? 0;
+          let newParts = existingPartsCost ?? 0;
+
+          if (totalsUpdate.laborCost !== undefined && totalsUpdate.laborCost !== null) {
+            newLabor = validateInputRialAmount(totalsUpdate.laborCost, 'هزینه دستمزد');
+          }
+          if (totalsUpdate.partsCost !== undefined && totalsUpdate.partsCost !== null) {
+            newParts = validateInputRialAmount(totalsUpdate.partsCost, 'هزینه قطعات');
+          }
+
+          const newTotal = newLabor + newParts;
+          if (newTotal > Number.MAX_SAFE_INTEGER || newTotal > 1e14) {
+            throw new Error('مجموع هزینه‌ها فراتر از حد مجاز محاسبات امن است.');
+          }
+
+          targetCase.laborCost = newLabor;
+          targetCase.partsCost = newParts;
+          targetCase.totalCost = newTotal;
+          targetCase.totalCostIrr = newTotal;
+        }
+      } else if (mode === 'INCREMENTAL') {
+        // Validate existing stored case totals (reject negative, NaN, Infinity, fractional, unsafe integer)
+        const existingHours = validateStoredLaborHours(targetCase.totalLaborHours) ?? 0;
+        const existingCost = validateStoredRialAmount(targetCase.totalCostIrr, 'totalCostIrr') ?? 0;
+
+        let newHours = existingHours;
+        let newCost = existingCost;
+
+        if (totalsUpdate.deltaLaborHours !== undefined && totalsUpdate.deltaLaborHours !== null) {
+          const deltaHours = validateInputLaborHours(totalsUpdate.deltaLaborHours);
+          newHours = existingHours + deltaHours;
+          if (newHours > 100000) {
+            throw new Error('مجموع ساعات کارکرد پرونده فراتر از حد مجاز است.');
+          }
+          targetCase.totalLaborHours = newHours;
+        }
+
+        if (totalsUpdate.deltaCostIrr !== undefined && totalsUpdate.deltaCostIrr !== null) {
+          const deltaCost = validateInputRialAmount(totalsUpdate.deltaCostIrr, 'هزینه ریالی اقدام');
+          newCost = existingCost + deltaCost;
+          if (newCost > Number.MAX_SAFE_INTEGER || newCost > 1e14) {
+            throw new Error('مجموع هزینه فراتر از حد مجاز محاسبات امن است.');
+          }
+          targetCase.totalCostIrr = newCost;
+          if (targetCase.totalCost !== undefined && targetCase.totalCost !== null) {
+            targetCase.totalCost = newCost;
+          }
+        }
+      } else {
+        // Fallback for direct totals assignments if any
+        if (totalsUpdate.totalLaborHours !== undefined && totalsUpdate.totalLaborHours !== null) targetCase.totalLaborHours = totalsUpdate.totalLaborHours;
+        if (totalsUpdate.totalCostIrr !== undefined && totalsUpdate.totalCostIrr !== null) targetCase.totalCostIrr = totalsUpdate.totalCostIrr;
+        if (totalsUpdate.laborCost !== undefined) targetCase.laborCost = totalsUpdate.laborCost;
+        if (totalsUpdate.partsCost !== undefined) targetCase.partsCost = totalsUpdate.partsCost;
+        if (totalsUpdate.totalCost !== undefined) targetCase.totalCost = totalsUpdate.totalCost;
+      }
+    }
+
+    // Insert new action
+    const now = new Date().toISOString();
+    const newAction: MaintenanceAction = {
+      ...actionData,
+      id: uuidv4(),
+      maintenanceCaseId: targetCase.id,
+      performedAt: actionData.performedAt || now,
+      createdAt: actionData.createdAt || now
+    };
+
+    d.maintenanceActions.push(newAction);
+
+    if (!targetCase.actionsTaken) {
+      targetCase.actionsTaken = [];
+    }
+    targetCase.actionsTaken.push(newAction);
+    targetCase.updatedAt = now;
+
+    // Single validated writeDB flush
+    writeDB(d);
+
+    return {
+      success: true,
+      isReplay: false,
+      action: newAction,
+      case: targetCase
+    };
+  },
+
   getMaintenanceAssignmentHistories: (caseId?: string): MaintenanceAssignmentHistory[] => {
     let all = readDB().maintenanceAssignmentHistories || [];
     if (caseId) all = all.filter((h: any) => h.maintenanceCaseId === caseId);
@@ -2592,5 +2848,6 @@ export const db: any = {
   setDBPath: (newPath: string) => {
     currentDbPath = newPath;
   },
-  getDBPath: () => currentDbPath
+  getDBPath: () => currentDbPath,
+  __setTestWriteFailureHook
 };

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { maintenanceRepository } from '../repositories/maintenanceRepository.js';
 import { assetRepository } from '../repositories/assetRepository.js';
 import { alertService } from './alertService.js';
@@ -127,6 +128,146 @@ export function hasCurrentCycleAcceptance(
 
   // 3. Must contain at least one valid ACCEPTED record
   return list.length > 0;
+}
+
+/**
+ * Validates financial Rial amount.
+ * - Rejects undefined, null, boolean, objects, arrays.
+ * - Rejects NaN, Infinity.
+ * - Rejects negative values.
+ * - Rejects non-numeric strings.
+ * - Rejects values exceeding MAX_SAFE_INTEGER or 10^13.
+ * - Enforces integer-rial rule (rejects fractional/decimal amounts).
+ */
+export function validateFinancialAmount(value: any, fieldName: string): number {
+  if (value === undefined || value === null) {
+    throw new Error(`مقدار ${fieldName} الزامی است.`);
+  }
+
+  if (typeof value === 'boolean' || (typeof value !== 'number' && typeof value !== 'string')) {
+    throw new Error(`نوع داده فیلد ${fieldName} نامعتبر است.`);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '' || !/^-?\d+(\.\d+)?$/.test(trimmed)) {
+      throw new Error(`مقدار ${fieldName} باید یک عدد معتبر باشد.`);
+    }
+  }
+
+  const num = Number(value);
+
+  if (Number.isNaN(num) || !Number.isFinite(num)) {
+    throw new Error(`مقدار ${fieldName} نامعتبر یا بی‌نهایت است.`);
+  }
+
+  if (num < 0) {
+    throw new Error(`مقدار ${fieldName} نمی‌تواند منفی باشد.`);
+  }
+
+  if (num > Number.MAX_SAFE_INTEGER || num > 1e13) {
+    throw new Error(`مقدار ${fieldName} فراتر از حد مجاز محاسبات امن است.`);
+  }
+
+  if (!Number.isInteger(num)) {
+    throw new Error(`مقدار ${fieldName} بر حسب ریال باید یک عدد صحیح باشد (مبالغ اعشاری ریالی مجاز نیستند).`);
+  }
+
+  return num;
+}
+
+/**
+ * Validates labor hours:
+ * - Must be a non-negative finite number between 0 and 10,000.
+ * - Allows fractional hours (e.g. 1.5).
+ */
+export function validateLaborHours(value: any): number {
+  if (value === undefined || value === null) return 0;
+
+  if (typeof value === 'boolean' || (typeof value !== 'number' && typeof value !== 'string')) {
+    throw new Error('نوع داده ساعات کارکرد نامعتبر است.');
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '' || !/^-?\d+(\.\d+)?$/.test(trimmed)) {
+      throw new Error('مقدار ساعات کارکرد باید عددی معتبر باشد.');
+    }
+  }
+
+  const num = Number(value);
+
+  if (Number.isNaN(num) || !Number.isFinite(num)) {
+    throw new Error('مقدار ساعات کارکرد نامعتبر یا بی‌نهایت است.');
+  }
+
+  if (num < 0) {
+    throw new Error('ساعات کارکرد نمی‌تواند منفی باشد.');
+  }
+
+  if (num > 10000) {
+    throw new Error('ساعات کارکرد نمی‌تواند بیش از ۱۰۰۰۰ ساعت باشد.');
+  }
+
+  return num;
+}
+
+/**
+ * Validates clientRequestId:
+ * - Must be a non-empty string between 8 and 128 characters matching /^[A-Za-z0-9_-]+$/.
+ */
+export function validateClientRequestId(key: any): string | undefined {
+  if (key === undefined || key === null) return undefined;
+
+  if (typeof key !== 'string') {
+    throw new Error('شناسه درخواست (clientRequestId) باید یک رشته متنی باشد.');
+  }
+
+  const trimmed = key.trim();
+  if (trimmed === '') return undefined;
+
+  if (trimmed.length < 8 || trimmed.length > 128) {
+    throw new Error('طول شناسه درخواست باید بین ۸ تا ۱۲۸ کاراکتر باشد.');
+  }
+
+  if (!/^[A-Za-z0-9_-]+$/.test(trimmed)) {
+    throw new Error('فرمت شناسه درخواست نامعتبر است. تنها کاراکترهای الفبایی-عددی، خط فاصله و زیرخط مجاز هستند.');
+  }
+
+  return trimmed;
+}
+
+/**
+ * Computes canonical payload hash for an action.
+ * Excludes server-generated timestamps and IDs.
+ */
+export function computeActionPayloadHash(payload: {
+  actionType: string;
+  description: string;
+  componentId?: string;
+  replacedComponentId?: string;
+  newComponentSerial?: string;
+  newComponentModel?: string;
+  notes?: string;
+  laborCost?: number | null;
+  partsCost?: number | null;
+  costIrr?: number | null;
+  laborHours?: number | null;
+}): string {
+  const canonicalObj = {
+    actionType: String(payload.actionType || '').trim().toUpperCase(),
+    componentId: payload.componentId ? String(payload.componentId).trim() : null,
+    costIrr: payload.costIrr !== undefined && payload.costIrr !== null ? Number(payload.costIrr) : null,
+    description: String(payload.description || '').trim(),
+    laborCost: payload.laborCost !== undefined && payload.laborCost !== null ? Number(payload.laborCost) : null,
+    laborHours: payload.laborHours !== undefined && payload.laborHours !== null ? Number(payload.laborHours) : null,
+    newComponentModel: payload.newComponentModel ? String(payload.newComponentModel).trim() : null,
+    newComponentSerial: payload.newComponentSerial ? String(payload.newComponentSerial).trim() : null,
+    notes: payload.notes ? String(payload.notes).trim() : null,
+    partsCost: payload.partsCost !== undefined && payload.partsCost !== null ? Number(payload.partsCost) : null,
+    replacedComponentId: payload.replacedComponentId ? String(payload.replacedComponentId).trim() : null
+  };
+  return crypto.createHash('sha256').update(JSON.stringify(canonicalObj)).digest('hex');
 }
 
 export const maintenanceCaseService = {
@@ -558,7 +699,7 @@ export const maintenanceCaseService = {
   },
 
   /**
-   * Adds an action log to a maintenance case
+   * Adds an action log to a maintenance case using safe single-write persistence and idempotency
    */
   addAction: (
     caseId: string,
@@ -566,10 +707,11 @@ export const maintenanceCaseService = {
       actionType: string;
       description: string;
       performedBy: string;
-      resultStatus: 'SUCCESS' | 'PARTIAL' | 'FAILED';
+      resultStatus?: 'SUCCESS' | 'PARTIAL' | 'FAILED' | string;
       notes?: string;
       laborHours?: number;
       costIrr?: number;
+      clientRequestId?: string;
     }
   ): MaintenanceAction => {
     const mCase = maintenanceRepository.getCaseById(caseId);
@@ -581,25 +723,63 @@ export const maintenanceCaseService = {
       throw new Error('امکان ثبت اقدام برای پرونده‌های لغو شده یا بسته شده وجود ندارد.');
     }
 
-    const created = maintenanceRepository.createAction({
-      maintenanceCaseId: caseId,
+    // Correction 1: Explicit null policy for incoming inputs
+    if (action.laborHours === null) {
+      throw new Error('مقدار ساعات کارکرد نمی‌تواند null باشد. در صورت عدم نیاز، مقدار را حذف کنید.');
+    }
+    if (action.costIrr === null) {
+      throw new Error('مقدار هزینه ریالی نمی‌تواند null باشد. در صورت عدم نیاز، مقدار را حذف کنید.');
+    }
+
+    // Validate financial inputs if provided
+    let laborHours: number | undefined = undefined;
+    if (action.laborHours !== undefined) {
+      laborHours = validateLaborHours(action.laborHours);
+    }
+
+    let costIrr: number | undefined = undefined;
+    if (action.costIrr !== undefined) {
+      costIrr = validateFinancialAmount(action.costIrr, 'هزینه ریالی اقدام');
+    }
+
+    const clientRequestId = validateClientRequestId(action.clientRequestId);
+    const payloadHash = computeActionPayloadHash({
       actionType: action.actionType,
       description: action.description,
-      performedBy: action.performedBy,
-      performedAt: new Date().toISOString(),
-      resultStatus: action.resultStatus,
-      notes: action.notes
+      notes: action.notes,
+      laborHours,
+      costIrr
     });
 
-    // Update totals if provided
-    const totalLaborHours = (mCase.totalLaborHours || 0) + (action.laborHours || 0);
-    const totalCostIrr = (mCase.totalCostIrr || 0) + (action.costIrr || 0);
-    maintenanceRepository.updateCase(caseId, {
-      totalLaborHours,
-      totalCostIrr
-    });
+    const result = maintenanceRepository.recordCaseAction(
+      caseId,
+      {
+        actionType: action.actionType,
+        description: action.description,
+        performedBy: action.performedBy,
+        resultStatus: action.resultStatus || 'SUCCESS',
+        notes: action.notes,
+        clientRequestId,
+        payloadHash
+      },
+      {
+        mode: 'INCREMENTAL',
+        deltaLaborHours: laborHours,
+        deltaCostIrr: costIrr
+      }
+    );
 
-    return created;
+    if (!result.success) {
+      if ((result as any).actorMismatch) {
+        throw new Error((result as any).message || 'شناسه درخواست متعلق به کاربر دیگری است و امکان استفاده مجدد از آن وجود ندارد.');
+      }
+      if ((result as any).conflict) {
+        throw new Error((result as any).message || 'شناسه درخواست تکراری با محتوای متفاوت.');
+      }
+      throw new Error((result as any).message || 'خطا در ثبت اقدام تعمیراتی.');
+    }
+
+    return (result as any).action;
   },
 
   /**
