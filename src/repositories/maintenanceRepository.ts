@@ -6,7 +6,10 @@ import {
   MaintenanceCase,
   MaintenanceDiagnosis,
   MaintenanceAction,
-  MaintenanceAssignmentHistory
+  MaintenanceAssignmentHistory,
+  RecordCaseActionInput,
+  RecordCaseActionTotalsUpdate,
+  RecordCaseActionResult
 } from '../types/maintenance.js';
 
 export const maintenanceRepository = {
@@ -132,6 +135,14 @@ export const maintenanceRepository = {
 
   createAction: (action: Omit<MaintenanceAction, 'id' | 'createdAt'> & { createdAt?: string }): MaintenanceAction => {
     return db.createMaintenanceAction(action);
+  },
+
+  recordCaseAction: (
+    caseId: string,
+    actionData: RecordCaseActionInput,
+    totalsUpdate?: RecordCaseActionTotalsUpdate
+  ): RecordCaseActionResult => {
+    return db.recordCaseAction(caseId, actionData, totalsUpdate);
   },
 
   // Assignment History
