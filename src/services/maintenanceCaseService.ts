@@ -374,9 +374,30 @@ export function validateCaseFinancialConsistency(targetCase: {
   const t = validateStoredRialAmount(targetCase.totalCost, 'totalCost');
   const tIrr = validateStoredRialAmount(targetCase.totalCostIrr, 'totalCostIrr');
 
+  // String check: reject whitespace-only or non-numeric strings that might slip past Number()
+  for (const [val, name] of [
+    [targetCase.laborCost, 'laborCost'],
+    [targetCase.partsCost, 'partsCost'],
+    [targetCase.totalCost, 'totalCost'],
+    [targetCase.totalCostIrr, 'totalCostIrr']
+  ] as const) {
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (trimmed === '' || !/^-?\d+$/.test(trimmed)) {
+        throw new Error(`مقدار ذخیره‌شده ${name} در پرونده (${val}) نامعتبر یا فاسد است.`);
+      }
+    }
+  }
+
   if (l !== undefined && p !== undefined && t !== undefined) {
     if (l + p !== t) {
       throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: مجموع دستمزد (${l}) و قطعات (${p}) با هزینه کل (${t}) برابر نیست.`);
+    }
+  }
+
+  if (l !== undefined && p !== undefined && tIrr !== undefined) {
+    if (l + p !== tIrr) {
+      throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: مجموع دستمزد (${l}) و قطعات (${p}) با هزینه کل ریالی (${tIrr}) برابر نیست.`);
     }
   }
 
@@ -386,10 +407,32 @@ export function validateCaseFinancialConsistency(targetCase: {
     }
   }
 
+  if (t !== undefined && p !== undefined && t < p) {
+    throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: هزینه کل (${t}) کمتر از هزینه قطعات (${p}) است.`);
+  }
+
+  if (tIrr !== undefined && p !== undefined && tIrr < p) {
+    throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: هزینه کل ریالی (${tIrr}) کمتر از هزینه قطعات (${p}) است.`);
+  }
+
+  if (t !== undefined && l !== undefined && t < l) {
+    throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: هزینه کل (${t}) کمتر از هزینه دستمزد (${l}) است.`);
+  }
+
+  if (tIrr !== undefined && l !== undefined && tIrr < l) {
+    throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: هزینه کل ریالی (${tIrr}) کمتر از هزینه دستمزد (${l}) است.`);
+  }
+
   if (Array.isArray(targetCase.sparePartsUsed)) {
     const recordedPartsCost = calculateRecordedPartsCost(targetCase.sparePartsUsed);
     if (p !== undefined && p < recordedPartsCost) {
       throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: هزینه قطعات (${p}) کمتر از بهای قطعات یدکی مصرفی ثبت‌شده (${recordedPartsCost}) است.`);
+    }
+    if (t !== undefined && t < recordedPartsCost) {
+      throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: هزینه کل (${t}) کمتر از بهای قطعات یدکی مصرفی ثبت‌شده (${recordedPartsCost}) است.`);
+    }
+    if (tIrr !== undefined && tIrr < recordedPartsCost) {
+      throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: هزینه کل ریالی (${tIrr}) کمتر از بهای قطعات یدکی مصرفی ثبت‌شده (${recordedPartsCost}) است.`);
     }
   }
 }
@@ -1226,6 +1269,9 @@ export const maintenanceCaseService = {
           conflictErr.clientRequestId = clientRequestId;
           throw conflictErr;
         }
+
+        // Validate stored case financial consistency before returning successful identical replay
+        validateCaseFinancialConsistency(mCase);
 
         // Exact identical replay: return existing case without duplicating parts or charges
         return mCase;

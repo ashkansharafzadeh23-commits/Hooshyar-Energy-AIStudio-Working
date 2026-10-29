@@ -41,6 +41,7 @@ async function runTestSuite() {
   console.log('================================================================\n');
 
   const isolation = setupTestDatabaseIsolation('stage13_11_f5_phase2c1b2a');
+  const initialRepoDbHash = crypto.createHash('sha256').update(fs.readFileSync(isolation.repoDbPath)).digest('hex');
   let server: http.Server | null = null;
   let testError: any = null;
 
@@ -1299,6 +1300,360 @@ async function runTestSuite() {
 
     const caseAfterSpareFail = maintenanceRepository.getCaseById(caseSpareFail.id)!;
     assert((caseAfterSpareFail.sparePartsUsed || []).length === 0, 'C.14.20: No partial spare parts written on persistence failure');
+
+    // =========================================================================
+    // C.15: CONTROLLED CORRECTION: IDENTICAL REPLAY FINANCIAL INTEGRITY VALIDATION (TESTS 1–7)
+    // =========================================================================
+    console.log('\n--- C.15: IDENTICAL REPLAY FINANCIAL INTEGRITY VALIDATION (TESTS 1–7) ---');
+
+    // TEST 1 — Valid identical replay
+    // 1. Create a valid maintenance case.
+    // 2. Record spare parts using a valid idempotency key.
+    // 3. Replay the identical request.
+    // 4. Confirm successful behavior.
+    // 5. Confirm all financial totals remain unchanged.
+    // 6. Confirm no duplicate spare parts.
+    // 7. Confirm no unnecessary write was performed, where this can be reliably instrumented.
+    const caseT1 = createAcceptedCase('پرونده تست شماره ۱ - بازپخش یکسان و معتبر');
+    const partsT1 = [
+      { partName: 'شیر برقی رله دی‌سی', quantity: 2, costIrr: 1200000 }
+    ];
+    const initialT1 = maintenanceCaseService.addSpareParts(caseT1.id, partsT1, {
+      clientRequestId: 'KEY_T1_REPLAY_VALID'
+    });
+    assert(initialT1.sparePartsUsed?.length === 1, 'C.15.1.1: TEST 1: Initial spare parts added successfully (1 item)');
+    assert(initialT1.partsCost === 2400000, 'C.15.1.2: TEST 1: Initial partsCost is 2,400,000 IRR');
+    assert(initialT1.totalCost === 2400000, 'C.15.1.3: TEST 1: Initial totalCost is 2,400,000 IRR');
+    assert(initialT1.totalCostIrr === 2400000, 'C.15.1.4: TEST 1: Initial totalCostIrr is 2,400,000 IRR');
+
+    // Instrument zero-write guarantee using write failure hook
+    try {
+      db.__setTestWriteFailureHook((stage) => {
+        throw new Error('E_UNNECESSARY_WRITE: Identical replay must NOT perform disk persistence write!');
+      });
+
+      const replayT1 = maintenanceCaseService.addSpareParts(caseT1.id, partsT1, {
+        clientRequestId: 'KEY_T1_REPLAY_VALID'
+      });
+      assert(replayT1.sparePartsUsed?.length === 1, 'C.15.1.5: TEST 1: Identical replay preserved spare parts count (no duplicate items)');
+      assert(replayT1.partsCost === 2400000, 'C.15.1.6: TEST 1: Identical replay did not double partsCost (remains 2.4M IRR)');
+      assert(replayT1.totalCost === 2400000, 'C.15.1.7: TEST 1: Identical replay did not double totalCost (remains 2.4M IRR)');
+      assert(replayT1.totalCostIrr === 2400000, 'C.15.1.8: TEST 1: Identical replay did not double totalCostIrr (remains 2.4M IRR)');
+    } finally {
+      db.__setTestWriteFailureHook(null);
+    }
+
+    // Replay identical request via HTTP route
+    const resHttpT1 = await fetch(`${baseUrl}/cases/${caseT1.id}/spare-parts`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${techTokenA}`,
+        'Content-Type': 'application/json',
+        'idempotency-key': 'KEY_T1_REPLAY_VALID'
+      },
+      body: JSON.stringify({ parts: partsT1 })
+    });
+    assert(resHttpT1.status === 200, 'C.15.1.9: TEST 1: HTTP identical replay returns HTTP 200 without unnecessary mutation');
+
+    // TEST 2 — Contradictory stored total values
+    // 1. Create a valid case and record spare parts.
+    // 2. Inject an isolated-test-only contradiction between totalCost and totalCostIrr.
+    // 3. Replay the original identical request.
+    // 4. Confirm the replay is rejected.
+    // 5. Confirm there is no additional write.
+    // 6. Confirm the contradictory data is not silently overwritten.
+    // 7. Confirm no additional spare parts are recorded.
+    const caseT2 = createAcceptedCase('پرونده تست شماره ۲ - تناقض در مبالغ کل ذخیره‌شده');
+    const partsT2 = [
+      { partName: 'سنسور ولتاژ فاز', quantity: 1, costIrr: 3000000 }
+    ];
+    maintenanceCaseService.addSpareParts(caseT2.id, partsT2, {
+      clientRequestId: 'KEY_T2_CONTRADICTORY'
+    });
+
+    // Inject contradiction: totalCost differs from totalCostIrr in active database
+    const rawDataT2 = JSON.parse(fs.readFileSync(activeDbPath, 'utf8'));
+    const idxT2 = rawDataT2.maintenanceCases.findIndex((x: any) => x.id === caseT2.id);
+    rawDataT2.maintenanceCases[idxT2].totalCost = 3000000;
+    rawDataT2.maintenanceCases[idxT2].totalCostIrr = 4500000; // Contradiction: 3M !== 4.5M!
+    fs.writeFileSync(activeDbPath, JSON.stringify(rawDataT2, null, 2), 'utf8');
+
+    let t2Threw = false;
+    let t2ErrorMsg = '';
+    try {
+      db.__setTestWriteFailureHook((stage) => {
+        throw new Error('E_UNWARRANTED_WRITE: Failed replay must NOT write to disk!');
+      });
+      maintenanceCaseService.addSpareParts(caseT2.id, partsT2, {
+        clientRequestId: 'KEY_T2_CONTRADICTORY'
+      });
+    } catch (e: any) {
+      t2Threw = true;
+      t2ErrorMsg = e.message || '';
+    } finally {
+      db.__setTestWriteFailureHook(null);
+    }
+    assert(t2Threw, 'C.15.2.1: TEST 2: Identical replay on case with contradictory totalCost/totalCostIrr is rejected');
+    assert(t2ErrorMsg.includes('مطابقت ندارد') || t2ErrorMsg.includes('تناقض'), 'C.15.2.2: TEST 2: Error message identifies financial contradiction');
+
+    // Verify contradictory data was NOT silently overwritten or normalized
+    const caseT2After = maintenanceRepository.getCaseById(caseT2.id)!;
+    assert(caseT2After.totalCost === 3000000, 'C.15.2.3: TEST 2: Contradictory totalCost was not silently mutated');
+    assert(caseT2After.totalCostIrr === 4500000, 'C.15.2.4: TEST 2: Contradictory totalCostIrr was not silently mutated');
+    assert(caseT2After.sparePartsUsed?.length === 1, 'C.15.2.5: TEST 2: No spare parts appended on rejected replay');
+
+    // HTTP Route test for contradictory stored total values
+    const resHttpT2 = await fetch(`${baseUrl}/cases/${caseT2.id}/spare-parts`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${techTokenA}`,
+        'Content-Type': 'application/json',
+        'idempotency-key': 'KEY_T2_CONTRADICTORY'
+      },
+      body: JSON.stringify({ parts: partsT2 })
+    });
+    assert(resHttpT2.status === 400, 'C.15.2.6: TEST 2: HTTP identical replay on contradictory case returns HTTP 400');
+
+    // TEST 3 — Parts cost below recorded spare-parts floor
+    // 1. Record valid spare parts.
+    // 2. Inject a stored partsCost smaller than the calculated cost of sparePartsUsed.
+    // 3. Replay the original request with the same key and payload.
+    // 4. Confirm fail-closed rejection.
+    // 5. Confirm no mutation or duplicate financial effects.
+    const caseT3 = createAcceptedCase('پرونده تست شماره ۳ - هزینه قطعات کمتر از کف ثبت‌شده');
+    const partsT3 = [
+      { partName: 'ماژول تغذیه سوییچینگ', quantity: 2, costIrr: 2000000 }
+    ];
+    maintenanceCaseService.addSpareParts(caseT3.id, partsT3, {
+      clientRequestId: 'KEY_T3_FLOOR_VIOLATION'
+    });
+
+    // Inject violation: recorded parts cost is 4,000,000, but set partsCost to 1,500,000 (< floor)
+    const rawDataT3 = JSON.parse(fs.readFileSync(activeDbPath, 'utf8'));
+    const idxT3 = rawDataT3.maintenanceCases.findIndex((x: any) => x.id === caseT3.id);
+    rawDataT3.maintenanceCases[idxT3].partsCost = 1500000;
+    rawDataT3.maintenanceCases[idxT3].totalCost = 1500000;
+    rawDataT3.maintenanceCases[idxT3].totalCostIrr = 1500000;
+    fs.writeFileSync(activeDbPath, JSON.stringify(rawDataT3, null, 2), 'utf8');
+
+    let t3Threw = false;
+    let t3ErrorMsg = '';
+    try {
+      maintenanceCaseService.addSpareParts(caseT3.id, partsT3, {
+        clientRequestId: 'KEY_T3_FLOOR_VIOLATION'
+      });
+    } catch (e: any) {
+      t3Threw = true;
+      t3ErrorMsg = e.message || '';
+    }
+    assert(t3Threw, 'C.15.3.1: TEST 3: Identical replay with partsCost below spare parts floor is rejected fail-closed');
+    assert(t3ErrorMsg.includes('کمتر از بهای قطعات یدکی مصرفی ثبت‌شده'), 'C.15.3.2: TEST 3: Rejection explicitly notes partsCost below recorded floor');
+
+    const caseT3After = maintenanceRepository.getCaseById(caseT3.id)!;
+    assert(caseT3After.partsCost === 1500000, 'C.15.3.3: TEST 3: Stored partsCost remains intact without silent overwrite');
+    assert(caseT3After.sparePartsUsed?.length === 1, 'C.15.3.4: TEST 3: Spare parts count remains unchanged');
+
+    // TEST 4 — Invalid stored financial amount
+    // Test corrupted stored amounts, including relevant negative, fractional, or non-finite values.
+    // Confirm:
+    // - Identical replay is rejected.
+    // - Corruption is not silently normalized.
+    // - No database mutation occurs.
+    const caseT4 = createAcceptedCase('پرونده تست شماره ۴ - مقادیر مالی فاسد و نامعتبر');
+    const partsT4 = [
+      { partName: 'شنت جریان دقیق', quantity: 1, costIrr: 1000000 }
+    ];
+    maintenanceCaseService.addSpareParts(caseT4.id, partsT4, {
+      clientRequestId: 'KEY_T4_CORRUPT'
+    });
+
+    // 4.a: Negative stored partsCost
+    const rawDataT4a = JSON.parse(fs.readFileSync(activeDbPath, 'utf8'));
+    const idxT4a = rawDataT4a.maintenanceCases.findIndex((x: any) => x.id === caseT4.id);
+    rawDataT4a.maintenanceCases[idxT4a].partsCost = -500000;
+    fs.writeFileSync(activeDbPath, JSON.stringify(rawDataT4a, null, 2), 'utf8');
+
+    let t4aThrew = false;
+    try {
+      maintenanceCaseService.addSpareParts(caseT4.id, partsT4, {
+        clientRequestId: 'KEY_T4_CORRUPT'
+      });
+    } catch {
+      t4aThrew = true;
+    }
+    assert(t4aThrew, 'C.15.4.1: TEST 4: Identical replay rejected on negative stored partsCost');
+
+    // 4.b: Fractional stored totalCost
+    const rawDataT4b = JSON.parse(fs.readFileSync(activeDbPath, 'utf8'));
+    const idxT4b = rawDataT4b.maintenanceCases.findIndex((x: any) => x.id === caseT4.id);
+    rawDataT4b.maintenanceCases[idxT4b].partsCost = 1000000;
+    rawDataT4b.maintenanceCases[idxT4b].totalCost = 1000000.75; // Fractional rial!
+    rawDataT4b.maintenanceCases[idxT4b].totalCostIrr = 1000000.75;
+    fs.writeFileSync(activeDbPath, JSON.stringify(rawDataT4b, null, 2), 'utf8');
+
+    let t4bThrew = false;
+    try {
+      maintenanceCaseService.addSpareParts(caseT4.id, partsT4, {
+        clientRequestId: 'KEY_T4_CORRUPT'
+      });
+    } catch {
+      t4bThrew = true;
+    }
+    assert(t4bThrew, 'C.15.4.2: TEST 4: Identical replay rejected on fractional stored totalCost');
+
+    // 4.c: Corrupted non-numeric string stored amount
+    const rawDataT4c = JSON.parse(fs.readFileSync(activeDbPath, 'utf8'));
+    const idxT4c = rawDataT4c.maintenanceCases.findIndex((x: any) => x.id === caseT4.id);
+    rawDataT4c.maintenanceCases[idxT4c].totalCost = 'NaN_CORRUPTED_VALUE';
+    rawDataT4c.maintenanceCases[idxT4c].totalCostIrr = 'NaN_CORRUPTED_VALUE';
+    fs.writeFileSync(activeDbPath, JSON.stringify(rawDataT4c, null, 2), 'utf8');
+
+    let t4cThrew = false;
+    try {
+      maintenanceCaseService.addSpareParts(caseT4.id, partsT4, {
+        clientRequestId: 'KEY_T4_CORRUPT'
+      });
+    } catch {
+      t4cThrew = true;
+    }
+    assert(t4cThrew, 'C.15.4.3: TEST 4: Identical replay rejected on non-numeric string stored totalCost');
+
+    // 4.d: Stored totalCost less than partsCost
+    const rawDataT4d = JSON.parse(fs.readFileSync(activeDbPath, 'utf8'));
+    const idxT4d = rawDataT4d.maintenanceCases.findIndex((x: any) => x.id === caseT4.id);
+    rawDataT4d.maintenanceCases[idxT4d].partsCost = 1000000;
+    rawDataT4d.maintenanceCases[idxT4d].totalCost = 200000; // totalCost < partsCost
+    rawDataT4d.maintenanceCases[idxT4d].totalCostIrr = 200000;
+    fs.writeFileSync(activeDbPath, JSON.stringify(rawDataT4d, null, 2), 'utf8');
+
+    let t4dThrew = false;
+    try {
+      maintenanceCaseService.addSpareParts(caseT4.id, partsT4, {
+        clientRequestId: 'KEY_T4_CORRUPT'
+      });
+    } catch {
+      t4dThrew = true;
+    }
+    assert(t4dThrew, 'C.15.4.4: TEST 4: Identical replay rejected when totalCost < partsCost');
+
+    // TEST 5 — Conflicting replay compatibility
+    // Verify that changed payload fields with the same idempotency key continue to trigger:
+    // IDEMPOTENCY_PAYLOAD_CONFLICT (HTTP 409)
+    // Test differences in relevant part names, quantities, and costs.
+    const caseT5 = createAcceptedCase('پرونده تست شماره ۵ - سازگاری خطای تناقض محتوا');
+    const partsT5 = [
+      { partName: 'کارت درایور ماسفت', quantity: 2, costIrr: 3500000 }
+    ];
+    maintenanceCaseService.addSpareParts(caseT5.id, partsT5, {
+      clientRequestId: 'KEY_T5_CONFLICT_VERIFY'
+    });
+
+    // 5.a: Changed partName
+    let t5NameErr: any = null;
+    try {
+      maintenanceCaseService.addSpareParts(caseT5.id, [
+        { partName: 'کارت درایور ای‌جی‌بی‌تی', quantity: 2, costIrr: 3500000 }
+      ], { clientRequestId: 'KEY_T5_CONFLICT_VERIFY' });
+    } catch (e: any) {
+      t5NameErr = e;
+    }
+    assert(t5NameErr?.code === 'IDEMPOTENCY_PAYLOAD_CONFLICT', 'C.15.5.1: TEST 5: Changed partName triggers IDEMPOTENCY_PAYLOAD_CONFLICT');
+
+    // 5.b: Changed quantity
+    let t5QtyErr: any = null;
+    try {
+      maintenanceCaseService.addSpareParts(caseT5.id, [
+        { partName: 'کارت درایور ماسفت', quantity: 5, costIrr: 3500000 }
+      ], { clientRequestId: 'KEY_T5_CONFLICT_VERIFY' });
+    } catch (e: any) {
+      t5QtyErr = e;
+    }
+    assert(t5QtyErr?.code === 'IDEMPOTENCY_PAYLOAD_CONFLICT', 'C.15.5.2: TEST 5: Changed quantity triggers IDEMPOTENCY_PAYLOAD_CONFLICT');
+
+    // 5.c: Changed costIrr
+    let t5CostErr: any = null;
+    try {
+      maintenanceCaseService.addSpareParts(caseT5.id, [
+        { partName: 'کارت درایور ماسفت', quantity: 2, costIrr: 5000000 }
+      ], { clientRequestId: 'KEY_T5_CONFLICT_VERIFY' });
+    } catch (e: any) {
+      t5CostErr = e;
+    }
+    assert(t5CostErr?.code === 'IDEMPOTENCY_PAYLOAD_CONFLICT', 'C.15.5.3: TEST 5: Changed costIrr triggers IDEMPOTENCY_PAYLOAD_CONFLICT');
+
+    // 5.d: Precedence check: Even on a case with contradictory totals, a conflicting payload triggers 409 conflict
+    const rawDataT5 = JSON.parse(fs.readFileSync(activeDbPath, 'utf8'));
+    const idxT5 = rawDataT5.maintenanceCases.findIndex((x: any) => x.id === caseT5.id);
+    rawDataT5.maintenanceCases[idxT5].totalCost = 1000000;
+    rawDataT5.maintenanceCases[idxT5].totalCostIrr = 9999999; // Corrupt/contradictory!
+    fs.writeFileSync(activeDbPath, JSON.stringify(rawDataT5, null, 2), 'utf8');
+
+    const resHttpT5Conflict = await fetch(`${baseUrl}/cases/${caseT5.id}/spare-parts`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${techTokenA}`,
+        'Content-Type': 'application/json',
+        'idempotency-key': 'KEY_T5_CONFLICT_VERIFY'
+      },
+      body: JSON.stringify({
+        parts: [{ partName: 'کارت کاملاً متفاوت', quantity: 1, costIrr: 1000000 }]
+      })
+    });
+    assert(resHttpT5Conflict.status === 409, 'C.15.5.4: TEST 5: Conflicting payload has priority and returns HTTP 409 conflict');
+    const bodyT5Conflict = await resHttpT5Conflict.json();
+    assert(bodyT5Conflict.code === 'IDEMPOTENCY_PAYLOAD_CONFLICT', 'C.15.5.5: TEST 5: Response body specifies IDEMPOTENCY_PAYLOAD_CONFLICT');
+
+    // TEST 6 — Sparse legacy compatibility
+    // Create legitimate legacy financial records with omitted but noncontradictory fields.
+    // Confirm that:
+    // - Their valid identical replays are accepted.
+    // - Financial totals are preserved.
+    // - No new financial values are invented.
+    // - No additional writes occur.
+    const caseT6 = createAcceptedCase('پرونده تست شماره ۶ - سازگاری رکوردهای پراکنده تاریخی');
+    const partsT6 = [
+      { partName: 'رله حرارتی بیمتال', quantity: 1, costIrr: 1800000 }
+    ];
+    maintenanceCaseService.addSpareParts(caseT6.id, partsT6, {
+      clientRequestId: 'KEY_T6_SPARSE_REPLAY'
+    });
+
+    // Make the stored case sparse: legitimate legacy record where laborCost and totalCost were omitted
+    const rawDataT6 = JSON.parse(fs.readFileSync(activeDbPath, 'utf8'));
+    const idxT6 = rawDataT6.maintenanceCases.findIndex((x: any) => x.id === caseT6.id);
+    delete rawDataT6.maintenanceCases[idxT6].laborCost;
+    delete rawDataT6.maintenanceCases[idxT6].totalCost;
+    // totals are omitted, only partsCost and totalCostIrr exist (non-contradictory)
+    rawDataT6.maintenanceCases[idxT6].partsCost = 1800000;
+    rawDataT6.maintenanceCases[idxT6].totalCostIrr = 1800000;
+    fs.writeFileSync(activeDbPath, JSON.stringify(rawDataT6, null, 2), 'utf8');
+
+    let t6ReplayResult: any = null;
+    try {
+      db.__setTestWriteFailureHook((stage) => {
+        throw new Error('E_UNNECESSARY_WRITE: Sparse identical replay must not write to disk!');
+      });
+      t6ReplayResult = maintenanceCaseService.addSpareParts(caseT6.id, partsT6, {
+        clientRequestId: 'KEY_T6_SPARSE_REPLAY'
+      });
+    } finally {
+      db.__setTestWriteFailureHook(null);
+    }
+    assert(t6ReplayResult !== null, 'C.15.6.1: TEST 6: Valid identical replay on noncontradictory sparse legacy record is accepted');
+    assert(t6ReplayResult.laborCost === undefined, 'C.15.6.2: TEST 6: Omitted laborCost is not invented');
+    assert(t6ReplayResult.totalCost === undefined, 'C.15.6.3: TEST 6: Omitted totalCost is not invented on replay');
+    assert(t6ReplayResult.partsCost === 1800000, 'C.15.6.4: TEST 6: partsCost preserved at 1,800,000 IRR');
+    assert(t6ReplayResult.totalCostIrr === 1800000, 'C.15.6.5: TEST 6: totalCostIrr preserved at 1,800,000 IRR');
+
+    // TEST 7 — Persistence and immutability
+    // Verify:
+    // - The canonical repository db.json remains byte-for-byte unchanged.
+    // - All test data resides in temporary isolated databases.
+    // - Failed requests produce no partial financial mutation.
+    // - Existing financial and lifecycle regression assertions remain operational.
+    const currentRepoDbHash = crypto.createHash('sha256').update(fs.readFileSync(isolation.repoDbPath)).digest('hex');
+    assert(currentRepoDbHash === initialRepoDbHash, 'C.15.7.1: TEST 7: Canonical db.json is 100% byte-for-byte unchanged during all tests');
+    assert(db.getDBPath() === activeDbPath, 'C.15.7.2: TEST 7: Service is strictly operating against isolated test database');
 
     // =========================================================================
     // SECTION D: VERIFICATION LIFECYCLE
