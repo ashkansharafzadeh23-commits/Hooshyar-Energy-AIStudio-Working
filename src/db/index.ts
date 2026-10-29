@@ -2699,6 +2699,20 @@ export const db: any = {
     }
 
     // Validate and update totals inside the synchronous read-modify-write operation
+    const rawDeltaHours = totalsUpdate?.deltaLaborHours !== undefined
+      ? totalsUpdate.deltaLaborHours
+      : actionData.hoursSpent;
+
+    if (rawDeltaHours !== undefined && rawDeltaHours !== null) {
+      const existingHours = validateStoredLaborHours(targetCase.totalLaborHours) ?? 0;
+      const deltaHours = validateInputLaborHours(rawDeltaHours);
+      const newHours = existingHours + deltaHours;
+      if (newHours > 100000) {
+        throw new Error('مجموع ساعات کارکرد پرونده فراتر از حد مجاز است.');
+      }
+      targetCase.totalLaborHours = newHours;
+    }
+
     if (totalsUpdate) {
       const mode = totalsUpdate.mode || (
         (totalsUpdate.laborCost !== undefined || totalsUpdate.partsCost !== undefined)
@@ -2712,8 +2726,19 @@ export const db: any = {
         // Validate existing stored case totals (reject negative, NaN, Infinity, fractional, unsafe integer)
         const existingLaborCost = validateStoredRialAmount(targetCase.laborCost, 'laborCost');
         const existingPartsCost = validateStoredRialAmount(targetCase.partsCost, 'partsCost');
-        validateStoredRialAmount(targetCase.totalCost, 'totalCost');
-        validateStoredRialAmount(targetCase.totalCostIrr, 'totalCostIrr');
+        const existingTotalCost = validateStoredRialAmount(targetCase.totalCost, 'totalCost');
+        const existingTotalCostIrr = validateStoredRialAmount(targetCase.totalCostIrr, 'totalCostIrr');
+
+        if (existingLaborCost !== undefined && existingPartsCost !== undefined && existingTotalCost !== undefined) {
+          if (existingLaborCost + existingPartsCost !== existingTotalCost) {
+            throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: مجموع دستمزد (${existingLaborCost}) و قطعات (${existingPartsCost}) با هزینه کل (${existingTotalCost}) برابر نیست.`);
+          }
+        }
+        if (existingTotalCost !== undefined && existingTotalCostIrr !== undefined) {
+          if (existingTotalCost !== existingTotalCostIrr) {
+            throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: مقدار totalCost (${existingTotalCost}) با totalCostIrr (${existingTotalCostIrr}) مطابقت ندارد.`);
+          }
+        }
 
         // Only calculate/update if at least one financial field was provided in this action request
         if (totalsUpdate.laborCost !== undefined || totalsUpdate.partsCost !== undefined) {
@@ -2738,25 +2763,10 @@ export const db: any = {
           targetCase.totalCostIrr = newTotal;
         }
       } else if (mode === 'INCREMENTAL') {
-        // Validate existing stored case totals (reject negative, NaN, Infinity, fractional, unsafe integer)
-        const existingHours = validateStoredLaborHours(targetCase.totalLaborHours) ?? 0;
-        const existingCost = validateStoredRialAmount(targetCase.totalCostIrr, 'totalCostIrr') ?? 0;
-
-        let newHours = existingHours;
-        let newCost = existingCost;
-
-        if (totalsUpdate.deltaLaborHours !== undefined && totalsUpdate.deltaLaborHours !== null) {
-          const deltaHours = validateInputLaborHours(totalsUpdate.deltaLaborHours);
-          newHours = existingHours + deltaHours;
-          if (newHours > 100000) {
-            throw new Error('مجموع ساعات کارکرد پرونده فراتر از حد مجاز است.');
-          }
-          targetCase.totalLaborHours = newHours;
-        }
-
         if (totalsUpdate.deltaCostIrr !== undefined && totalsUpdate.deltaCostIrr !== null) {
+          const existingCost = validateStoredRialAmount(targetCase.totalCostIrr, 'totalCostIrr') ?? 0;
           const deltaCost = validateInputRialAmount(totalsUpdate.deltaCostIrr, 'هزینه ریالی اقدام');
-          newCost = existingCost + deltaCost;
+          const newCost = existingCost + deltaCost;
           if (newCost > Number.MAX_SAFE_INTEGER || newCost > 1e14) {
             throw new Error('مجموع هزینه فراتر از حد مجاز محاسبات امن است.');
           }
@@ -2775,6 +2785,19 @@ export const db: any = {
       }
     }
 
+    // Validate partsReplaced if provided
+    if (actionData.partsReplaced !== undefined && actionData.partsReplaced !== null) {
+      if (!Array.isArray(actionData.partsReplaced)) {
+        throw new Error('فهرست قطعات تعویضی باید به صورت آرایه‌ای از رشته‌های متنی باشد.');
+      }
+      for (let i = 0; i < actionData.partsReplaced.length; i++) {
+        const item = actionData.partsReplaced[i];
+        if (typeof item !== 'string' || item.trim() === '') {
+          throw new Error(`نام قطعه تعویضی در ردیف ${i + 1} نامعتبر یا خالی است.`);
+        }
+      }
+    }
+
     // Insert new action
     const now = new Date().toISOString();
     const newAction: MaintenanceAction = {
@@ -2784,6 +2807,12 @@ export const db: any = {
       performedAt: actionData.performedAt || now,
       createdAt: actionData.createdAt || now
     };
+    if (actionData.hoursSpent !== undefined && actionData.hoursSpent !== null) {
+      newAction.hoursSpent = actionData.hoursSpent;
+    }
+    if (actionData.partsReplaced !== undefined && actionData.partsReplaced !== null) {
+      newAction.partsReplaced = actionData.partsReplaced.map(p => String(p).trim());
+    }
 
     d.maintenanceActions.push(newAction);
 
