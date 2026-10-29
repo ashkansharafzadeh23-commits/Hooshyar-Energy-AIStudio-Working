@@ -16,6 +16,7 @@ import {
   MaintenanceHistorySummary,
   MaintenanceAssignmentHistory
 } from '../types/maintenance.js';
+import { validateStoredRialAmount } from '../db/index.js';
 
 /**
  * Shared authoritative acceptance validator for the current assignment cycle.
@@ -177,6 +178,266 @@ export function validateFinancialAmount(value: any, fieldName: string): number {
 }
 
 /**
+ * Safely calculates accumulated cost of recorded spare parts in IRR.
+ * - Rejects non-array values if defined.
+ * - Invariant: Quantity zero produces exactly zero cost (0 * cost = 0, never 1 * cost).
+ * - Rejects corrupt stored values (negative, NaN, Infinity, non-integer, boolean, non-numeric strings).
+ * - Compatible with legitimate legacy records where quantity was omitted (defaults to 1 unit).
+ * - Enforces safe integer bounds on line items and cumulative total (<= 1e14).
+ * - Never mutates historical spare-parts records.
+ */
+export function calculateRecordedPartsCost(spareParts: any[] | undefined | null): number {
+  if (spareParts === undefined || spareParts === null) {
+    return 0;
+  }
+  if (!Array.isArray(spareParts)) {
+    throw new Error('فهرست قطعات یدکی مصرفی پرونده نامعتبر یا فاسد است.');
+  }
+  if (spareParts.length === 0) {
+    return 0;
+  }
+
+  let totalCost = 0;
+
+  for (let i = 0; i < spareParts.length; i++) {
+    const p = spareParts[i];
+    if (!p || typeof p !== 'object' || Array.isArray(p)) {
+      throw new Error(`رکورد قطعه یدکی ردیف ${i + 1} نامعتبر یا فاسد است.`);
+    }
+
+    // Evaluate quantity
+    let quantity = 1;
+    if (p.quantity === undefined || p.quantity === null) {
+      // Legitimate legacy records may lack quantity field -> 1 unit
+      quantity = 1;
+    } else {
+      if (typeof p.quantity === 'boolean') {
+        throw new Error(`تعداد قطعه یدکی در ردیف ${i + 1} نمی‌تواند مقدار بولی باشد.`);
+      }
+      if (typeof p.quantity === 'string') {
+        const trimmed = p.quantity.trim();
+        if (trimmed === '' || !/^-?\d+$/.test(trimmed)) {
+          throw new Error(`تعداد قطعه یدکی در ردیف ${i + 1} (${p.quantity}) نامعتبر است.`);
+        }
+      }
+      const qNum = Number(p.quantity);
+      if (Number.isNaN(qNum) || !Number.isFinite(qNum) || !Number.isInteger(qNum)) {
+        throw new Error(`تعداد قطعه یدکی در ردیف ${i + 1} (${p.quantity}) نامعتبر یا اعشاری است.`);
+      }
+      if (qNum < 0) {
+        throw new Error(`تعداد قطعه یدکی در ردیف ${i + 1} نمی‌تواند منفی باشد.`);
+      }
+      if (qNum > 100000) {
+        throw new Error(`تعداد قطعه یدکی در ردیف ${i + 1} فراتر از حد مجاز است.`);
+      }
+      quantity = qNum;
+    }
+
+    // Evaluate costIrr
+    let unitCost = 0;
+    if (p.costIrr === undefined || p.costIrr === null) {
+      unitCost = 0;
+    } else {
+      if (typeof p.costIrr === 'boolean') {
+        throw new Error(`هزینه واحد قطعه یدکی در ردیف ${i + 1} نمی‌تواند مقدار بولی باشد.`);
+      }
+      if (typeof p.costIrr === 'string') {
+        const trimmed = p.costIrr.trim();
+        if (trimmed === '' || !/^-?\d+$/.test(trimmed)) {
+          throw new Error(`هزینه واحد قطعه یدکی در ردیف ${i + 1} (${p.costIrr}) نامعتبر است.`);
+        }
+      }
+      const cNum = Number(p.costIrr);
+      if (Number.isNaN(cNum) || !Number.isFinite(cNum) || !Number.isInteger(cNum)) {
+        throw new Error(`هزینه واحد قطعه یدکی در ردیف ${i + 1} (${p.costIrr}) نامعتبر یا اعشاری است.`);
+      }
+      if (cNum < 0) {
+        throw new Error(`هزینه واحد قطعه یدکی در ردیف ${i + 1} نمی‌تواند منفی باشد.`);
+      }
+      if (cNum > Number.MAX_SAFE_INTEGER || cNum > 1e13) {
+        throw new Error(`هزینه واحد قطعه یدکی در ردیف ${i + 1} فراتر از حد مجاز محاسبات امن است.`);
+      }
+      unitCost = cNum;
+    }
+
+    // Safe multiplication
+    const lineCost = quantity * unitCost;
+    if (!Number.isSafeInteger(lineCost) || lineCost > 1e14) {
+      throw new Error(`هزینه کل قطعه یدکی در ردیف ${i + 1} فراتر از حد مجاز محاسبات امن است.`);
+    }
+
+    totalCost += lineCost;
+    if (!Number.isSafeInteger(totalCost) || totalCost > 1e14) {
+      throw new Error('مجموع هزینه قطعات یدکی فراتر از حد مجاز محاسبات امن است.');
+    }
+  }
+
+  return totalCost;
+}
+
+/**
+ * Validates a newly submitted spare-part usage item:
+ * - Reject non-object or array.
+ * - Require non-empty partName (length <= 200).
+ * - Require integer quantity >= 1 (rejects zero quantity, negative quantity, fractional, NaN, Infinity, boolean).
+ *   Policy: For newly consumed parts, quantity 0 is prohibited as it has no physical business meaning.
+ * - Require non-negative integer Rial costIrr (or 0 if omitted/null).
+ * - Safe multiplication bound check.
+ */
+export function validateSparePartItem(part: any, index: number = 0): SparePartUsage & { clientRequestId?: string } {
+  if (!part || typeof part !== 'object' || Array.isArray(part)) {
+    throw new Error(`اطلاعات قطعه یدکی در ردیف ${index + 1} نامعتبر است.`);
+  }
+
+  if (typeof part.partName !== 'string' || part.partName.trim() === '') {
+    throw new Error(`نام قطعه یدکی در ردیف ${index + 1} الزامی است.`);
+  }
+  const partName = part.partName.trim();
+  if (partName.length > 200) {
+    throw new Error(`نام قطعه یدکی در ردیف ${index + 1} نمی‌تواند بیش از ۲۰۰ کاراکتر باشد.`);
+  }
+
+  if (part.quantity === undefined || part.quantity === null) {
+    throw new Error(`تعداد قطعه یدکی (${partName}) الزامی است.`);
+  }
+  if (typeof part.quantity === 'boolean') {
+    throw new Error(`تعداد قطعه یدکی (${partName}) نمی‌تواند مقدار بولی باشد.`);
+  }
+  if (typeof part.quantity === 'string') {
+    const trimmed = part.quantity.trim();
+    if (trimmed === '' || !/^-?\d+$/.test(trimmed)) {
+      throw new Error(`تعداد قطعه یدکی (${partName}) باید یک عدد صحیح معتبر باشد.`);
+    }
+  }
+  const qNum = Number(part.quantity);
+  if (Number.isNaN(qNum) || !Number.isFinite(qNum) || !Number.isInteger(qNum)) {
+    throw new Error(`تعداد قطعه یدکی (${partName}) باید یک عدد صحیح معتبر باشد.`);
+  }
+  if (qNum === 0) {
+    throw new Error(`تعداد قطعه یدکی (${partName}) نمی‌تواند صفر باشد (تعداد باید حداقل ۱ باشد).`);
+  }
+  if (qNum < 0) {
+    throw new Error(`تعداد قطعه یدکی (${partName}) نمی‌تواند منفی باشد.`);
+  }
+  if (qNum > 100000) {
+    throw new Error(`تعداد قطعه یدکی (${partName}) فراتر از حد مجاز است.`);
+  }
+
+  let unitCost: number | undefined = undefined;
+  if (part.costIrr !== undefined && part.costIrr !== null) {
+    unitCost = validateFinancialAmount(part.costIrr, `هزینه واحد قطعه یدکی (${partName})`);
+  } else {
+    unitCost = 0;
+  }
+
+  const lineCost = qNum * unitCost;
+  if (!Number.isSafeInteger(lineCost) || lineCost > 1e14) {
+    throw new Error(`هزینه کل قطعه یدکی (${partName}) فراتر از حد مجاز محاسبات امن است.`);
+  }
+
+  const result: SparePartUsage & { clientRequestId?: string } = {
+    partName,
+    quantity: qNum,
+    costIrr: unitCost
+  };
+
+  if (part.partNumber && typeof part.partNumber === 'string' && part.partNumber.trim()) {
+    result.partNumber = part.partNumber.trim();
+  }
+  if (part.replacedComponentId && typeof part.replacedComponentId === 'string' && part.replacedComponentId.trim()) {
+    result.replacedComponentId = part.replacedComponentId.trim();
+  }
+  if (part.clientRequestId) {
+    result.clientRequestId = validateClientRequestId(part.clientRequestId);
+  }
+
+  return result;
+}
+
+/**
+ * Validates financial consistency of stored maintenance case totals.
+ * - Rejects corrupt stored amounts via validateStoredRialAmount.
+ * - Fails closed on contradictory stored totals (e.g. laborCost + partsCost !== totalCost).
+ * - Fails closed on totalCost !== totalCostIrr divergence.
+ * - Fails closed if stored partsCost is less than the calculated recordedPartsCost floor.
+ * - Preserves valid sparse legacy records where individual fields may be absent.
+ */
+export function validateCaseFinancialConsistency(targetCase: {
+  laborCost?: any;
+  partsCost?: any;
+  totalCost?: any;
+  totalCostIrr?: any;
+  sparePartsUsed?: any[];
+}): void {
+  const l = validateStoredRialAmount(targetCase.laborCost, 'laborCost');
+  const p = validateStoredRialAmount(targetCase.partsCost, 'partsCost');
+  const t = validateStoredRialAmount(targetCase.totalCost, 'totalCost');
+  const tIrr = validateStoredRialAmount(targetCase.totalCostIrr, 'totalCostIrr');
+
+  // String check: reject whitespace-only or non-numeric strings that might slip past Number()
+  for (const [val, name] of [
+    [targetCase.laborCost, 'laborCost'],
+    [targetCase.partsCost, 'partsCost'],
+    [targetCase.totalCost, 'totalCost'],
+    [targetCase.totalCostIrr, 'totalCostIrr']
+  ] as const) {
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (trimmed === '' || !/^-?\d+$/.test(trimmed)) {
+        throw new Error(`مقدار ذخیره‌شده ${name} در پرونده (${val}) نامعتبر یا فاسد است.`);
+      }
+    }
+  }
+
+  if (l !== undefined && p !== undefined && t !== undefined) {
+    if (l + p !== t) {
+      throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: مجموع دستمزد (${l}) و قطعات (${p}) با هزینه کل (${t}) برابر نیست.`);
+    }
+  }
+
+  if (l !== undefined && p !== undefined && tIrr !== undefined) {
+    if (l + p !== tIrr) {
+      throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: مجموع دستمزد (${l}) و قطعات (${p}) با هزینه کل ریالی (${tIrr}) برابر نیست.`);
+    }
+  }
+
+  if (t !== undefined && tIrr !== undefined) {
+    if (t !== tIrr) {
+      throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: مقدار totalCost (${t}) با totalCostIrr (${tIrr}) مطابقت ندارد.`);
+    }
+  }
+
+  if (t !== undefined && p !== undefined && t < p) {
+    throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: هزینه کل (${t}) کمتر از هزینه قطعات (${p}) است.`);
+  }
+
+  if (tIrr !== undefined && p !== undefined && tIrr < p) {
+    throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: هزینه کل ریالی (${tIrr}) کمتر از هزینه قطعات (${p}) است.`);
+  }
+
+  if (t !== undefined && l !== undefined && t < l) {
+    throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: هزینه کل (${t}) کمتر از هزینه دستمزد (${l}) است.`);
+  }
+
+  if (tIrr !== undefined && l !== undefined && tIrr < l) {
+    throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: هزینه کل ریالی (${tIrr}) کمتر از هزینه دستمزد (${l}) است.`);
+  }
+
+  if (Array.isArray(targetCase.sparePartsUsed)) {
+    const recordedPartsCost = calculateRecordedPartsCost(targetCase.sparePartsUsed);
+    if (p !== undefined && p < recordedPartsCost) {
+      throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: هزینه قطعات (${p}) کمتر از بهای قطعات یدکی مصرفی ثبت‌شده (${recordedPartsCost}) است.`);
+    }
+    if (t !== undefined && t < recordedPartsCost) {
+      throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: هزینه کل (${t}) کمتر از بهای قطعات یدکی مصرفی ثبت‌شده (${recordedPartsCost}) است.`);
+    }
+    if (tIrr !== undefined && tIrr < recordedPartsCost) {
+      throw new Error(`تناقض در مبالغ مالی ذخیره‌شده پرونده: هزینه کل ریالی (${tIrr}) کمتر از بهای قطعات یدکی مصرفی ثبت‌شده (${recordedPartsCost}) است.`);
+    }
+  }
+}
+
+/**
  * Validates labor hours:
  * - Must be a non-negative finite number between 0 and 10,000.
  * - Allows fractional hours (e.g. 1.5).
@@ -210,6 +471,83 @@ export function validateLaborHours(value: any): number {
   }
 
   return num;
+}
+
+/**
+ * Validates individual action labor hours (hoursSpent):
+ * - Must be a finite non-negative number between 0 and 1,000.
+ * - Allows fractional hours (e.g. 2.5).
+ * - Rejects explicit null, boolean, array, object, NaN, Infinity, negative, and excessive values.
+ */
+export function validateActionLaborHours(value: any): number {
+  if (value === undefined || value === null) {
+    throw new Error('مقدار ساعات کارکرد نمی‌تواند خالی یا null باشد.');
+  }
+
+  if (typeof value === 'boolean' || (typeof value !== 'number' && typeof value !== 'string')) {
+    throw new Error('نوع داده ساعات کارکرد نامعتبر است.');
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '' || !/^-?\d+(\.\d+)?$/.test(trimmed)) {
+      throw new Error('مقدار ساعات کارکرد باید عددی معتبر باشد.');
+    }
+  }
+
+  const num = Number(value);
+
+  if (Number.isNaN(num) || !Number.isFinite(num)) {
+    throw new Error('مقدار ساعات کارکرد نامعتبر یا بی‌نهایت است.');
+  }
+
+  if (num < 0) {
+    throw new Error('ساعات کارکرد نمی‌تواند منفی باشد.');
+  }
+
+  if (num > 1000) {
+    throw new Error('ساعات کارکرد یک اقدام نمی‌تواند بیش از ۱۰۰۰ ساعت باشد.');
+  }
+
+  return num;
+}
+
+/**
+ * Validates partsReplaced:
+ * - Must be an array of strings.
+ * - Trims each string and rejects empty strings.
+ * - Max array length: 50. Max item length: 200.
+ */
+export function validatePartsReplaced(value: any): string[] {
+  if (value === undefined || value === null) {
+    throw new Error('فهرست قطعات تعویضی نمی‌تواند null باشد.');
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error('فهرست قطعات تعویضی باید به صورت آرایه‌ای از رشته‌های متنی باشد.');
+  }
+
+  if (value.length > 50) {
+    throw new Error('تعداد قطعات تعویضی نمی‌تواند بیش از ۵۰ مورد باشد.');
+  }
+
+  const result: string[] = [];
+  for (let i = 0; i < value.length; i++) {
+    const item = value[i];
+    if (typeof item !== 'string') {
+      throw new Error(`آیتم شماره ${i + 1} در فهرست قطعات تعویضی باید رشته متنی باشد.`);
+    }
+    const trimmed = item.trim();
+    if (trimmed === '') {
+      throw new Error(`نام قطعه تعویضی در ردیف ${i + 1} نمی‌تواند خالی باشد.`);
+    }
+    if (trimmed.length > 200) {
+      throw new Error(`نام قطعه تعویضی در ردیف ${i + 1} نمی‌تواند بیش از ۲۰۰ کاراکتر باشد.`);
+    }
+    result.push(trimmed);
+  }
+
+  return result;
 }
 
 /**
@@ -253,18 +591,29 @@ export function computeActionPayloadHash(payload: {
   partsCost?: number | null;
   costIrr?: number | null;
   laborHours?: number | null;
+  hoursSpent?: number | null;
+  partsReplaced?: string[] | null;
 }): string {
+  const hours = payload.hoursSpent !== undefined && payload.hoursSpent !== null
+    ? Number(payload.hoursSpent)
+    : (payload.laborHours !== undefined && payload.laborHours !== null ? Number(payload.laborHours) : null);
+
+  const parts = Array.isArray(payload.partsReplaced)
+    ? payload.partsReplaced.map(p => String(p).trim()).filter(Boolean)
+    : null;
+
   const canonicalObj = {
     actionType: String(payload.actionType || '').trim().toUpperCase(),
     componentId: payload.componentId ? String(payload.componentId).trim() : null,
     costIrr: payload.costIrr !== undefined && payload.costIrr !== null ? Number(payload.costIrr) : null,
     description: String(payload.description || '').trim(),
     laborCost: payload.laborCost !== undefined && payload.laborCost !== null ? Number(payload.laborCost) : null,
-    laborHours: payload.laborHours !== undefined && payload.laborHours !== null ? Number(payload.laborHours) : null,
+    laborHours: hours,
     newComponentModel: payload.newComponentModel ? String(payload.newComponentModel).trim() : null,
     newComponentSerial: payload.newComponentSerial ? String(payload.newComponentSerial).trim() : null,
     notes: payload.notes ? String(payload.notes).trim() : null,
     partsCost: payload.partsCost !== undefined && payload.partsCost !== null ? Number(payload.partsCost) : null,
+    partsReplaced: parts,
     replacedComponentId: payload.replacedComponentId ? String(payload.replacedComponentId).trim() : null
   };
   return crypto.createHash('sha256').update(JSON.stringify(canonicalObj)).digest('hex');
@@ -395,6 +744,12 @@ export const maintenanceCaseService = {
       verificationNotes?: string;
       rejectionReason?: string;
       notes?: string;
+      rootCause?: string;
+      actionsTaken?: any;
+      laborCost?: number | null;
+      partsCost?: number | null;
+      totalCost?: number | null;
+      totalCostIrr?: number;
     }
   ): MaintenanceCase => {
     const mCase = maintenanceRepository.getCaseById(caseId);
@@ -411,7 +766,10 @@ export const maintenanceCaseService = {
         payload?.technicianId &&
         (!mCase.assignedTechnicianId || !areTechnicianIdentitiesEquivalent(mCase.assignedTechnicianId, payload.technicianId));
 
-      if (!isReassignment) {
+      const isVerificationUpdate = (newStatus === 'AWAITING_VERIFICATION' || newStatus === 'PENDING_VERIFICATION') &&
+        Boolean(payload?.notes || payload?.rootCause || payload?.laborCost !== undefined || payload?.partsCost !== undefined);
+
+      if (!isReassignment && !isVerificationUpdate) {
         return mCase;
       }
     }
@@ -655,6 +1013,12 @@ export const maintenanceCaseService = {
     // Handle verification submission
     if (newStatus === 'AWAITING_VERIFICATION' || newStatus === 'PENDING_VERIFICATION') {
       if (payload?.notes) updates.resolutionSummary = payload.notes;
+      if (payload?.rootCause) updates.rootCause = payload.rootCause;
+      if (payload?.actionsTaken) updates.actionsTaken = payload.actionsTaken;
+      if (payload?.laborCost !== undefined) updates.laborCost = payload.laborCost;
+      if (payload?.partsCost !== undefined) updates.partsCost = payload.partsCost;
+      if (payload?.totalCost !== undefined) updates.totalCost = payload.totalCost;
+      if (payload?.totalCostIrr !== undefined) updates.totalCostIrr = payload.totalCostIrr;
     }
 
     // Handle verification approval
@@ -710,6 +1074,8 @@ export const maintenanceCaseService = {
       resultStatus?: 'SUCCESS' | 'PARTIAL' | 'FAILED' | string;
       notes?: string;
       laborHours?: number;
+      hoursSpent?: number;
+      partsReplaced?: string[];
       costIrr?: number;
       clientRequestId?: string;
     }
@@ -723,18 +1089,27 @@ export const maintenanceCaseService = {
       throw new Error('امکان ثبت اقدام برای پرونده‌های لغو شده یا بسته شده وجود ندارد.');
     }
 
-    // Correction 1: Explicit null policy for incoming inputs
-    if (action.laborHours === null) {
+    // Explicit null policy for incoming inputs
+    if (action.laborHours === null || action.hoursSpent === null) {
       throw new Error('مقدار ساعات کارکرد نمی‌تواند null باشد. در صورت عدم نیاز، مقدار را حذف کنید.');
     }
     if (action.costIrr === null) {
       throw new Error('مقدار هزینه ریالی نمی‌تواند null باشد. در صورت عدم نیاز، مقدار را حذف کنید.');
     }
+    if (action.partsReplaced === null) {
+      throw new Error('مقدار قطعات تعویضی نمی‌تواند null باشد. در صورت عدم نیاز، مقدار را حذف کنید.');
+    }
 
-    // Validate financial inputs if provided
+    // Validate inputs if provided
     let laborHours: number | undefined = undefined;
-    if (action.laborHours !== undefined) {
-      laborHours = validateLaborHours(action.laborHours);
+    const rawHours = action.hoursSpent !== undefined ? action.hoursSpent : action.laborHours;
+    if (rawHours !== undefined) {
+      laborHours = validateActionLaborHours(rawHours);
+    }
+
+    let partsReplaced: string[] | undefined = undefined;
+    if (action.partsReplaced !== undefined) {
+      partsReplaced = validatePartsReplaced(action.partsReplaced);
     }
 
     let costIrr: number | undefined = undefined;
@@ -748,6 +1123,8 @@ export const maintenanceCaseService = {
       description: action.description,
       notes: action.notes,
       laborHours,
+      hoursSpent: laborHours,
+      partsReplaced,
       costIrr
     });
 
@@ -759,6 +1136,8 @@ export const maintenanceCaseService = {
         performedBy: action.performedBy,
         resultStatus: action.resultStatus || 'SUCCESS',
         notes: action.notes,
+        hoursSpent: laborHours,
+        partsReplaced,
         clientRequestId,
         payloadHash
       },
@@ -783,9 +1162,15 @@ export const maintenanceCaseService = {
   },
 
   /**
-   * Adds spare parts usage to a maintenance case
+   * Adds spare parts usage to a maintenance case with safe calculation,
+   * stored consistency validation, bounds enforcement, duplicate retry protection,
+   * and safe sparse legacy financial reconstruction.
    */
-  addSpareParts: (caseId: string, parts: SparePartUsage[]): MaintenanceCase => {
+  addSpareParts: (
+    caseId: string,
+    parts: SparePartUsage[],
+    options?: { clientRequestId?: string }
+  ): MaintenanceCase => {
     const mCase = maintenanceRepository.getCaseById(caseId);
     if (!mCase) {
       throw new Error('پرونده تعمیراتی یافت نشد.');
@@ -795,17 +1180,172 @@ export const maintenanceCaseService = {
       throw new Error('امکان ثبت قطعات یدکی برای پرونده‌های لغو شده یا بسته شده وجود ندارد.');
     }
 
+    if (!Array.isArray(parts) || parts.length === 0) {
+      throw new Error('فهرست قطعات یدکی الزامی است و باید حداقل شامل یک قطعه باشد.');
+    }
+
+    // Resolve clientRequestId if provided for retry/idempotency
+    const clientRequestId = validateClientRequestId(
+      options?.clientRequestId || (parts as any)?.[0]?.clientRequestId
+    );
+
     const existingParts = mCase.sparePartsUsed || [];
-    const updatedParts = [...existingParts, ...parts];
 
-    const partsTotalCost = parts.reduce((sum, p) => sum + (p.costIrr || 0) * (p.quantity || 1), 0);
-    const totalCostIrr = (mCase.totalCostIrr || 0) + partsTotalCost;
+    // Validate and sanitize each newly incoming spare part
+    const validatedNewParts: (SparePartUsage & { clientRequestId?: string })[] = [];
+    let partsDeltaCost = 0;
 
-    const updated = maintenanceRepository.updateCase(caseId, {
+    for (let i = 0; i < parts.length; i++) {
+      const validatedItem = validateSparePartItem(parts[i], i);
+      if (clientRequestId) {
+        validatedItem.clientRequestId = clientRequestId;
+      }
+      validatedNewParts.push(validatedItem);
+      const lineCost = validatedItem.quantity * (validatedItem.costIrr || 0);
+      partsDeltaCost += lineCost;
+      if (!Number.isSafeInteger(partsDeltaCost) || partsDeltaCost > 1e14) {
+        throw new Error('مجموع هزینه قطعات یدکی جدید فراتر از حد مجاز محاسبات امن است.');
+      }
+    }
+
+    // Defect A Fix: Idempotency conflict & identical replay verification
+    if (clientRequestId && existingParts.length > 0) {
+      const matchingExisting = existingParts.filter((p: any) => p.clientRequestId === clientRequestId);
+      if (matchingExisting.length > 0) {
+        let isConflict = matchingExisting.length !== validatedNewParts.length;
+
+        if (!isConflict) {
+          for (let i = 0; i < matchingExisting.length; i++) {
+            const ex = matchingExisting[i];
+            const inPart = validatedNewParts[i];
+
+            // If legacy entry lacks essential fields needed to prove equivalence, fail closed
+            if (ex.partName === undefined || ex.quantity === undefined) {
+              isConflict = true;
+              break;
+            }
+
+            const exName = String(ex.partName || '').trim();
+            const inName = inPart.partName;
+            if (exName !== inName) {
+              isConflict = true;
+              break;
+            }
+
+            const exQty = Number(ex.quantity);
+            const inQty = inPart.quantity;
+            if (Number.isNaN(exQty) || exQty !== inQty) {
+              isConflict = true;
+              break;
+            }
+
+            const exCost = ex.costIrr !== undefined && ex.costIrr !== null ? Number(ex.costIrr) : 0;
+            const inCost = inPart.costIrr || 0;
+            if (Number.isNaN(exCost) || exCost !== inCost) {
+              isConflict = true;
+              break;
+            }
+
+            const exPartNum = ex.partNumber !== undefined && ex.partNumber !== null ? String(ex.partNumber).trim() : undefined;
+            const inPartNum = inPart.partNumber;
+            if (exPartNum !== inPartNum) {
+              isConflict = true;
+              break;
+            }
+
+            const exComp = ex.replacedComponentId !== undefined && ex.replacedComponentId !== null ? String(ex.replacedComponentId).trim() : undefined;
+            const inComp = inPart.replacedComponentId;
+            if (exComp !== inComp) {
+              isConflict = true;
+              break;
+            }
+          }
+        }
+
+        if (isConflict) {
+          const conflictErr: any = new Error('شناسه درخواست تکراری با محتوای متفاوت. امکان تغییر داده‌های قطعات ثبت‌شده با این شناسه وجود ندارد.');
+          conflictErr.code = 'IDEMPOTENCY_PAYLOAD_CONFLICT';
+          conflictErr.statusCode = 409;
+          conflictErr.clientRequestId = clientRequestId;
+          throw conflictErr;
+        }
+
+        // Validate stored case financial consistency before returning successful identical replay
+        validateCaseFinancialConsistency(mCase);
+
+        // Exact identical replay: return existing case without duplicating parts or charges
+        return mCase;
+      }
+    }
+
+    // Validate stored case financial consistency before modifying
+    validateCaseFinancialConsistency(mCase);
+
+    // Defect B Fix: Safe sparse legacy financial totals resolution
+    const existingRecordedPartsCost = calculateRecordedPartsCost(existingParts);
+
+    // 1. Determine baseline partsCost
+    let basePartsCost: number;
+    if (mCase.partsCost !== undefined && mCase.partsCost !== null) {
+      basePartsCost = mCase.partsCost;
+    } else if (existingRecordedPartsCost > 0) {
+      basePartsCost = existingRecordedPartsCost;
+    } else {
+      basePartsCost = 0;
+    }
+
+    // 2. Determine baseline laborCost if present
+    const baseLaborCost = (mCase.laborCost !== undefined && mCase.laborCost !== null)
+      ? mCase.laborCost
+      : undefined;
+
+    // 3. Determine baseline totalCost and totalCostIrr
+    let baseTotalCost: number;
+    const hasTotalCost = mCase.totalCost !== undefined && mCase.totalCost !== null;
+    const hasTotalCostIrr = mCase.totalCostIrr !== undefined && mCase.totalCostIrr !== null;
+
+    if (hasTotalCost || hasTotalCostIrr) {
+      const storedTotal = hasTotalCost ? mCase.totalCost! : mCase.totalCostIrr!;
+
+      // Consistency check against known components
+      if (storedTotal === 0 && ((baseLaborCost ?? 0) > 0 || basePartsCost > 0)) {
+        throw new Error('تناقض در مبالغ مالی پرونده: مجموع کل صفر ذخیره شده در حالی که اجزای دستمزد یا قطعات دارای مبلغ هستند.');
+      }
+      if (baseLaborCost !== undefined && storedTotal !== ((baseLaborCost ?? 0) + basePartsCost)) {
+        throw new Error('تناقض در مبالغ مالی پرونده: مجموع کل با جمع دستمزد و قطعات همخوانی ندارد.');
+      }
+      if (storedTotal < basePartsCost) {
+        throw new Error('تناقض در مبالغ مالی پرونده: مجموع کل کمتر از هزینه قطعات ذخیره‌شده است.');
+      }
+
+      baseTotalCost = storedTotal;
+    } else {
+      // Both totals are absent (sparse legacy record)
+      // Reconstruct baseline total from reliable components
+      baseTotalCost = (baseLaborCost ?? 0) + basePartsCost;
+    }
+
+    // 4. Calculate new totals
+    const newPartsCost = basePartsCost + partsDeltaCost;
+    if (!Number.isSafeInteger(newPartsCost) || newPartsCost > 1e14) {
+      throw new Error('مجموع هزینه قطعات پرونده فراتر از حد مجاز محاسبات امن است.');
+    }
+
+    const newTotalCost = baseTotalCost + partsDeltaCost;
+    if (!Number.isSafeInteger(newTotalCost) || newTotalCost > 1e14) {
+      throw new Error('مجموع کل هزینه پرونده فراتر از حد مجاز محاسبات امن است.');
+    }
+
+    const updatedParts = [...existingParts, ...validatedNewParts];
+
+    const caseUpdates: Partial<MaintenanceCase> = {
       sparePartsUsed: updatedParts,
-      totalCostIrr
-    });
+      partsCost: newPartsCost,
+      totalCost: newTotalCost,
+      totalCostIrr: newTotalCost
+    };
 
+    const updated = maintenanceRepository.updateCase(caseId, caseUpdates);
     return updated!;
   },
 

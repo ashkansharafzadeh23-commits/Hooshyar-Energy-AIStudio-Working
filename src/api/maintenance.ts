@@ -11,7 +11,11 @@ import {
   hasCurrentCycleAcceptance,
   validateFinancialAmount,
   validateClientRequestId,
-  computeActionPayloadHash
+  computeActionPayloadHash,
+  validateActionLaborHours,
+  validatePartsReplaced,
+  calculateRecordedPartsCost,
+  validateCaseFinancialConsistency
 } from '../services/maintenanceCaseService.js';
 import { technicianMatchingService } from '../services/technicianMatchingService.js';
 import { isCaseAssignedToTechnician, getTechnicianIdentities, resolveTechnicianProfile, areTechnicianIdentitiesEquivalent } from '../services/technicianIdentityService.js';
@@ -38,7 +42,7 @@ import {
   sanitizeOriginalFilename,
   FileValidationError
 } from '../storage/index.js';
-import { DatabaseStorageError } from '../db/index.js';
+import { DatabaseStorageError, validateStoredRialAmount } from '../db/index.js';
 
 export function isPersistenceError(err: any): boolean {
   if (!err) return false;
@@ -128,13 +132,13 @@ export function checkCaseAccess(
  * 'PENDING_VERIFICATION', 'VERIFIED', 'COMPLETED', 'RESOLVED', 'CLOSED' or an ACCEPTED assignment history),
  * private customer contact info (contactName, contactPhone, and any customer phone numbers)
  * MUST NOT be exposed to the technician.
- * 
+ *
  * Never mutates the original database record. Returns a safe cloned/projected object.
  */
 /**
  * Checks server-authoritative evidence whether the currently assigned technician
  * has formally accepted the maintenance case for the CURRENT assignment cycle.
- * 
+ *
  * Rules:
  * 1. Checks server-persisted assignment histories for status === 'ACCEPTED'.
  * 2. Matches technicianId strictly against the currently assigned technician.
@@ -1357,6 +1361,16 @@ maintenanceRouter.patch(['/maintenance/:maintenanceCaseId', '/cases/:maintenance
     });
   }
 
+  // Reject direct modification of financial fields and working hours
+  const prohibitedFinancialFields = ['laborCost', 'partsCost', 'totalCost', 'totalCostIrr', 'totalLaborHours'];
+  const sentProhibited = prohibitedFinancialFields.filter(f => req.body[f] !== undefined);
+  if (sentProhibited.length > 0) {
+    return res.status(400).json({
+      error: 'ویرایش مستقیم فیلدهای مالی و ساعات کارکرد از طریق این نقطه پایانی مجاز نیست. لطفاً از فرآیند رسمی ثبت اقدام یا ثبت اتمام عملیات استفاده فرمایید.',
+      prohibitedFields: sentProhibited
+    });
+  }
+
   const allowedUpdates = [
     'title',
     'description',
@@ -1365,12 +1379,7 @@ maintenanceRouter.patch(['/maintenance/:maintenanceCaseId', '/cases/:maintenance
     'componentId',
     'scheduledAt',
     'scheduledDate',
-    'downtimeMinutes',
-    'laborCost',
-    'partsCost',
-    'totalCost',
-    'totalCostIrr',
-    'totalLaborHours'
+    'downtimeMinutes'
   ];
 
   const patchData: any = {};
@@ -1786,7 +1795,9 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/actions', '/cases/:main
     newComponentModel,
     notes,
     laborCost,
-    partsCost
+    partsCost,
+    hoursSpent,
+    partsReplaced
   } = req.body;
 
   if (!actionType || !description) {
@@ -1797,17 +1808,25 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/actions', '/cases/:main
   let clientRequestId: string | undefined;
   let lCost: number | undefined;
   let pCost: number | undefined;
+  let validatedHours: number | undefined;
+  let validatedParts: string[] | undefined;
 
   try {
     const rawKey = req.headers['idempotency-key'] || req.headers['x-client-request-id'] || req.body?.clientRequestId;
     clientRequestId = validateClientRequestId(rawKey);
 
-    // Correction 1: Explicit null policy
+    // Null policy
     if (laborCost === null) {
       return res.status(400).json({ error: 'مقدار هزینه دستمزد نمی‌تواند null باشد. در صورت تمایل به حفظ مقدار قبلی، فیلد را ارسال نکنید.' });
     }
     if (partsCost === null) {
       return res.status(400).json({ error: 'مقدار هزینه قطعات نمی‌تواند null باشد. در صورت تمایل به حفظ مقدار قبلی، فیلد را ارسال نکنید.' });
+    }
+    if (hoursSpent === null) {
+      return res.status(400).json({ error: 'مقدار ساعات کارکرد نمی‌تواند null باشد. در صورت عدم نیاز، مقدار را حذف کنید.' });
+    }
+    if (partsReplaced === null) {
+      return res.status(400).json({ error: 'فهرست قطعات تعویضی نمی‌تواند null باشد. در صورت عدم نیاز، مقدار را حذف کنید.' });
     }
 
     if (laborCost !== undefined) {
@@ -1816,8 +1835,14 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/actions', '/cases/:main
     if (partsCost !== undefined) {
       pCost = validateFinancialAmount(partsCost, 'هزینه قطعات');
     }
+    if (hoursSpent !== undefined) {
+      validatedHours = validateActionLaborHours(hoursSpent);
+    }
+    if (partsReplaced !== undefined) {
+      validatedParts = validatePartsReplaced(partsReplaced);
+    }
   } catch (err: any) {
-    return res.status(400).json({ error: err.message || 'ورودی‌های مالی یا شناسه درخواست نامعتبر است.' });
+    return res.status(400).json({ error: err.message || 'ورودی‌های مالی، ساعات کارکرد یا شناسه درخواست نامعتبر است.' });
   }
 
   const payloadHash = computeActionPayloadHash({
@@ -1829,7 +1854,9 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/actions', '/cases/:main
     newComponentModel,
     notes,
     laborCost: laborCost !== undefined ? lCost : undefined,
-    partsCost: partsCost !== undefined ? pCost : undefined
+    partsCost: partsCost !== undefined ? pCost : undefined,
+    hoursSpent: validatedHours,
+    partsReplaced: validatedParts
   });
 
   let result: RecordCaseActionResult;
@@ -1845,6 +1872,8 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/actions', '/cases/:main
         newComponentModel,
         performedBy: req.user.id,
         notes,
+        hoursSpent: validatedHours,
+        partsReplaced: validatedParts,
         clientRequestId,
         payloadHash
       },
@@ -1887,6 +1916,63 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/actions', '/cases/:main
 });
 
 /**
+ * POST /api/maintenance/:maintenanceCaseId/spare-parts, /api/cases/:maintenanceCaseId/spare-parts
+ * Add spare parts usage to a maintenance case (assigned technician or admin only)
+ */
+maintenanceRouter.post(['/maintenance/:maintenanceCaseId/spare-parts', '/cases/:maintenanceCaseId/spare-parts'], (req: Request, res: Response) => {
+  const caseId = getParam(req.params.maintenanceCaseId);
+  const mCase = maintenanceRepository.getCaseById(caseId);
+  if (!mCase) {
+    return res.status(404).json({ error: 'پرونده تعمیراتی یافت نشد.' });
+  }
+
+  const caseAccess = checkCaseAccess(mCase, req.user, { requireTechnicianOrAdmin: true });
+  if (!caseAccess.allowed) {
+    return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
+  }
+
+  // Terminal-state protection
+  if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+    return res.status(400).json({
+      error: 'امکان ثبت قطعات یدکی برای پرونده‌های لغو شده یا بسته شده وجود ندارد.'
+    });
+  }
+
+  // Formal acceptance barrier: Technician must accept the case before adding spare parts
+  if (!caseAccess.isAdmin && !hasTechnicianFormallyAccepted(mCase)) {
+    return res.status(403).json({
+      error: 'ثبت قطعات یدکی نیازمند پذیرش رسمی پرونده توسط تکنسین است.'
+    });
+  }
+
+  const rawKey = req.headers['idempotency-key'] || req.headers['x-client-request-id'] || req.body?.clientRequestId;
+  let clientRequestId: string | undefined;
+  try {
+    clientRequestId = validateClientRequestId(rawKey);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'شناسه درخواست نامعتبر است.' });
+  }
+
+  const parts = req.body?.parts || (Array.isArray(req.body) ? req.body : [req.body]);
+
+  try {
+    const updated = maintenanceCaseService.addSpareParts(caseId, parts, { clientRequestId });
+    return res.status(200).json(updated);
+  } catch (err: any) {
+    if (err.code === 'IDEMPOTENCY_PAYLOAD_CONFLICT' || err.statusCode === 409) {
+      return res.status(409).json({
+        error: err.message || 'شناسه درخواست تکراری با محتوای متفاوت.',
+        code: 'IDEMPOTENCY_PAYLOAD_CONFLICT'
+      });
+    }
+    if (isPersistenceError(err)) {
+      return res.status(500).json({ error: 'خطا در ثبت پایدار اطلاعات در پایگاه داده' });
+    }
+    return res.status(400).json({ error: err.message || 'خطا در ثبت قطعات یدکی' });
+  }
+});
+
+/**
  * POST /api/maintenance/:maintenanceCaseId/submit-verification, /api/cases/:maintenanceCaseId/submit-verification
  * Technician submits work for review/verification
  */
@@ -1909,36 +1995,127 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/submit-verification', '
     });
   }
 
+  // Formal acceptance barrier: Technician must accept the case before submitting verification
+  if (!caseAccess.isAdmin && !hasTechnicianFormallyAccepted(mCase)) {
+    return res.status(403).json({
+      error: 'ارسال پرونده جهت تایید نیازمند پذیرش رسمی پرونده توسط تکنسین است.'
+    });
+  }
+
   const actions = maintenanceRepository.getActions(caseId);
   if (actions.length === 0) {
     return res.status(400).json({ error: 'حداقل یک اقدام ثبت‌شده برای ارسال پرونده به تایید الزامی است.' });
   }
 
-  const { resolutionSummary, rootCause, actionsTaken } = req.body;
+  const { resolutionSummary, rootCause, actionsTaken, laborCost, partsCost } = req.body;
+
+  // Null policy for financial inputs
+  if (laborCost === null) {
+    return res.status(400).json({ error: 'مقدار هزینه دستمزد نمی‌تواند null باشد. در صورت تمایل به حفظ مقدار قبلی، فیلد را ارسال نکنید.' });
+  }
+  if (partsCost === null) {
+    return res.status(400).json({ error: 'مقدار هزینه قطعات نمی‌تواند null باشد. در صورت تمایل به حفظ مقدار قبلی، فیلد را ارسال نکنید.' });
+  }
+
+  let lCost: number | undefined;
+  let pCost: number | undefined;
+
+  try {
+    if (laborCost !== undefined) {
+      lCost = validateFinancialAmount(laborCost, 'هزینه دستمزد');
+    }
+    if (partsCost !== undefined) {
+      pCost = validateFinancialAmount(partsCost, 'هزینه قطعات');
+    }
+
+    // Validate existing stored case totals (to prevent inventing values on corrupt or contradictory data)
+    validateCaseFinancialConsistency(mCase);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'ورودی‌های مالی یا اطلاعات مالی ذخیره‌شده نامعتبر است.' });
+  }
+
+  // Spare parts integrity check: calculate using strict recorded spare parts calculator
+  let recordedPartsCost = 0;
+  try {
+    recordedPartsCost = calculateRecordedPartsCost(mCase.sparePartsUsed);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'اطلاعات قطعات یدکی ذخیره‌شده نامعتبر یا فاسد است.' });
+  }
+
+  if (pCost !== undefined && pCost < recordedPartsCost) {
+    return res.status(400).json({
+      error: `هزینه قطعات اعلام‌شده (${pCost.toLocaleString('fa-IR')} ریال) نمی‌تواند کمتر از بهای قطعات یدکی مصرفی ثبت‌شده در پرونده (${recordedPartsCost.toLocaleString('fa-IR')} ریال) باشد.`
+    });
+  }
+
+  // Calculate cumulative totals (cumulative overwrite semantics, NEVER incremental charges!)
+  const existingLabor = mCase.laborCost !== undefined && mCase.laborCost !== null ? mCase.laborCost : undefined;
+  const existingParts = mCase.partsCost !== undefined && mCase.partsCost !== null
+    ? mCase.partsCost
+    : (recordedPartsCost > 0 ? recordedPartsCost : undefined);
+
+  // If pCost was omitted, ensure existing parts cost also satisfies recordedPartsCost floor
+  if (pCost === undefined && existingParts !== undefined && existingParts < recordedPartsCost) {
+    return res.status(400).json({
+      error: `هزینه قطعات ذخیره‌شده (${existingParts.toLocaleString('fa-IR')} ریال) کمتر از بهای قطعات یدکی مصرفی ثبت‌شده در پرونده (${recordedPartsCost.toLocaleString('fa-IR')} ریال) است.`
+    });
+  }
+
+  const finalLabor = lCost !== undefined ? lCost : existingLabor;
+  const finalParts = pCost !== undefined ? pCost : existingParts;
+
+  let finalTotal: number | undefined = undefined;
+  if (finalLabor !== undefined || finalParts !== undefined) {
+    const l = finalLabor ?? 0;
+    const p = finalParts ?? 0;
+    finalTotal = l + p;
+    if (finalTotal > Number.MAX_SAFE_INTEGER || finalTotal > 1e14) {
+      return res.status(400).json({ error: 'مجموع هزینه فراتر از حد مجاز محاسبات امن است.' });
+    }
+  } else if (mCase.totalCostIrr !== undefined && mCase.totalCostIrr !== null) {
+    // Preserve existing valid sparse totalCostIrr when no new labor or parts cost is provided
+    finalTotal = mCase.totalCostIrr;
+  }
+
+  // Preserve historical actions: do not trust client-supplied actionsTaken as replacement for actual actions
+  const preservedActionsTaken = Array.isArray(mCase.actionsTaken) && mCase.actionsTaken.length > 0
+    ? mCase.actionsTaken
+    : (Array.isArray(actions) && actions.length > 0 ? actions : undefined);
 
   let updated: MaintenanceCase;
   try {
+    // Authoritative lifecycle transition write
     updated = maintenanceCaseService.transitionCaseStatus(caseId, 'AWAITING_VERIFICATION', req.user.id, {
-      notes: resolutionSummary
+      notes: resolutionSummary,
+      rootCause: typeof rootCause === 'string' ? rootCause.trim() : undefined,
+      actionsTaken: preservedActionsTaken,
+      laborCost: finalLabor,
+      partsCost: finalParts,
+      totalCost: finalTotal,
+      totalCostIrr: finalTotal
     });
-    if (resolutionSummary || rootCause || actionsTaken) {
-      maintenanceRepository.updateCase(caseId, {
-        resolutionSummary: resolutionSummary || mCase.resolutionSummary,
-        rootCause: rootCause || mCase.rootCause,
-        actionsTaken: actionsTaken || mCase.actionsTaken
-      });
-      updated = maintenanceRepository.getCaseById(caseId)!;
-    }
   } catch (err: any) {
+    if (isPersistenceError(err)) {
+      return res.status(500).json({ error: 'خطا در ثبت پایدار اطلاعات در پایگاه داده' });
+    }
     return res.status(400).json({ error: err.message || 'خطا در ارسال پرونده به مرحله تایید' });
   }
 
-  projectRepository.addActivity({
-    projectId: mCase.projectId,
-    userId: req.user.id,
-    type: 'MAINTENANCE_CASE_AWAITING_VERIFICATION',
-    description: `ارسال پرونده تعمیرات ${mCase.maintenanceCode || mCase.id} جهت تایید کارفرما`
-  });
+  // Secondary non-authoritative audit activity write:
+  // The authoritative case transition has already succeeded. A failure here must not falsify
+  // the client response, cause duplicate financial effects, or drop audit evidence.
+  if (mCase.projectId && mCase.projectId !== 'CUSTOMER_DIRECT') {
+    try {
+      projectRepository.addActivity({
+        projectId: mCase.projectId,
+        userId: req.user.id,
+        type: 'MAINTENANCE_CASE_AWAITING_VERIFICATION',
+        description: `ارسال پرونده تعمیرات ${mCase.caseNumber || mCase.maintenanceCode || mCase.id} جهت تایید کارفرما`
+      });
+    } catch (actErr) {
+      console.warn('[maintenance] Secondary project activity logging failed after authoritative transition:', actErr);
+    }
+  }
 
   return res.json(updated);
 });
@@ -1989,12 +2166,18 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/verify', '/cases/:maint
     return res.status(400).json({ error: err.message || 'خطا در ثبت نتیجه ارزیابی پرونده' });
   }
 
-  projectRepository.addActivity({
-    projectId: mCase.projectId,
-    userId: req.user.id,
-    type: 'MAINTENANCE_CASE_VERIFIED',
-    description: `نتیجه تایید پرونده ${mCase.maintenanceCode || mCase.id}: ${isPassed ? 'تایید شد' : 'رد شد'}`
-  });
+  if (mCase.projectId && mCase.projectId !== 'CUSTOMER_DIRECT') {
+    try {
+      projectRepository.addActivity({
+        projectId: mCase.projectId,
+        userId: req.user.id,
+        type: 'MAINTENANCE_CASE_VERIFIED',
+        description: `نتیجه تایید پرونده ${mCase.caseNumber || mCase.maintenanceCode || mCase.id}: ${isPassed ? 'تایید شد' : 'رد شد'}`
+      });
+    } catch (actErr) {
+      console.warn('[maintenance] Secondary project activity logging failed after verification:', actErr);
+    }
+  }
 
   return res.json(updated);
 });
@@ -2095,12 +2278,18 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/close', '/cases/:mainte
     return res.status(400).json({ error: err.message || 'خطا در بستن و بایگانی پرونده' });
   }
 
-  projectRepository.addActivity({
-    projectId: mCase.projectId,
-    userId: req.user.id,
-    type: 'MAINTENANCE_CASE_CLOSED',
-    description: `بسته شدن نهایی پرونده تعمیرات ${mCase.maintenanceCode || mCase.id}`
-  });
+  if (mCase.projectId && mCase.projectId !== 'CUSTOMER_DIRECT') {
+    try {
+      projectRepository.addActivity({
+        projectId: mCase.projectId,
+        userId: req.user.id,
+        type: 'MAINTENANCE_CASE_CLOSED',
+        description: `بسته شدن نهایی پرونده تعمیرات ${mCase.caseNumber || mCase.maintenanceCode || mCase.id}`
+      });
+    } catch (actErr) {
+      console.warn('[maintenance] Secondary project activity logging failed after case closure:', actErr);
+    }
+  }
 
   return res.json(updated);
 });
@@ -2753,7 +2942,7 @@ maintenanceRouter.delete('/alert-rules/:ruleId', (req: Request, res: Response) =
 
 maintenanceRouter.post('/maintenance/technicians/:id/approve', (req: Request, res: Response) => {
   const techId = getParam(req.params.id);
-  
+
   if (req.user?.role !== 'ADMIN') {
     return res.status(403).json({ error: 'دسترسی غیرمجاز. فقط مدیر سیستم می‌تواند تکنسین را تایید کند.' });
   }

@@ -337,6 +337,8 @@ export interface MaintenanceAction {
   performedAt: string;
   resultStatus?: string;
   notes?: string;
+  hoursSpent?: number;
+  partsReplaced?: string[];
   clientRequestId?: string;
   payloadHash?: string;
   createdAt?: string;
@@ -353,6 +355,8 @@ export interface RecordCaseActionInput {
   performedAt?: string;
   resultStatus?: string;
   notes?: string;
+  hoursSpent?: number;
+  partsReplaced?: string[];
   createdAt?: string;
   clientRequestId?: string;
   payloadHash?: string;
