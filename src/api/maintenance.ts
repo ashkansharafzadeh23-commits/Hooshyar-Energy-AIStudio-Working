@@ -2193,15 +2193,14 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/close', '/cases/:mainte
     return res.status(404).json({ error: 'پرونده تعمیراتی یافت نشد.' });
   }
 
-  const caseAccess = checkCaseAccess(mCase, req.user);
-  if (!caseAccess.allowed) {
-    return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
-  }
+  const caseAccess = checkCaseAccess(mCase, req.user, {
+    requireReporterOrAdmin: true
+  });
 
-  if (!caseAccess.isReporter && !caseAccess.isAdmin) {
-    if (mCase.projectId === 'CUSTOMER_DIRECT') {
-      return res.status(403).json({ error: 'تنها ثبت‌کننده پرونده یا مدیر سامانه مجاز به بستن پرونده هستند.' });
-    }
+  if (!caseAccess.allowed) {
+    return res.status(caseAccess.status || 403).json({
+      error: caseAccess.error
+    });
   }
 
   // Terminal-state protection:
