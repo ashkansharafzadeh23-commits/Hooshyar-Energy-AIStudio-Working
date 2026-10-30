@@ -2547,6 +2547,53 @@ export const db: any = {
     }
     return null;
   },
+  /** One file read / one file write: case closure and linked alerts share the same persisted snapshot. */
+  closeMaintenanceCaseAtomically: (
+    id: string,
+    actorId: string,
+    closureNotes: string,
+    postMaintenanceCheck: NonNullable<MaintenanceCase['postMaintenanceCheck']>
+  ): MaintenanceCase => {
+    const d = readDB();
+    const target = (d.maintenanceCases || []).find((c: MaintenanceCase) => c.id === id);
+    if (!target) throw new Error('Maintenance case not found');
+    if (target.status === 'CLOSED') {
+      if (target.completedDate && !target.postMaintenanceCheck) {
+        throw new Error('Closed case has incomplete assessment; administrative reconciliation required');
+      }
+      return target;
+    }
+    if (target.status !== 'VERIFIED' && target.status !== 'COMPLETED') {
+      throw new Error('Only verified or completed cases can be closed');
+    }
+    if (!postMaintenanceCheck || !postMaintenanceCheck.status || !postMaintenanceCheck.evaluatedAt) {
+      throw new Error('A valid post-maintenance assessment is required for closure');
+    }
+    const now = new Date().toISOString();
+    const linkedAlerts = new Set(target.alertIds || []);
+    // Reject ambiguous cross-asset alert references. Preserve missing legacy alerts.
+    for (const alert of (d.assetAlerts || [])) {
+      if (!linkedAlerts.has(alert.id)) continue;
+      if (target.assetId && alert.assetId && alert.assetId !== target.assetId) {
+        throw new Error('Linked alert does not belong to this asset');
+      }
+    }
+    target.status = 'CLOSED';
+    target.completedDate = now;
+    target.closureNotes = closureNotes;
+    target.postMaintenanceCheck = postMaintenanceCheck;
+    target.updatedAt = now;
+    for (const alert of (d.assetAlerts || [])) {
+      if (!linkedAlerts.has(alert.id) || alert.status === 'RESOLVED') continue;
+      alert.status = 'RESOLVED';
+      alert.resolvedAt = now;
+      alert.resolvedBy = actorId;
+      alert.resolutionNote = 'Auto-resolved on closure of maintenance case ' + (target.maintenanceCode || target.id);
+      alert.updatedAt = now;
+    }
+    writeDB(d);
+    return target;
+  },
   deleteMaintenanceCase: (id: string): boolean => {
     const d = readDB();
     if (!d.maintenanceCases) return false;
