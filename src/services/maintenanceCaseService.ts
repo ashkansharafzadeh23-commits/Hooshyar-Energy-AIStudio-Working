@@ -741,6 +741,7 @@ export const maintenanceCaseService = {
       technicianPhone?: string;
       scheduledDate?: string;
       closureNotes?: string;
+      postMaintenanceCheck?: MaintenanceCase['postMaintenanceCheck'];
       verificationNotes?: string;
       rejectionReason?: string;
       notes?: string;
@@ -917,6 +918,29 @@ export const maintenanceCaseService = {
         throw new Error(`وضعیت فعلی ${currentStatus} اجازه تغییر وضعیت نمی‌دهد.`);
     }
 
+    if (newStatus === 'CLOSED') {
+      const assessment = payload?.postMaintenanceCheck || {
+        status: 'INSUFFICIENT_DATA' as const,
+        evaluatedAt: new Date().toISOString(),
+        notes: 'No post-maintenance telemetry assessment was provided.'
+      };
+      const closed = maintenanceRepository.closeCaseAtomically(
+        mCase.id, actorUserId,
+        payload?.closureNotes || 'پرونده با موفقیت بسته و تحویل گردید.', assessment
+      );
+      if (mCase.projectId && mCase.projectId !== 'CUSTOMER_DIRECT') {
+        try {
+          projectRepository.addActivity({
+            projectId: mCase.projectId,
+            userId: actorUserId,
+            type: 'MAINTENANCE_STATUS_CHANGED',
+            description: 'تغییر وضعیت پرونده تعمیرات ' + mCase.caseNumber + ' به CLOSED'
+          });
+        } catch { /* optional secondary activity */ }
+      }
+      return closed;
+    }
+
     const updates: Partial<MaintenanceCase> = { status: newStatus };
 
     // Handle return to OPEN: clear active assignment metadata
@@ -1027,21 +1051,6 @@ export const maintenanceCaseService = {
       updates.verifiedAt = new Date().toISOString();
       updates.verificationPassed = true;
       if (payload?.verificationNotes) updates.verificationNotes = payload.verificationNotes;
-    }
-
-    // Handle closure
-    if (newStatus === 'CLOSED') {
-      updates.completedDate = new Date().toISOString();
-      updates.closureNotes = payload?.closureNotes || 'پرونده با موفقیت بسته و تحویل گردید.';
-
-      // Automatically resolve associated alerts
-      for (const alertId of mCase.alertIds) {
-        try {
-          alertService.resolveAlert(alertId, `حل شده از طریق پرونده تعمیراتی ${mCase.caseNumber}`, actorUserId);
-        } catch (e) {
-          // ignore already resolved
-        }
-      }
     }
 
     const updated = maintenanceRepository.updateCase(caseId, updates);

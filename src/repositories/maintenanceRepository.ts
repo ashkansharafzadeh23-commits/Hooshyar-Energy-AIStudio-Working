@@ -107,6 +107,13 @@ export const maintenanceRepository = {
     return db.updateMaintenanceCase(id, updates);
   },
 
+  closeCaseAtomically: (
+    id: string,
+    actorId: string,
+    closureNotes: string,
+    postMaintenanceCheck: NonNullable<MaintenanceCase['postMaintenanceCheck']>
+  ): MaintenanceCase => db.closeMaintenanceCaseAtomically(id, actorId, closureNotes, postMaintenanceCheck),
+
   deleteCase: (id: string): boolean => {
     return db.deleteMaintenanceCase(id);
   },

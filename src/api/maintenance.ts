@@ -2193,15 +2193,14 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/close', '/cases/:mainte
     return res.status(404).json({ error: 'پرونده تعمیراتی یافت نشد.' });
   }
 
-  const caseAccess = checkCaseAccess(mCase, req.user);
-  if (!caseAccess.allowed) {
-    return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
-  }
+  const caseAccess = checkCaseAccess(mCase, req.user, {
+    requireReporterOrAdmin: true
+  });
 
-  if (!caseAccess.isReporter && !caseAccess.isAdmin) {
-    if (mCase.projectId === 'CUSTOMER_DIRECT') {
-      return res.status(403).json({ error: 'تنها ثبت‌کننده پرونده یا مدیر سامانه مجاز به بستن پرونده هستند.' });
-    }
+  if (!caseAccess.allowed) {
+    return res.status(caseAccess.status || 403).json({
+      error: caseAccess.error
+    });
   }
 
   // Terminal-state protection:
@@ -2211,22 +2210,11 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/close', '/cases/:mainte
     });
   }
   if (mCase.status === 'CLOSED') {
-    return res.json(mCase);
-  }
-
-  // Auto-resolve associated alerts
-  if (mCase.alertIds && mCase.alertIds.length > 0) {
-    for (const alertId of mCase.alertIds) {
-      const alert = maintenanceRepository.getAlertById(alertId);
-      if (alert && alert.status !== 'RESOLVED') {
-        maintenanceRepository.updateAlert(alertId, {
-          status: 'RESOLVED',
-          resolvedAt: new Date().toISOString(),
-          resolvedBy: req.user.id,
-          resolutionNote: `حل خودکار بر اثر تکمیل پرونده ${mCase.maintenanceCode || mCase.id}`
-        });
-      }
+    // Do not silently acknowledge an interrupted modern closure. Do not mutate legacy data.
+    if (mCase.completedDate && !mCase.postMaintenanceCheck) {
+      return res.status(409).json({ error: 'پرونده بسته شده اما ارزیابی نهایی ناقص است؛ بررسی مدیر سامانه لازم است.' });
     }
+    return res.json(mCase);
   }
 
   // Evaluate post-maintenance check
@@ -2268,27 +2256,14 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/close', '/cases/:mainte
   let updated: MaintenanceCase;
   try {
     updated = maintenanceCaseService.transitionCaseStatus(caseId, 'CLOSED', req.user.id, {
-      closureNotes: req.body?.closureNotes || 'پرونده با موفقیت نهایی و بایگانی شد.'
-    });
-    maintenanceRepository.updateCase(caseId, {
+      closureNotes: req.body?.closureNotes || 'پرونده با موفقیت نهایی و بایگانی شد.',
       postMaintenanceCheck: postCheck
     });
-    updated = maintenanceRepository.getCaseById(caseId)!;
   } catch (err: any) {
-    return res.status(400).json({ error: err.message || 'خطا در بستن و بایگانی پرونده' });
-  }
-
-  if (mCase.projectId && mCase.projectId !== 'CUSTOMER_DIRECT') {
-    try {
-      projectRepository.addActivity({
-        projectId: mCase.projectId,
-        userId: req.user.id,
-        type: 'MAINTENANCE_CASE_CLOSED',
-        description: `بسته شدن نهایی پرونده تعمیرات ${mCase.caseNumber || mCase.maintenanceCode || mCase.id}`
-      });
-    } catch (actErr) {
-      console.warn('[maintenance] Secondary project activity logging failed after case closure:', actErr);
+    if (isPersistenceError(err)) {
+      return res.status(500).json({ error: 'خطای ذخیره‌سازی در بستن پرونده؛ لطفاً بعداً تلاش کنید.' });
     }
+    return res.status(400).json({ error: 'امکان بستن پرونده در وضعیت فعلی وجود ندارد.' });
   }
 
   return res.json(updated);
