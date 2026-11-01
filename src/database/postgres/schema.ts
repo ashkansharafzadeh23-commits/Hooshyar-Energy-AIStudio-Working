@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, boolean, timestamp, jsonb, real, doublePrecision } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, boolean, timestamp, jsonb, real, doublePrecision, numeric, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // --- Users & Orgs ---
@@ -251,3 +251,211 @@ export const showcaseProjects = pgTable('showcase_projects', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+// ============================================================================
+// --- Smart Maintenance Domain (Stage F.5 Phase P1) ---
+// ============================================================================
+
+export const alertRules = pgTable('alert_rules', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id'),
+  assetId: text('asset_id'),
+  name: text('name').notNull(),
+  description: text('description'),
+  metricType: text('metric_type'),
+  ruleType: text('rule_type').notNull(),
+  operator: text('operator').notNull(), // '>', '<', '>=', '<=', '==', '!='
+  thresholdValue: doublePrecision('threshold_value'),
+  thresholdPercent: doublePrecision('threshold_percent'),
+  durationMinutes: integer('duration_minutes'),
+  cooldownMinutes: integer('cooldown_minutes'),
+  severity: text('severity').notNull(), // 'INFO', 'WARNING', 'HIGH', 'CRITICAL'
+  enabled: boolean('enabled').notNull().default(true),
+  isEnabled: boolean('is_enabled'), // Distinct legacy alias
+  condition: jsonb('condition'),
+  sourceType: text('source_type'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  projectIdx: index('idx_alert_rules_project_id').on(table.projectId),
+  assetIdx: index('idx_alert_rules_asset_id').on(table.assetId),
+}));
+
+export const assetAlerts = pgTable('asset_alerts', {
+  id: text('id').primaryKey(),
+  alertCode: text('alert_code').notNull().unique(), // e.g. ALT-HSE-000001
+  projectId: text('project_id').notNull(), // UUID or 'CUSTOMER_DIRECT'
+  assetId: text('asset_id').notNull(), // UUID or 'UNREGISTERED'
+  componentId: text('component_id'),
+  sourceId: text('source_id'),
+  source: text('source'),
+  alertType: text('alert_type').notNull(),
+  severity: text('severity').notNull(),
+  status: text('status').notNull(), // 'TRIGGERED', 'ACKNOWLEDGED', 'RESOLVED', etc.
+  title: text('title').notNull(),
+  description: text('description').notNull(),
+  detectedAt: timestamp('detected_at', { withTimezone: true }).notNull(),
+  firstObservedAt: timestamp('first_observed_at', { withTimezone: true }),
+  lastObservedAt: timestamp('last_observed_at', { withTimezone: true }),
+  metricType: text('metric_type'),
+  observedValue: doublePrecision('observed_value'),
+  metricValue: doublePrecision('metric_value'),
+  expectedValue: doublePrecision('expected_value'),
+  deviationPercent: doublePrecision('deviation_percent'),
+  thresholdRuleId: text('threshold_rule_id'),
+  ruleId: text('rule_id'),
+  thresholdValue: doublePrecision('threshold_value'),
+  performanceSnapshotId: text('performance_snapshot_id'),
+  healthAssessmentId: text('health_assessment_id'),
+  investigationNotes: jsonb('investigation_notes').default('[]'),
+  maintenanceCaseId: text('maintenance_case_id'),
+  acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
+  acknowledgedBy: text('acknowledged_by'),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  resolvedBy: text('resolved_by'),
+  resolutionNote: text('resolution_note'),
+  resolutionNotes: text('resolution_notes'), // Distinct legacy alias
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  projectIdx: index('idx_asset_alerts_project_id').on(table.projectId),
+  assetIdx: index('idx_asset_alerts_asset_id').on(table.assetId),
+  caseIdx: index('idx_asset_alerts_case_id').on(table.maintenanceCaseId),
+  statusIdx: index('idx_asset_alerts_status').on(table.status),
+}));
+
+export const maintenanceCases = pgTable('maintenance_cases', {
+  id: text('id').primaryKey(),
+  maintenanceCode: text('maintenance_code').notNull().unique(), // e.g. MNT-HSE-000001
+  caseNumber: text('case_number'), // e.g. MC-2026-0001
+  projectId: text('project_id').notNull(), // Supports project UUID and 'CUSTOMER_DIRECT'
+  assetId: text('asset_id').notNull(), // Supports asset UUID, 'UNREGISTERED', 'STANDALONE'
+  componentId: text('component_id'),
+  equipmentType: text('equipment_type'),
+  symptoms: jsonb('symptoms').default('[]'),
+  alertIds: jsonb('alert_ids').default('[]'),
+  title: text('title').notNull(),
+  description: text('description').notNull(),
+  category: text('category').notNull(),
+  priority: text('priority').notNull(),
+  status: text('status').notNull(),
+  reportedBy: text('reported_by').notNull(),
+  reportedAt: timestamp('reported_at', { withTimezone: true }).notNull(),
+  contactName: text('contact_name'),
+  contactPhone: text('contact_phone'),
+  diagnosisId: text('diagnosis_id'),
+  assignedTechnicianId: text('assigned_technician_id'), // User UUID or Professional profile ID
+  assignedTechnicianName: text('assigned_technician_name'),
+  assignedTechnicianPhone: text('assigned_technician_phone'),
+  assignedOrganizationId: text('assigned_organization_id'),
+  scheduledAt: timestamp('scheduled_at', { withTimezone: true }),
+  scheduledDate: text('scheduled_date'), // Jalali/formatted string e.g. '1403/07/15'
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  completedDate: text('completed_date'),
+  closureNotes: text('closure_notes'),
+  verifiedAt: timestamp('verified_at', { withTimezone: true }),
+  verifiedBy: text('verified_by'),
+  verificationNotes: text('verification_notes'),
+  verificationPassed: boolean('verification_passed'),
+  resolutionSummary: text('resolution_summary'),
+  rootCause: text('root_cause'),
+  actionsTaken: jsonb('actions_taken'),
+  photos: jsonb('photos').default('[]'),
+  documents: jsonb('documents').default('[]'),
+  billDoc: jsonb('bill_doc'),
+  attachments: jsonb('attachments').default('[]'), // CaseAttachment[]
+  downtimeMinutes: integer('downtime_minutes'),
+  laborCost: numeric('labor_cost', { precision: 20, scale: 0 }),
+  partsCost: numeric('parts_cost', { precision: 20, scale: 0 }),
+  totalCost: numeric('total_cost', { precision: 20, scale: 0 }),
+  totalCostIrr: numeric('total_cost_irr', { precision: 20, scale: 0 }),
+  totalLaborHours: doublePrecision('total_labor_hours'),
+  sparePartsUsed: jsonb('spare_parts_used').default('[]'), // SparePartUsage[]
+  currency: text('currency').default('IRR'),
+  postMaintenanceCheck: jsonb('post_maintenance_check'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+}, (table) => ({
+  projectIdx: index('idx_maintenance_cases_project_id').on(table.projectId),
+  assetIdx: index('idx_maintenance_cases_asset_id').on(table.assetId),
+  assignedTechIdx: index('idx_maintenance_cases_tech_id').on(table.assignedTechnicianId),
+  statusIdx: index('idx_maintenance_cases_status').on(table.status),
+  reportedByIdx: index('idx_maintenance_cases_reported_by').on(table.reportedBy),
+}));
+
+export const maintenanceAssignmentHistories = pgTable('maintenance_assignment_histories', {
+  id: text('id').primaryKey(),
+  maintenanceCaseId: text('maintenance_case_id').notNull(),
+  technicianId: text('technician_id').notNull(), // User UUID or Professional profile ID
+  organizationId: text('organization_id'),
+  assignedBy: text('assigned_by').notNull(),
+  assignedAt: timestamp('assigned_at', { withTimezone: true }).defaultNow().notNull(),
+  status: text('status').notNull(), // 'ASSIGNED', 'ACCEPTED', 'REJECTED', 'CANCELLED'
+  notes: text('notes'),
+}, (table) => ({
+  caseIdx: index('idx_maint_assign_hist_case_id').on(table.maintenanceCaseId),
+  techIdx: index('idx_maint_assign_hist_tech_id').on(table.technicianId),
+}));
+
+export const maintenanceActions = pgTable('maintenance_actions', {
+  id: text('id').primaryKey(),
+  maintenanceCaseId: text('maintenance_case_id').notNull(),
+  caseId: text('case_id'), // Distinct legacy alias
+  actionType: text('action_type').notNull(),
+  description: text('description').notNull(),
+  componentId: text('component_id'),
+  replacedComponentId: text('replaced_component_id'),
+  newComponentSerial: text('new_component_serial'),
+  newComponentModel: text('new_component_model'),
+  performedBy: text('performed_by'),
+  performedAt: timestamp('performed_at', { withTimezone: true }).notNull(),
+  resultStatus: text('result_status'),
+  notes: text('notes'),
+  hoursSpent: doublePrecision('hours_spent'),
+  partsReplaced: jsonb('parts_replaced').default('[]'),
+  clientRequestId: text('client_request_id'),
+  payloadHash: text('payload_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  caseIdx: index('idx_maint_actions_case_id').on(table.maintenanceCaseId),
+  caseClientRequestIdx: uniqueIndex('idx_maint_actions_case_client_req').on(table.maintenanceCaseId, table.clientRequestId),
+}));
+
+export const maintenanceDiagnoses = pgTable('maintenance_diagnoses', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull(),
+  assetId: text('asset_id').notNull(),
+  alertId: text('alert_id'),
+  componentId: text('component_id'),
+  diagnosisStatus: text('diagnosis_status'),
+  facts: jsonb('facts').default('[]'),
+  inferences: jsonb('inferences').default('[]'),
+  possibleCauses: jsonb('possible_causes').default('[]'),
+  likelyRootCauses: jsonb('likely_root_causes'),
+  evidence: jsonb('evidence').default('[]'),
+  recommendedActions: jsonb('recommended_actions'),
+  requiredExpertise: jsonb('required_expertise').default('[]'),
+  warrantyStatus: text('warranty_status'),
+  warrantyDetails: text('warranty_details'),
+  warrantyImpact: jsonb('warranty_impact'),
+  symptoms: jsonb('symptoms').default('[]'),
+  rootCauses: jsonb('root_causes'),
+  actions: jsonb('actions'),
+  method: text('method'),
+  diagnosisMethod: text('diagnosis_method'), // Distinct legacy alias
+  confidence: doublePrecision('confidence'),
+  confidenceScore: doublePrecision('confidence_score'), // Distinct legacy alias
+  rawAiResponse: jsonb('raw_ai_response'),
+  generatedBy: text('generated_by'),
+  evidenceCategorized: jsonb('evidence_categorized'),
+  requiredTools: jsonb('required_tools').default('[]'),
+  requiredParts: jsonb('required_parts').default('[]'),
+  safetyGuidance: jsonb('safety_guidance').default('[]'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  projectIdx: index('idx_maint_diag_project_id').on(table.projectId),
+  assetIdx: index('idx_maint_diag_asset_id').on(table.assetId),
+  alertIdx: index('idx_maint_diag_alert_id').on(table.alertId),
+}));
