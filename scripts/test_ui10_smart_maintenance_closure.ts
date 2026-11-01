@@ -175,14 +175,59 @@ async function runTests() {
     assert(assignedCase.status === 'ASSIGNED', 'Case transitioned to ASSIGNED');
     assert(assignedCase.assignedTechnicianId === selectedTech.technicianId, 'Technician assigned');
 
-    // Step 4.2: Technician accepts assignment
+    // Step 4.1b: Record authoritative assignment history for current cycle
+    const assignmentHistory = maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: case1.id,
+      technicianId: selectedTech.technicianId,
+      assignedBy: 'customer-user-1',
+      status: 'ASSIGNED',
+      notes: 'تخصیص پرونده به تکنسین منتخب'
+    });
+    assert(assignmentHistory.id !== undefined, 'Authoritative ASSIGNED history record created');
+
+    // Step 4.2 (Required Negative Test): Premature transition to IN_PROGRESS rejected prior to formal technician acceptance
+    let prematureTransitionRejected = false;
+    let prematureErrorMessage = '';
+    try {
+      maintenanceCaseService.transitionCaseStatus(
+        case1.id,
+        'IN_PROGRESS',
+        selectedTech.technicianId,
+        { notes: 'تلاش غیرمجاز برای شروع بدون پذیرش رسمی' }
+      );
+    } catch (err: any) {
+      prematureTransitionRejected = true;
+      prematureErrorMessage = err.message || '';
+    }
+    assert(prematureTransitionRejected, 'Transition to IN_PROGRESS rejected without prior formal technician acceptance');
+    assert(
+      prematureErrorMessage.includes('پذیرش رسمی تکنسین') || prematureErrorMessage.includes('پذیرش'),
+      `Rejection message strictly enforces formal technician acceptance: "${prematureErrorMessage}"`
+    );
+
+    const caseAfterRejected = maintenanceRepository.getCaseById(case1.id);
+    assert(caseAfterRejected?.status === 'ASSIGNED', 'Case status remains strictly ASSIGNED after rejected transition');
+
+    // Step 4.3 (Positive Acceptance): Persist formal technician acceptance for current assignment cycle
+    const acceptanceRecord = maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: case1.id,
+      technicianId: selectedTech.technicianId,
+      assignedBy: selectedTech.technicianId,
+      status: 'ACCEPTED',
+      notes: 'پذیرش رسمی مسئولیت انجام تعمیرات توسط تکنسین'
+    });
+    assert(acceptanceRecord.id !== undefined, 'Technician acceptance history record created');
+    assert(acceptanceRecord.status === 'ACCEPTED', 'Assignment history status is ACCEPTED');
+    assert(acceptanceRecord.technicianId === selectedTech.technicianId, 'Technician identity on acceptance matches assigned technician');
+
+    // Step 4.4: Technician transitions case to IN_PROGRESS (now permitted after formal acceptance)
     const acceptedCase = maintenanceCaseService.transitionCaseStatus(
       case1.id,
       'IN_PROGRESS',
       selectedTech.technicianId,
       { notes: 'پذیرش دستور کار توسط تکنسین' }
     );
-    assert(acceptedCase.status === 'IN_PROGRESS', 'Technician accepted case (status IN_PROGRESS)');
+    assert(acceptedCase.status === 'IN_PROGRESS', 'Technician successfully accepted case and started work (status IN_PROGRESS)');
 
     // Step 4.3: Technician records actions & evidence
     const action1 = maintenanceRepository.createAction({
