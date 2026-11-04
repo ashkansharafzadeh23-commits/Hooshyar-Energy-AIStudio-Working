@@ -535,7 +535,20 @@ async function runTestSuite() {
     });
     assert(cycle1ActionRes.status === 200, 'Test 7: Action logged in Cycle 1 by Tech A');
     const cycle1Action = await cycle1ActionRes.json();
-    assert(cycle1Action.performedBy === techUserA.id, 'Test 7: Action performedBy matches Tech A user ID');
+
+      assert(
+       cycle1Action.performedBy === undefined,
+      'Test 7: Technician HTTP response omits performedBy'
+);
+
+      const persistedCycle1Action = maintenanceRepository
+      .getActions(case7.id)
+      .find(action => action.id === cycle1Action.id);
+
+     assert(
+       persistedCycle1Action?.performedBy === techUserA.id,
+      'Test 7: Database preserves original action actor'
+);
 
     // Admin reassigns case from Tech A to Tech B
     const reassignRes7 = await fetch(`${baseUrl}/cases/${case7.id}/assign`, {
@@ -1208,27 +1221,55 @@ async function runTestSuite() {
     assert(techCase.contactPhone === undefined, 'Test 16: Case contactPhone strictly scrubbed');
     assert(techCase.contactName === undefined, 'Test 16: Case contactName strictly scrubbed');
 
-    assert(Array.isArray(techCase.attachments) && techCase.attachments.length === 1, 'Test 16: Attachments array present');
-    const projAtt = techCase.attachments[0];
-    assert(projAtt.storageKey === undefined, 'Test 16: storageKey strictly scrubbed from technician payload');
-    assert(projAtt.data === undefined, 'Test 16: raw data strictly scrubbed from technician payload');
-    assert(projAtt.url === undefined, 'Test 16: private download url scrubbed in terminal state');
-    assert(projAtt.extractedData?.customerPhone === undefined, 'Test 16: extractedData.customerPhone scrubbed');
-    assert(projAtt.extractedData?.customerName === undefined, 'Test 16: extractedData.customerName scrubbed');
-    assert(projAtt.extractedData?.nationalId === undefined, 'Test 16: extractedData.nationalId scrubbed');
-    assert(projAtt.extractedData?.meterNumber === 'M-12345', 'Test 16: Safe technical audit metadata preserved in extractedData');
-    assert(projAtt.name === 'bill_scan.pdf', 'Test 16: Safe attachment name preserved');
-    assert(projAtt.status === 'UPLOADED', 'Test 16: Safe attachment status preserved');
+    assert(
+     Array.isArray(techCase.attachments) &&
+     techCase.attachments.length === 0,
+     'Test 16: Terminal case detail hides all attachments'
+);
 
-    // Tech A queries dedicated attachments endpoint
-    const techAttListRes = await fetch(`${baseUrl}/cases/${casePrivacy.id}/attachments`, {
-      headers: { 'Authorization': `Bearer ${techTokenA}` }
-    });
-    assert(techAttListRes.status === 200, 'Test 16: GET /cases/:id/attachments returns 200');
+// The dedicated attachment endpoint is tested separately.
+
+    // Technician must not receive terminal-case attachment metadata.
+    const techAttListRes = await fetch(
+      `${baseUrl}/cases/${casePrivacy.id}/attachments`,
+      {
+        headers: { Authorization: `Bearer ${techTokenA}` }
+      }
+    );
+
+    assert(
+      techAttListRes.status === 200,
+      'Test 16: Dedicated attachment endpoint returns 200'
+    );
+
     const techAttList = await techAttListRes.json();
-    assert(techAttList[0].storageKey === undefined, 'Test 16: GET attachments scrubs storageKey');
-    assert(techAttList[0].url === undefined, 'Test 16: GET attachments scrubs url in terminal state');
-    assert(techAttList[0].extractedData?.customerPhone === undefined, 'Test 16: GET attachments scrubs customerPhone');
+
+    assert(
+      Array.isArray(techAttList) && techAttList.length === 0,
+      'Test 16: Terminal attachment list is empty for technician'
+    );
+
+    // Ensure legitimate customer access is preserved.
+    const customerAttRes = await fetch(
+      `${baseUrl}/cases/${casePrivacy.id}/attachments`,
+      {
+        headers: { Authorization: `Bearer ${customerToken}` }
+      }
+    );
+
+    assert(
+      customerAttRes.status === 200,
+      'Test 16: Reporter attachment access remains authorized'
+    );
+
+    const customerAttList = await customerAttRes.json();
+
+    assert(
+      Array.isArray(customerAttList) &&
+      customerAttList.length === 1 &&
+      customerAttList[0].id === testAttachment.id,
+      'Test 16: Reporter retains original attachment metadata'
+    );
 
     // Verify underlying database was NOT mutated (projection only)
     const rawDbCase = maintenanceRepository.getCaseById(casePrivacy.id);
@@ -1264,6 +1305,121 @@ async function runTestSuite() {
     });
     closedAtt.maintenanceCaseId = caseClosedDownload.id;
     maintenanceRepository.updateCase(caseClosedDownload.id, { attachments: [closedAtt] });
+
+    // F.5: Additional terminal attachment privacy regression checks.
+    console.log('\n--- TEST 17A: ATTACHMENT LIST PRIVACY REGRESSION ---');
+
+    // 1. CLOSED case: assigned technician must receive no attachments.
+    const closedListRes = await fetch(
+      `${baseUrl}/cases/${caseClosedDownload.id}/attachments`,
+      { headers: { Authorization: `Bearer ${techTokenA}` } }
+    );
+    assert(closedListRes.status === 200,
+      'Test 17A: CLOSED attachment list responds successfully');
+    const closedList = await closedListRes.json();
+    assert(Array.isArray(closedList) && closedList.length === 0,
+      'Test 17A: CLOSED case hides attachments from technician');
+
+    // 2. Alternate route must enforce identical privacy rules.
+    const cancelledAliasRes = await fetch(
+      `${baseUrl}/maintenance/${casePrivacy.id}/attachments`,
+      { headers: { Authorization: `Bearer ${techTokenA}` } }
+    );
+    assert(cancelledAliasRes.status === 200,
+      'Test 17A: CANCELLED alternate list route responds successfully');
+    const cancelledAliasList = await cancelledAliasRes.json();
+    assert(Array.isArray(cancelledAliasList) && cancelledAliasList.length === 0,
+      'Test 17A: CANCELLED alternate route hides attachments');
+
+    const closedAliasRes = await fetch(
+      `${baseUrl}/maintenance/${caseClosedDownload.id}/attachments`,
+      { headers: { Authorization: `Bearer ${techTokenA}` } }
+    );
+    assert(closedAliasRes.status === 200,
+      'Test 17A: CLOSED alternate list route responds successfully');
+    const closedAliasList = await closedAliasRes.json();
+    assert(Array.isArray(closedAliasList) && closedAliasList.length === 0,
+      'Test 17A: CLOSED alternate route hides attachments');
+
+    // 3. Administrator must retain legitimate evidence access.
+    const adminClosedListRes = await fetch(
+      `${baseUrl}/cases/${caseClosedDownload.id}/attachments`,
+      { headers: { Authorization: `Bearer ${adminToken}` } }
+    );
+    assert(adminClosedListRes.status === 200,
+      'Test 17A: Admin retains CLOSED attachment access');
+    const adminClosedList = await adminClosedListRes.json();
+    assert(
+      Array.isArray(adminClosedList) &&
+      adminClosedList.length === 1 &&
+      adminClosedList[0].id === closedAtt.id,
+      'Test 17A: Admin receives original CLOSED attachment'
+    );
+
+    // 4. Active accepted technician must retain authorized access.
+    const activeAttachmentCase = maintenanceCaseService.createCase({
+      title: 'Active attachment authorization regression',
+      description: 'Verify accepted technician attachment access',
+      assignedTechnicianId: techProA.id,
+      assignedTechnicianName: techProA.fullName,
+      assignedTechnicianPhone: techProA.phone
+    }, customerUser.id);
+
+    maintenanceRepository.createAssignmentHistory({
+      maintenanceCaseId: activeAttachmentCase.id,
+      technicianId: techProA.id,
+      assignedBy: customerUser.id,
+      status: 'ASSIGNED',
+      notes: 'Active attachment access test'
+    });
+
+    const activeAttachment = {
+      ...testAttachment,
+      id: 'att-active-f5-privacy',
+      maintenanceCaseId: activeAttachmentCase.id
+    };
+
+    maintenanceRepository.updateCase(activeAttachmentCase.id, {
+      attachments: [activeAttachment]
+    });
+
+    const activeAcceptRes = await fetch(
+      `${baseUrl}/cases/${activeAttachmentCase.id}/accept`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${techTokenA}` }
+      }
+    );
+    assert(activeAcceptRes.status === 200,
+      'Test 17A: Active technician formally accepts case');
+
+    const activeListRes = await fetch(
+      `${baseUrl}/cases/${activeAttachmentCase.id}/attachments`,
+      { headers: { Authorization: `Bearer ${techTokenA}` } }
+    );
+    assert(activeListRes.status === 200,
+      'Test 17A: Accepted technician can list active attachments');
+
+    const activeList = await activeListRes.json();
+    assert(
+      Array.isArray(activeList) &&
+      activeList.length === 1 &&
+      activeList[0].id === activeAttachment.id,
+      'Test 17A: Active accepted technician retains attachment metadata'
+    );
+
+    assert(activeList[0].storageKey === undefined,
+      'Test 17A: Active response never exposes storageKey');
+    assert(activeList[0].data === undefined,
+      'Test 17A: Active response never exposes raw file data');
+
+    const unrelatedTechListRes = await fetch(
+      `${baseUrl}/cases/${activeAttachmentCase.id}/attachments`,
+      { headers: { Authorization: `Bearer ${techTokenB}` } }
+    );
+
+    assert(unrelatedTechListRes.status === 403,
+      'Test 17A: Unrelated technician cannot list active attachments');
 
     const downloadClosedRes = await fetch(`${baseUrl}/cases/${caseClosedDownload.id}/attachments/${closedAtt.id}/download`, {
       headers: { 'Authorization': `Bearer ${techTokenA}` }
@@ -1880,6 +2036,66 @@ async function runTestSuite() {
         }
       } as any
     } as any);
+
+    // F.5: Diagnose terminal attachment access for a non-reporter project owner.
+    console.log('\n--- TEST 18.7A: PROJECT OWNER TERMINAL ATTACHMENTS ---');
+
+    const ownerTerminalCase = maintenanceRepository.createCase({
+      title: 'Project owner terminal attachment access',
+      description: 'Non-reporter owner access diagnostic',
+      projectId: projOwnerPrivacy.id,
+      assetId: assetOwnerPrivacy.id,
+      alertIds: [],
+      category: 'INVERTER',
+      priority: 'LOW',
+      status: 'CLOSED',
+      reportedBy: thirdPartyReporter.id,
+      assignedTechnicianId: techProA.id
+    });
+
+    const ownerTerminalAttachment = {
+      ...piiAttachment,
+      id: 'att-owner-terminal-diagnostic',
+      maintenanceCaseId: ownerTerminalCase.id
+    };
+
+    maintenanceRepository.updateCase(ownerTerminalCase.id, {
+      attachments: [ownerTerminalAttachment]
+    });
+
+    const ownerTerminalRes = await fetch(
+      `${baseUrl}/cases/${ownerTerminalCase.id}/attachments`,
+      { headers: { Authorization: `Bearer ${ownerOnlyToken}` } }
+    );
+
+    assert(
+      ownerTerminalRes.status === 200,
+      'Test 18.7A: Project owner can access terminal attachment endpoint'
+    );
+
+    const ownerTerminalList = await ownerTerminalRes.json();
+
+    assert(
+      Array.isArray(ownerTerminalList),
+      'Test 18.7A: Project owner receives an array'
+    );
+
+    console.log(
+      '[DIAGNOSTIC] Non-reporter project owner attachment count:',
+      ownerTerminalList.length
+    );
+
+       assert(
+        ownerTerminalList.length === 0,
+        'Test 18.7A: Non-reporter project owner receives no terminal attachment metadata'
+       );
+
+    assert(
+      !JSON.stringify(ownerTerminalList).includes(
+        's3://internal-secure-bucket'
+      ),
+      'Test 18.7A: Project owner receives no private storage key'
+    );
 
     const alertOwnerPrivacy = maintenanceRepository.createAlert({
       projectId: projOwnerPrivacy.id,
