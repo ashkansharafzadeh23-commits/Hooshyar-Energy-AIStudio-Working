@@ -2596,10 +2596,19 @@ maintenanceRouter.get(['/maintenance/:maintenanceCaseId/attachments', '/cases/:m
     return res.json(rawAttachments);
   }
 
-  const isTerminal = mCase.status === 'CANCELLED' || mCase.status === 'CLOSED';
-  const isAccepted = !isTerminal && hasTechnicianFormallyAccepted(mCase);
+  // F.5: Terminal cases expose no attachment metadata to technicians.
+  // Preserve all original evidence for authorized reporters and admins.
+  if (mCase.status === 'CANCELLED' || mCase.status === 'CLOSED') {
+    return res.json([]);
+  }
+
+  // Terminal cases were already handled by the guard above.
+  const isAccepted = hasTechnicianFormallyAccepted(mCase);
   const safeAttachments = rawAttachments.map(att =>
-    sanitizeAttachmentForTechnician(att, { isAccepted, isTerminal })
+    sanitizeAttachmentForTechnician(att, {
+      isAccepted,
+      isTerminal: false
+    })
   );
 
   return res.json(safeAttachments);
