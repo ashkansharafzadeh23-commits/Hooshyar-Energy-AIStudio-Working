@@ -7,6 +7,11 @@ import { monitoringRepository } from '../repositories/monitoringRepository.js';
 import { alertService } from '../services/alertService.js';
 import { diagnosisService } from '../services/diagnosisService.js';
 import {
+  projectTechnicalAllowlistCase,
+  projectAcceptedTechnicianCase
+} from '../database/postgres/maintenancePostgresAdapter.js';
+
+import {
   maintenanceCaseService,
   hasCurrentCycleAcceptance,
   validateFinancialAmount,
@@ -146,6 +151,44 @@ export function checkCaseAccess(
  *    NEVER authorizes the current assignment cycle.
  * 4. SCHEDULED alone does NOT constitute formal acceptance.
  */
+
+/**
+ * F.5 security: role-aware assignment history projection.
+ * Never expose another party's private notes to a technician.
+ */
+export function sanitizeAssignmentHistoriesForTechnician(
+  histories: MaintenanceAssignmentHistory[],
+  authenticatedUserId: string
+): MaintenanceAssignmentHistory[] {
+  if (!authenticatedUserId) {
+    return [];
+  }
+
+  return histories
+    .filter(history =>
+      areTechnicianIdentitiesEquivalent(
+        history.technicianId,
+        authenticatedUserId
+      )
+    )
+    .map(history => {
+      const isAuthor = history.assignedBy === authenticatedUserId;
+
+      return {
+        id: history.id,
+        maintenanceCaseId: history.maintenanceCaseId,
+        technicianId: history.technicianId,
+        assignedBy: isAuthor
+          ? history.assignedBy
+          : 'DISPATCHER',
+        assignedAt: history.assignedAt,
+        status: history.status,
+        notes: isAuthor
+          ? history.notes
+          : `Status transition: ${history.status}`
+      };
+    });
+}
 export function hasTechnicianFormallyAccepted(mCase: MaintenanceCase): boolean {
   return hasCurrentCycleAcceptance(mCase, undefined, { requireExecutionStatusForModern: true });
 }
@@ -191,6 +234,151 @@ export function sanitizeAttachmentForTechnician(
   return safe;
 }
 
+/**
+ * F.5 security: project technician list cases through explicit allowlists.
+ * Formal acceptance must belong to the current assignment cycle.
+ * Terminal cases must always use the restricted technical projection.
+ */
+function projectCaseForTechnicianList(
+  mCase: MaintenanceCase
+): Record<string, any> {
+  const isTerminal =
+    mCase.status === 'CANCELLED' ||
+    mCase.status === 'CLOSED';
+
+  const isAccepted =
+    !isTerminal &&
+    hasTechnicianFormallyAccepted(mCase);
+
+  return isAccepted
+    ? projectAcceptedTechnicianCase(mCase)
+    : projectTechnicalAllowlistCase(mCase);
+}
+
+/**
+ * F.5: Explicit technician-facing action projection.
+ * Internal idempotency metadata remains stored but is never returned.
+ */
+function projectMaintenanceActionForTechnician(action: any) {
+  return {
+    id: action.id,
+    maintenanceCaseId: action.maintenanceCaseId,
+    caseId: action.caseId,
+    actionType: action.actionType,
+    description: action.description,
+    componentId: action.componentId,
+    replacedComponentId: action.replacedComponentId,
+    newComponentSerial: action.newComponentSerial,
+    newComponentModel: action.newComponentModel,
+    performedAt: action.performedAt,
+    resultStatus: action.resultStatus,
+    notes: action.notes,
+    hoursSpent: action.hoursSpent,
+    partsReplaced: action.partsReplaced,
+    createdAt: action.createdAt
+  };
+}
+
+/**
+ * F.5: Explicit technician-facing diagnosis projection.
+ * Never return raw AI responses or internal generation metadata.
+ */
+/**
+ * F.5 technician disclosure gate for legacy AI-generated free text.
+ * This is deliberately conservative: ambiguous sensitive-labelled text is omitted,
+ * and nested/unknown values are never serialized into technician responses.
+ * This is a secondary safeguard; upstream AI outputs must also be classified.
+ */
+function isTechnicianSafeDiagnosisText(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const text = value.trim();
+  if (!text || text.length > 4000) return false;
+
+  // Detect sensitive-labelled content in Persian and English. Do not infer
+  // safety from the mere fact that a value is stored in a technical field.
+  const sensitiveLabel = /(?:national[\s_-]*(?:id|number|code)|customer[\s_-]*(?:id|phone|mobile|address|account|national|contact|bill)|(?:utility|bill|bank)[\s_-]*(?:account|identifier|id|number|no)|(?:gate|entry|access|door|site[\s_-]*entry)[\s_-]*(?:code|pin|password)|(?:password|passcode|secret[\s_-]*key|api[\s_-]*key|bearer[\s_-]*token|private[\s_-]*(?:account|address|phone|metadata)|system[\s_-]*(?:prompt|instruction)|chain[\s_-]*of[\s_-]*thought|کد[\s‌_-]*ملی|شماره[\s‌_-]*(?:ملی|موبایل|تلفن|حساب|قبض)|شناسه[\s‌_-]*(?:قبض|پرداخت|حساب)|آدرس[\s‌_-]*(?:مشتری|کارفرما|مالک)|نشانی[\s‌_-]*(?:مشتری|کارفرما|مالک)|رمز[\s‌_-]*(?:عبور|ورود|دسترسی)|کد[\s‌_-]*(?:ورود|دسترسی)|کلید[\s‌_-]*(?:محرمانه|خصوصی)|اطلاعات[\s‌_-]*(?:محرمانه|خصوصی)))/iu;
+  return !sensitiveLabel.test(text);
+}
+
+/** Preserve safe technical strings, but never serialize nested AI objects. */
+function projectDiagnosisFreeformForTechnician(value: unknown): string | string[] | null {
+  if (typeof value === 'string') {
+    return isTechnicianSafeDiagnosisText(value) ? value : null;
+  }
+  if (!Array.isArray(value)) return null;
+  return value.filter(isTechnicianSafeDiagnosisText);
+}
+
+/** Allow only approved, primitive technical diagnosis fields; never spread AI objects. */
+function projectDiagnosisRecommendationsForTechnician(value: unknown): unknown {
+  if (typeof value === 'string') return isTechnicianSafeDiagnosisText(value) ? value : null;
+  if (!Array.isArray(value)) return null;
+  return value.map((entry: unknown) => {
+    if (typeof entry === 'string') return isTechnicianSafeDiagnosisText(entry) ? entry : null;
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const source = entry as Record<string, unknown>;
+    const result: Record<string, string | number> = {};
+    for (const key of ['action', 'priority', 'description'] as const) {
+      if (isTechnicianSafeDiagnosisText(source[key])) result[key] = source[key] as string;
+    }
+    for (const key of ['estimatedCost', 'estimatedCostIrr', 'estimatedHours'] as const) {
+      const amount = source[key];
+      if (typeof amount === 'number' && Number.isFinite(amount)) result[key] = amount;
+    }
+    return Object.keys(result).length ? result : null;
+  }).filter((entry: unknown) => entry !== null);
+}
+
+/** Legacy root causes may be strings; structured causes use the declared shape. */
+function projectDiagnosisCausesForTechnician(value: unknown): unknown {
+  if (typeof value === 'string') return isTechnicianSafeDiagnosisText(value) ? value : null;
+  if (!Array.isArray(value)) return null;
+  return value.map((entry: unknown) => {
+    if (typeof entry === 'string') return isTechnicianSafeDiagnosisText(entry) ? entry : null;
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const source = entry as Record<string, unknown>;
+    const result: Record<string, string | number> = {};
+    for (const key of ['cause', 'description', 'componentId'] as const) {
+      if (isTechnicianSafeDiagnosisText(source[key])) result[key] = source[key] as string;
+    }
+    if (typeof source.probability === 'number' && Number.isFinite(source.probability)) {
+      result.probability = source.probability;
+    }
+    return Object.keys(result).length ? result : null;
+  }).filter((entry: unknown) => entry !== null);
+}
+
+function projectMaintenanceDiagnosisForTechnician(diagnosis: any) {
+  if (!diagnosis) return null;
+
+  return {
+    id: diagnosis.id,
+    projectId: diagnosis.projectId,
+    assetId: diagnosis.assetId,
+    componentId: diagnosis.componentId,
+    diagnosisStatus: diagnosis.diagnosisStatus,
+    facts: projectDiagnosisFreeformForTechnician(diagnosis.facts),
+    inferences: projectDiagnosisFreeformForTechnician(diagnosis.inferences),
+    possibleCauses: projectDiagnosisFreeformForTechnician(diagnosis.possibleCauses),
+    likelyRootCauses: projectDiagnosisCausesForTechnician(diagnosis.likelyRootCauses),
+    evidence: projectDiagnosisFreeformForTechnician(diagnosis.evidence),
+    recommendedActions: projectDiagnosisRecommendationsForTechnician(diagnosis.recommendedActions),
+    requiredExpertise: projectDiagnosisFreeformForTechnician(diagnosis.requiredExpertise),
+    warrantyStatus: diagnosis.warrantyStatus,
+    symptoms: projectDiagnosisFreeformForTechnician(diagnosis.symptoms),
+    rootCauses: projectDiagnosisCausesForTechnician(diagnosis.rootCauses),
+    actions: projectDiagnosisRecommendationsForTechnician(diagnosis.actions),
+    method: diagnosis.method,
+    diagnosisMethod: diagnosis.diagnosisMethod,
+    confidence: diagnosis.confidence,
+    confidenceScore: diagnosis.confidenceScore,
+    requiredTools: projectDiagnosisFreeformForTechnician(diagnosis.requiredTools),
+    requiredParts: projectDiagnosisFreeformForTechnician(diagnosis.requiredParts),
+    safetyGuidance: projectDiagnosisFreeformForTechnician(diagnosis.safetyGuidance),
+    createdAt: diagnosis.createdAt
+  };
+}
+
 export function sanitizeCaseForTechnician(
   mCase: MaintenanceCase,
   options?: { isAccepted?: boolean }
@@ -214,6 +402,9 @@ export function sanitizeCaseForTechnician(
   }
 
   if (!isAccepted) {
+  // F.5: Hide historical repair actions without active formal acceptance.
+    delete safe.actionsTaken;
+
     // Strictly omit customer private contact information
     delete safe.contactName;
     delete safe.contactPhone;
@@ -684,7 +875,7 @@ maintenanceRouter.get('/assets/:assetId/maintenance', (req: Request, res: Respon
     }
 
     // Sanitize all cases for technician view (masks customer contact info before acceptance and on terminal cases)
-    const sanitized = assignedCases.map(c => sanitizeCaseForTechnician(c));
+    const sanitized = assignedCases.map(c => projectCaseForTechnicianList(c));
     return res.json(sanitized);
   }
 
@@ -782,7 +973,7 @@ maintenanceRouter.get(['/cases', '/maintenance/cases'], (req: Request, res: Resp
 
   allCases.sort((a, b) => new Date(b.createdAt || b.reportedAt).getTime() - new Date(a.createdAt || a.reportedAt).getTime());
   if (isTech && !isAdmin) {
-    const sanitized = allCases.map(c => sanitizeCaseForTechnician(c));
+    const sanitized = allCases.map(c => projectCaseForTechnicianList(c));
     return res.json(sanitized);
   }
   return res.json(allCases);
@@ -1259,7 +1450,7 @@ maintenanceRouter.get('/technician/cases', (req: Request, res: Response) => {
 
   // Technicians can ONLY access cases explicitly assigned to them (strict project/organization boundary preservation)
   const myAssignedCases = allCases.filter((c) => isCaseAssignedToTechnician(c.assignedTechnicianId, userId) || c.assignedTechnicianId === userId);
-  const sanitized = myAssignedCases.map(c => sanitizeCaseForTechnician(c));
+  const sanitized = myAssignedCases.map(c => projectCaseForTechnicianList(c));
   return res.json(sanitized);
 });
 
@@ -1306,18 +1497,27 @@ maintenanceRouter.get(['/maintenance/:maintenanceCaseId', '/cases/:maintenanceCa
   const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
   const isTerminal = mCase.status === 'CANCELLED' || mCase.status === 'CLOSED';
   const isAccepted = !isTerminal && caseAccess.isAssignedTech && hasTechnicianFormallyAccepted(mCase);
-
   const baseCaseData = isReporterOrAdmin
-    ? mCase
-    : sanitizeCaseForTechnician(mCase, { isAccepted });
+  ? mCase
+  : isAccepted
+    ? projectAcceptedTechnicianCase(mCase)
+    : projectTechnicalAllowlistCase(mCase);
+
+  const safeAssignmentHistories = isReporterOrAdmin
+    ? assignmentHistories
+    : sanitizeAssignmentHistoriesForTechnician(
+        assignmentHistories,
+        req.user?.id || ''
+      );
 
   return res.json({
     ...baseCaseData,
-    actions,
-    assignmentHistories,
-    diagnosis,
-    warranty: warrantyInfo
+    actions: isReporterOrAdmin ? actions : isAccepted ? actions.map(projectMaintenanceActionForTechnician) : [],
+    assignmentHistories: safeAssignmentHistories,
+    diagnosis: isReporterOrAdmin ? diagnosis : isAccepted ? projectMaintenanceDiagnosisForTechnician(diagnosis) : null,
+    warranty: isReporterOrAdmin || isAccepted ? warrantyInfo : null
   });
+
 });
 
 /**
@@ -1752,8 +1952,22 @@ maintenanceRouter.get(['/maintenance/:maintenanceCaseId/actions', '/cases/:maint
     return res.status(caseAccess.status || 403).json({ error: caseAccess.error });
   }
 
-  const actions = maintenanceRepository.getActions(caseId);
-  return res.json(actions);
+    const isReporterOrAdmin = caseAccess.isReporter || caseAccess.isAdmin;
+  const isAccepted =
+    !['CANCELLED', 'CLOSED'].includes(mCase.status) &&
+    caseAccess.isAssignedTech &&
+    hasTechnicianFormallyAccepted(mCase);
+
+  if (!isReporterOrAdmin && !isAccepted) {
+    return res.json([]);
+  }
+
+  const actions = maintenanceRepository.getActions(mCase.id);
+  return res.json(
+    isReporterOrAdmin
+      ? actions
+      : actions.map(projectMaintenanceActionForTechnician)
+  );
 });
 
 /**
@@ -1912,7 +2126,26 @@ maintenanceRouter.post(['/maintenance/:maintenanceCaseId/actions', '/cases/:main
     return res.status(400).json({ error: (result as any).message || 'خطا در ثبت اقدام' });
   }
 
-  return res.status(200).json((result as any).action);
+  const savedAction = (result as any).action;
+
+  if (
+    !savedAction ||
+    (!caseAccess.isAdmin && savedAction.performedBy !== req.user.id)
+  ) {
+    return res.status(403).json({
+      error: 'دسترسی به نتیجه ثبت اقدام مجاز نیست.'
+    });
+  }
+
+  return res.status(200).json(
+    caseAccess.isAdmin
+      ? savedAction
+      : {
+          ...projectMaintenanceActionForTechnician(savedAction),
+          clientRequestId: savedAction.clientRequestId,
+          payloadHash: savedAction.payloadHash
+        }
+  );
 });
 
 /**
